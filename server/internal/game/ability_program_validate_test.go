@@ -379,3 +379,51 @@ func TestValidateProgramNoBehaviorWarning(t *testing.T) {
 		}
 	}
 }
+
+// A channeled beam is only legal as a direct action of a ROOT on_cast_complete
+// trigger (the channel-start position). The validator must flag it anywhere
+// else — nested in another beam's on_beam_impact, or under a non-cast-complete
+// root — so a mis-placed channel fails loudly instead of silently no-op'ing.
+func TestValidate_ChanneledBeamPlacement(t *testing.T) {
+	channeledBeam := func(id string) AbilityActionDef {
+		return AbilityActionDef{ID: id, Type: ActionBeam, Target: &TargetQueryDef{Source: SrcInitialTarget},
+			Config: marshalConfig(beamConfig{Channeled: true, ChannelType: "beam", TickIntervalSeconds: 0.25})}
+	}
+	flagged := func(prog *AbilityProgram) bool {
+		for _, is := range validateAbilityProgram(prog) {
+			if is.Code == "invalid_channeled_beam_placement" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Valid: channeled beam directly under a root on_cast_complete trigger.
+	valid := &AbilityProgram{Triggers: []AbilityTriggerDef{
+		{ID: "cast", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{channeledBeam("ch")}},
+	}}
+	if flagged(valid) {
+		t.Errorf("valid channel-start placement was flagged")
+	}
+
+	// Invalid: channeled beam nested inside a momentary beam's on_beam_impact.
+	nested := &AbilityProgram{Triggers: []AbilityTriggerDef{
+		{ID: "cast", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
+			{ID: "b0", Type: ActionBeam, Target: &TargetQueryDef{Source: SrcInitialTarget},
+				Config: marshalConfig(beamConfig{Triggers: []AbilityTriggerDef{
+					{ID: "imp", Type: TriggerOnBeamImpact, Actions: []AbilityActionDef{channeledBeam("ch")}},
+				}})},
+		}},
+	}}
+	if !flagged(nested) {
+		t.Errorf("channeled beam nested in on_beam_impact was NOT flagged")
+	}
+
+	// Invalid: channeled beam under a non-on_cast_complete root trigger.
+	wrongRoot := &AbilityProgram{Triggers: []AbilityTriggerDef{
+		{ID: "z", Type: TriggerOnZoneTick, Timing: &TriggerTiming{TickInterval: 1}, Actions: []AbilityActionDef{channeledBeam("ch")}},
+	}}
+	if !flagged(wrongRoot) {
+		t.Errorf("channeled beam under non-cast-complete root was NOT flagged")
+	}
+}

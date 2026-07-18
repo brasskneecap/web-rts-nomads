@@ -708,3 +708,56 @@ func TestRunAbilityPreview_NoUnrequestedAutoCast_HealPreviewDealsZeroDamage(t *t
 			enemy.HPBefore, enemy.HPAfter, enemyHP)
 	}
 }
+
+// arcane_missiles is a charge-fire PASSIVE: it has no castable action and only
+// fires once the caster's Arcane Charge crosses its threshold. In the preview
+// the caster spends no mana, so without a seeded charge the passive never fires.
+// PreviewRequest.CasterCharge exists to make it testable — seed the charge at/
+// above the threshold and the volley auto-fires at an in-range enemy.
+func TestRunAbilityPreview_ChargeFirePassive_FiresWhenSeeded(t *testing.T) {
+	def, ok := getAbilityDef("arcane_missiles")
+	if !ok {
+		t.Fatal(`getAbilityDef("arcane_missiles") = _, false`)
+	}
+	if !def.IsChargeFirePassive() {
+		t.Fatal("arcane_missiles is not recognized as a charge-fire passive; test premise broken")
+	}
+	const enemyHP = 400
+	scene := []PreviewSceneUnit{{Team: "enemy", X: 60, Y: 0, HP: enemyHP, MaxHP: enemyHP}}
+
+	// Charge threshold is 30 (arcane_missiles.json). Seed exactly one volley's
+	// worth. 3s is ample for the staggered bolts to travel to a close enemy.
+	seeded, err := RunAbilityPreview(PreviewRequest{
+		Ability: def, Seed: 1, CasterX: 0, CasterY: 0, Target: -1,
+		CasterCharge: 30, DurationSeconds: 3, Units: scene,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seeded.Error != "" {
+		t.Fatalf("unexpected preview error for a passive: %q", seeded.Error)
+	}
+	if !previewTraceHasType(seeded.Trace, "charge_volley_queued") {
+		t.Fatalf("seeded charge did not queue a volley: %+v", seeded.Trace)
+	}
+	if seeded.Units[0].HPAfter >= seeded.Units[0].HPBefore {
+		t.Fatalf("enemy took no missile damage with seeded charge: %+v", seeded.Units[0])
+	}
+
+	// Control: with no seeded charge the passive stays dormant — no volley, no
+	// damage — proving CasterCharge is what enables the test.
+	dormant, err := RunAbilityPreview(PreviewRequest{
+		Ability: def, Seed: 1, CasterX: 0, CasterY: 0, Target: -1,
+		CasterCharge: 0, DurationSeconds: 3, Units: scene,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if previewTraceHasType(dormant.Trace, "charge_volley_queued") {
+		t.Fatalf("volley fired with zero seeded charge: %+v", dormant.Trace)
+	}
+	if dormant.Units[0].HPAfter != enemyHP {
+		t.Fatalf("enemy HP changed (%d -> %d) with no seeded charge; passive should be dormant",
+			dormant.Units[0].HPBefore, dormant.Units[0].HPAfter)
+	}
+}

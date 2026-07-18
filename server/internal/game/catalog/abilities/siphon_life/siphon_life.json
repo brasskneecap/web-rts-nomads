@@ -25,17 +25,37 @@
         "actions": [
           {
             "id": "channel",
-            "type": "channel_beam",
+            "type": "beam",
             "target": {
               "source": "initial_target"
             },
             "config": {
+              "channeled": true,
               "channelType": "beam",
               "tickIntervalSeconds": 0.25,
               "manaCostPerTick": 1,
               "damagePerTick": 6,
               "healingMultiplier": 1,
-              "allyHealRadius": 220
+              "allyHealRadius": 220,
+              "triggers": [
+                {
+                  "id": "beam_tick",
+                  "type": "on_beam_tick",
+                  "actions": [
+                    {
+                      "id": "dmg",
+                      "type": "deal_damage",
+                      "target": {
+                        "source": "initial_target"
+                      },
+                      "config": {
+                        "amount": 6,
+                        "type": "shadow"
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           }
         ]

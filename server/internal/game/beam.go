@@ -97,6 +97,65 @@ type Beam struct {
 	// goes to AttackerUnitID (the original wielder). Zero ⇒ no burn.
 	BurnDamagePerSecond float64
 	BurnDurationSeconds float64
+
+	// ── Composable impact (launch_beam's redesign) ──────────────────────────
+	// The authored-impact-actions momentary flavor, mirroring
+	// Projectile.ImpactActions/ImpactOpsBudget/ImpactDamageMultiplier
+	// (projectile.go) for a beam instead of a projectile. Set exactly for a
+	// beam spawned by the composable launch_beam action
+	// (ability_exec_beam.go); nil/zero for every proc-fired momentary beam
+	// (spawnMomentaryDamageBeamLocked) and every channel beam, which never
+	// carry impact actions at all — landing damage there goes through
+	// PendingDamage instead (see tickBeamsLocked).
+	//
+	// ImpactActions is the compiled on_beam_impact trigger's actions, carried
+	// across tick boundaries as plain data (AbilityActionDef — never *Unit,
+	// per AI_RULES), same discipline as Projectile.ImpactActions /
+	// AbilityZone.Triggers.
+	ImpactActions []AbilityActionDef
+	// ImpactOpsBudget is the shared, cross-tick op-budget counter this beam's
+	// impact will decrement when it fires — mirrors
+	// Projectile.ImpactOpsBudget (see ability_exec_projectile.go's CROSS-TICK
+	// OP BUDGET section for the full design this reuses verbatim).
+	ImpactOpsBudget *int
+	// CasterID is the ORIGINAL caster for the impact ctx — distinct from
+	// CasterUnitID, which is the VISUAL origin of the beam (may differ on a
+	// future bounce-hop shape, mirroring the projectile CasterUnitID/
+	// AttackerUnitID split). Resolved to *Unit at point of use, never stored
+	// as a pointer.
+	CasterID int
+	// AbilityIDForCtx is the ability id threaded into the impact ctx (so
+	// deal_damage etc. fold the caster's spell modifiers) — distinct from
+	// AbilityID, which is the CHANNEL-beam field (siphon_life) and is never
+	// set on a momentary beam.
+	AbilityIDForCtx string
+	// ImpactDamageMultiplier carries the LAUNCHING ctx's
+	// damageEffectivenessMultiplier forward to the impact ctx
+	// fireBeamImpactLocked builds on a later tick — mirrors
+	// Projectile.ImpactDamageMultiplier. 0 is treated as 1.0 (no scaling) by
+	// RuntimeAbilityContext.effectiveDamageMultiplier().
+	ImpactDamageMultiplier float64
+	// CarriedNamed snapshots the LAUNCHING ctx's Named map (ctx.Named) at the
+	// moment this beam was spawned by a launch_beam action running INSIDE
+	// another beam's on_beam_impact trigger — the mechanism that lets
+	// chain_lightning's authored bounce chain (compileChainLightningActions,
+	// ability_compile.go) accumulate its "already hit" ctxUnitSet across
+	// hops. Every hop's on_beam_impact fires in a BRAND NEW
+	// RuntimeAbilityContext (fireBeamImpactLocked below builds one fresh per
+	// beam, same as fireProjectileImpactLocked) — without this field, that
+	// fresh ctx.Named would start empty every hop, silently forgetting every
+	// unit store_targets(merge:true) had accumulated so far and letting the
+	// chain double back onto an already-struck victim (or the primary
+	// target). nil for every beam that is NOT itself a launch_beam-spawned
+	// nested relaunch (the ordinary single-hop case, every proc beam, every
+	// channel beam) — fireBeamImpactLocked falls back to a fresh empty map
+	// exactly as before when this is nil.
+	CarriedNamed map[string]ContextValue
+	// impactFired guards ImpactActions from running more than once: set true
+	// the first time tickBeamsLocked's delay countdown reaches zero, so a
+	// later tick (or the RemainingSeconds expiry safety net) can never re-fire
+	// it.
+	impactFired bool
 }
 
 // spawnBeamLocked creates a new Beam entity, appends it to s.Beams, and
@@ -184,11 +243,153 @@ func (s *GameState) spawnMomentaryDamageBeamLocked(src ProcSource, fromUnitID in
 	return b
 }
 
+// spawnBeamWithImpactActionsLocked spawns a one-shot beam flash from a frozen
+// origin point (fromX/Y) to `to`, carrying a compiled on_beam_impact
+// trigger's actions to run once ImpactDelaySeconds elapses — the beam
+// analogue of fireProjectileWithImpactActionsLocked (projectile.go). It
+// carries NO baked damage (unlike spawnMomentaryDamageBeamLocked): the
+// impact's own deal_damage action (if authored) is what applies damage, via
+// fireBeamImpactLocked/tickBeamsLocked.
+//
+// casterID credits the impact ctx's caster (AI_RULES: stored as an ID, never
+// a pointer). fromUnitID is the VISUAL origin unit (drives the client's
+// origin-lift sprite lookup; 0 when the beam leaves a non-unit source) and
+// fromX/Y freeze the beam's start, mirroring spawnMomentaryDamageBeamLocked's
+// identical caster/visual-origin split. durationMs<=0 defaults to
+// defaultBeamDurationMs.
+//
+// carriedNamed is a snapshot of the LAUNCHING ctx's Named map to thread onto
+// the spawned beam's CarriedNamed (see that field's doc comment) — nil for
+// every non-chained call site (spawnBeamWithImpactActionsLocked's sole
+// caller, launch_beam's Execute, always passes ctx.Named, which is nil/empty
+// for a top-level cast and populated when this launch_beam is itself running
+// inside another beam's on_beam_impact).
+//
+// Caller holds s.mu write lock.
+func (s *GameState) spawnBeamWithImpactActionsLocked(casterID, fromUnitID int, fromX, fromY float64, to *Unit, variant, abilityID string, impactActions []AbilityActionDef, budget *int, dmgMult float64, durationMs int, delaySec float64, carriedNamed map[string]ContextValue) *Beam {
+	if durationMs <= 0 {
+		durationMs = defaultBeamDurationMs
+	}
+	var ownerPlayerID string
+	if caster := s.getUnitByIDLocked(casterID); caster != nil {
+		ownerPlayerID = caster.OwnerID
+	}
+	b := &Beam{
+		ID:                     fmt.Sprintf("beam-%d", s.nextBeamID),
+		CasterUnitID:           fromUnitID,
+		AttackerUnitID:         casterID,
+		TargetUnitID:           to.ID,
+		OwnerPlayerID:          ownerPlayerID,
+		Variant:                variant,
+		Momentary:              true,
+		RemainingSeconds:       float64(durationMs) / 1000.0,
+		OriginX:                fromX,
+		OriginY:                fromY,
+		TargetX:                to.X,
+		TargetY:                to.Y,
+		DamageDelayRemaining:   delaySec,
+		ImpactActions:          impactActions,
+		ImpactOpsBudget:        budget,
+		CasterID:               casterID,
+		AbilityIDForCtx:        abilityID,
+		ImpactDamageMultiplier: dmgMult,
+		CarriedNamed:           cloneNamedContext(carriedNamed),
+	}
+	s.nextBeamID++
+	s.Beams = append(s.Beams, b)
+	return b
+}
+
+// cloneNamedContext returns a shallow copy of a RuntimeAbilityContext.Named
+// map, or nil if src is empty/nil. A shallow copy is sufficient: every writer
+// of ctx.Named (store_targets, bindActionOutputsLocked) always REPLACES a
+// key's ContextValue with a freshly built one rather than mutating an
+// existing UnitIDs slice in place, so a later hop's writes can never reach
+// back and corrupt an earlier hop's (or a sibling beam's) snapshot.
+func cloneNamedContext(src map[string]ContextValue) map[string]ContextValue {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]ContextValue, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+// fireBeamImpactLocked runs a launch_beam-spawned momentary beam's compiled
+// on_beam_impact actions — the beam analogue of fireProjectileImpactLocked
+// (projectile.go). Builds a fresh RuntimeAbilityContext bound to this beam's
+// caster/target/position, re-resolves the ability def (so deal_damage folds
+// the caster's spell modifiers exactly once, at parity with the projectile
+// impact path), and runs b.ImpactActions through the shared executor,
+// honoring the shared cross-tick op budget (b.ImpactOpsBudget).
+//
+// ctx.Named seeds from b.CarriedNamed (see that field's doc comment) instead
+// of always starting empty: a chain's accumulated "hit" ctxUnitSet must
+// survive from one hop's beam into the next hop's freshly built ctx, since
+// each hop's on_beam_impact runs in its OWN RuntimeAbilityContext (this
+// function is called once per beam, on whatever later tick its delay
+// elapses). cloneNamedContext defends the ORIGINAL b.CarriedNamed against
+// this ctx's own writes, in case anything else ever reads it back (defensive
+// only — nothing does today).
+//
+// Caller holds s.mu write lock.
+func (s *GameState) fireBeamImpactLocked(b *Beam) {
+	def, ok := getAbilityDef(b.AbilityIDForCtx)
+	named := cloneNamedContext(b.CarriedNamed)
+	if named == nil {
+		named = map[string]ContextValue{}
+	}
+	ctx := &RuntimeAbilityContext{
+		CasterID:                      b.CasterID,
+		AbilityID:                     b.AbilityIDForCtx,
+		InitialTarget:                 b.TargetUnitID,
+		ImpactPosition:                protocol.Vec2{X: b.TargetX, Y: b.TargetY},
+		EventPosition:                 protocol.Vec2{X: b.TargetX, Y: b.TargetY},
+		CurrentEventUnitID:            b.TargetUnitID,
+		Named:                         named,
+		Trace:                         s.previewTrace,
+		now:                           s.previewClock,
+		sharedOpsRemaining:            b.ImpactOpsBudget,
+		damageEffectivenessMultiplier: b.ImpactDamageMultiplier,
+	}
+	if ok {
+		ctx.program = def.Program
+		ctx.abilityDef = &def
+	}
+	path := "on_beam_impact"
+	for i := range b.ImpactActions {
+		if ctx.opsExhausted() {
+			break
+		}
+		s.executeActionLocked(ctx, &b.ImpactActions[i], path)
+	}
+}
+
 // tickBeamsLocked advances momentary beams: it lands their deferred proc damage
 // once the delay elapses and removes the flashes that have expired. Channel
 // beams (Momentary == false) are untouched — their lifetime is owned by the
 // channel state machine, not a timer. No RNG, no cross-tick pointers: keeps
 // simulation determinism.
+//
+// RE-ENTRANT APPEND HAZARD: a composable on_beam_impact trigger can itself
+// contain a launch_beam action (chain_lightning's authored bounce chain —
+// ability_compile.go's compileChainLightningActions), which appends a brand
+// new *Beam to s.Beams from INSIDE fireBeamImpactLocked, i.e. while this very
+// loop is mid-range over the pre-call s.Beams. The old
+// `kept := s.Beams[:0]; for _, b := range s.Beams` idiom is unsafe here: the
+// range expression is evaluated once (fixed length) at loop start, so a beam
+// appended mid-loop is invisible to the current iteration, AND kept aliases
+// the SAME backing array s.Beams is being appended to — the final
+// `s.Beams = kept` (or an append-triggered reallocation racing with kept's
+// own writes) silently drops or corrupts whatever the impact just spawned.
+// Fixed below by iterating a stable snapshot (original) instead of s.Beams
+// itself, building kept into a fresh backing array, and — after the loop —
+// re-attaching anything appended past the snapshot's length (impact
+// processing only ever appends to s.Beams, never removes, so everything at
+// index >= len(original) in the live s.Beams is exactly what got spawned
+// during this tick and must survive into the next one).
 //
 // Caller holds s.mu write lock.
 func (s *GameState) tickBeamsLocked(dt float64) {
@@ -196,13 +397,28 @@ func (s *GameState) tickBeamsLocked(dt float64) {
 		return
 	}
 	var deadUnitIDs []int
-	kept := s.Beams[:0]
-	for _, b := range s.Beams {
+	original := s.Beams
+	kept := make([]*Beam, 0, len(original))
+	for _, b := range original {
 		if b.Momentary {
-			// Deferred proc damage lands a beat AFTER the triggering hit so it
-			// reads as its own damage number. Apply exactly once when the delay
-			// elapses (applyBeamPendingDamageLocked zeroes PendingDamage).
-			if b.PendingDamage > 0 {
+			if len(b.ImpactActions) > 0 {
+				// Composable launch_beam impact: deferred a beat after the
+				// flash appears, exactly like PendingDamage below, but runs
+				// the authored on_beam_impact actions instead of a single
+				// baked damage number. impactFired guards it from ever firing
+				// twice (fireBeamImpactLocked itself does no such guarding).
+				if !b.impactFired {
+					b.DamageDelayRemaining -= dt
+					if b.DamageDelayRemaining <= 0 {
+						b.impactFired = true
+						s.fireBeamImpactLocked(b)
+					}
+				}
+			} else if b.PendingDamage > 0 {
+				// Deferred proc damage lands a beat AFTER the triggering hit
+				// so it reads as its own damage number. Apply exactly once
+				// when the delay elapses (applyBeamPendingDamageLocked zeroes
+				// PendingDamage).
 				b.DamageDelayRemaining -= dt
 				if b.DamageDelayRemaining <= 0 {
 					s.applyBeamPendingDamageLocked(b, &deadUnitIDs)
@@ -212,14 +428,35 @@ func (s *GameState) tickBeamsLocked(dt float64) {
 			if b.RemainingSeconds <= 0 {
 				// Safety net: if the flash somehow expired before the delay
 				// elapsed (delay >= duration), still land the damage so a
-				// rolled proc is never silently dropped.
-				if b.PendingDamage > 0 {
+				// rolled proc — or an authored impact — is never silently
+				// dropped.
+				if len(b.ImpactActions) > 0 {
+					if !b.impactFired {
+						b.impactFired = true
+						s.fireBeamImpactLocked(b)
+					}
+				} else if b.PendingDamage > 0 {
 					s.applyBeamPendingDamageLocked(b, &deadUnitIDs)
 				}
 				continue // flash finished — drop
 			}
 		}
 		kept = append(kept, b)
+	}
+	// Carry forward any beam a nested launch_beam appended to s.Beams DURING
+	// the loop above (see the RE-ENTRANT APPEND HAZARD doc comment) — it lives
+	// past the original snapshot's length in the current, live s.Beams.
+	//
+	// INVARIANT this re-attach relies on: impact actions (fireBeamImpactLocked,
+	// called above) must only ever APPEND to s.Beams, never remove or reorder
+	// it mid-loop. original is a snapshot (a slice header aliasing the same
+	// backing array s.Beams had at loop start); a mid-loop in-place removal or
+	// reorder of s.Beams would shift indices out from under that aliased
+	// snapshot and this slice-past-len(original) re-attach would silently
+	// drop or duplicate beams instead of carrying forward exactly the ones
+	// spawned during this tick.
+	if len(s.Beams) > len(original) {
+		kept = append(kept, s.Beams[len(original):]...)
 	}
 	s.Beams = kept
 	// Remove anything the deferred damage just killed, mirroring

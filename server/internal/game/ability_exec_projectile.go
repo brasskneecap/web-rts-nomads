@@ -2,7 +2,6 @@ package game
 
 import (
 	"encoding/json"
-	"math"
 	"strconv"
 )
 
@@ -20,14 +19,14 @@ import (
 // independently-authorable actions under one on_projectile_impact trigger,
 // instead of baked Amount/Type/Radius fields on this action.
 //
-// chain_lightning is the ONE exception, KEPT UNCHANGED: its bounce isn't a
-// projectile delivery at all — fireAbilityChainLocked resolves the whole
-// bounce chain inline as Beams at fire time, and never spawns a Projectile.
-// Its Amount/Type/ChainCount/BounceRange/BounceDamageFalloff/MinorDamage stay
-// baked directly on this action's config and keep delegating to
-// fireAbilityChainLocked exactly as before this redesign — gated on
-// cfg.ChainCount > 0. Do NOT try to compose it (see launchProjectileConfig's
-// doc comment, ability_compile.go).
+// chain_lightning is compiled onto a fully authored chain of nested
+// launch_beam actions instead (compileChainLightningActions,
+// ability_compile.go) — it never reaches this action at all. The
+// pre-redesign launchProjectileConfig.ChainCount shim that used to live here
+// (executeChainLightningShimLocked, delegating to the legacy
+// fireAbilityChainLocked seam) was retired once that authored chain shipped;
+// see ability_chain_bounce_attribution_test.go for the attribution guarantee
+// it used to protect.
 //
 // TRAVEL MODES:
 //   - "to_target" (default/empty): homes on the resolved unit target every
@@ -81,13 +80,10 @@ import (
 // legacy folds a spell's modifiers ONCE, at effectiveSpellLocked. The
 // composable model folds ONCE too, but now that fold happens inside
 // deal_damage's Execute (ability_program_registry.go), which gates on
-// ctx.abilityDef != nil — NOT here. This action must NEVER fold cfg.Amount
-// (the chain shim is the sole surviving exception, since it delegates to the
-// legacy fireAbilityChainLocked seam which expects an already-folded
-// EffectiveSpell.Damage, exactly as before this redesign). For the
-// composable (non-chain) path, fireProjectileImpactLocked's ctx MUST set
-// abilityDef (re-resolved via getAbilityDef) so deal_damage folds exactly
-// once when the impact fires — see that function's doc comment. Golden tests
+// ctx.abilityDef != nil — NOT here. This action must NEVER fold cfg.Amount.
+// fireProjectileImpactLocked's ctx MUST set abilityDef (re-resolved via
+// getAbilityDef) so deal_damage folds exactly once when the impact fires —
+// see that function's doc comment. Golden tests
 // with a modified caster (TestAbilityCompileGolden_ArcaneBolt/Fireball's
 // modified_caster sub-tests) are what catch a double-fold or a missing fold.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,16 +162,6 @@ func init() {
 			if !isValidLaunchProjectileSpawnOrigin(c.SpawnOrigin) {
 				out = append(out, ValidationIssue{Code: "invalid_property", Message: "unknown spawnOrigin " + string(c.SpawnOrigin), Severity: "error"})
 			}
-			if c.ChainCount > 0 {
-				// chain_lightning's kept shim — same requirements as before this
-				// redesign (its damage is baked here, never composed).
-				if c.Amount <= 0 {
-					out = append(out, ValidationIssue{Code: "empty_required_property", Message: "launch_projectile (chain) requires amount > 0", Severity: "error"})
-				}
-				if c.Type != "" && !IsValidDamageType(c.Type) {
-					out = append(out, ValidationIssue{Code: "invalid_damage_type", Message: "unknown damage type " + string(c.Type), Severity: "error"})
-				}
-			}
 			if c.TickInterval > 0 {
 				// arcane_orb's ticking-vortex shim — see launchProjectileConfig's
 				// TickInterval doc comment. The magnitudes now live SOLELY in the
@@ -215,13 +201,6 @@ func init() {
 		//     for "to_target"; spawn point AND flight-direction anchor for
 		//     "direction" — see SpawnOrigin's doc comment, ability_compile.go).
 		//     No ShowWhen for the same reason as "target".
-		//   - "amount"/"type"/"bounceRange"/"bounceDamageFalloff": read ONLY by
-		//     executeChainLightningShimLocked, the ChainCount>0 branch kept
-		//     unchanged for chain_lightning (see the file doc comment) — dead
-		//     weight on every normal (non-chaining) bolt. Gated on
-		//     chainCount > 0. chainCount ITSELF stays unconditionally visible:
-		//     it's the toggle that turns chaining on, so gating it on its own
-		//     value would make it impossible to ever set above 0.
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "projectile", Label: "Projectile", Control: "asset", Section: "Presentation"},
 			{Key: "travelMode", Label: "Travel Mode", Control: "enum", Options: []string{travelModeToTarget, travelModeDirection}, Section: "Properties"},
@@ -235,25 +214,8 @@ func init() {
 			},
 			{Key: "spawnOrigin", Label: "Spawn Origin", Control: "enum", Options: launchProjectileSpawnOriginOptions, Section: "Properties"},
 			{Key: "projectileScale", Label: "Projectile Scale", Control: "number", Section: "Presentation"},
-			{Key: "chainCount", Label: "Chain Count", Control: "number", Section: "Properties"},
-			{
-				Key: "amount", Label: "Amount (chain only)", Control: "number", Section: "Properties",
-				ShowWhen: &FieldCondition{Key: "chainCount", Op: "gt", Value: json.RawMessage("0")},
-			},
-			{
-				Key: "type", Label: "Damage Type (chain only)", Control: "enum", Section: "Properties",
-				ShowWhen: &FieldCondition{Key: "chainCount", Op: "gt", Value: json.RawMessage("0")},
-			},
-			{
-				Key: "bounceRange", Label: "Bounce Range", Control: "number", Section: "Properties",
-				ShowWhen: &FieldCondition{Key: "chainCount", Op: "gt", Value: json.RawMessage("0")},
-			},
-			{
-				Key: "bounceDamageFalloff", Label: "Bounce Damage Falloff", Control: "number", Section: "Properties",
-				ShowWhen: &FieldCondition{Key: "chainCount", Op: "gt", Value: json.RawMessage("0")},
-			},
 			// arcane_orb's ticking-vortex shim: tickInterval is the toggle (stays
-			// unconditionally visible, like chainCount) and is the only vortex
+			// unconditionally visible) and is the only vortex
 			// knob left on THIS action — radius/pullStrength/damagePerSecond are
 			// NOT declared here any more. They used to be (as inert top-level
 			// sibling scalars Execute never read once the nested
@@ -272,10 +234,6 @@ func init() {
 			caster := s.getUnitByIDLocked(ctx.CasterID)
 			if caster == nil {
 				return nil
-			}
-
-			if c.ChainCount > 0 {
-				return executeChainLightningShimLocked(s, ctx, caster, c, targets)
 			}
 
 			if c.TickInterval > 0 {
@@ -339,51 +297,6 @@ func init() {
 			return hit
 		},
 	})
-}
-
-// executeChainLightningShimLocked runs the ChainCount>0 branch: identical to
-// this action's pre-redesign Execute for chain_lightning, unchanged. Folds
-// cfg.Amount EXACTLY ONCE (the DOUBLE-FOLD hazard applies here, not to the
-// composable non-chain path above — see the file doc comment) and delegates
-// to fireAbilityChainLocked, which resolves the whole bounce chain inline as
-// Beams and never spawns a Projectile.
-func executeChainLightningShimLocked(s *GameState, ctx *RuntimeAbilityContext, caster *Unit, c launchProjectileConfig, targets []int) []int {
-	amount := c.Amount
-	if ctx.abilityDef != nil {
-		amount = s.effectiveAbilityDamageLocked(caster, *ctx.abilityDef, c.Amount)
-	}
-	if m := ctx.effectiveDamageMultiplier(); m != 1.0 {
-		amount = int(math.Round(float64(amount) * m))
-	}
-	if amount <= 0 {
-		ctx.trace("action_skipped", ctx.currentActionPath, map[string]any{"reason": "non_positive_damage", "amount": amount})
-		return nil
-	}
-
-	def := AbilityDef{
-		ID:                  ctx.AbilityID,
-		DamageType:          c.Type,
-		Projectile:          c.Projectile,
-		ProjectileScale:     c.ProjectileScale,
-		MinorDamage:         c.MinorDamage,
-		BounceRange:         c.BounceRange,
-		BounceDamageFalloff: c.BounceDamageFalloff,
-	}
-	eff := EffectiveSpell{Damage: amount, ChainCount: c.ChainCount}
-
-	hit := make([]int, 0, len(targets))
-	for _, id := range targets {
-		target := s.getUnitByIDLocked(id)
-		if target == nil || target.HP <= 0 {
-			continue
-		}
-		s.fireAbilityChainLocked(caster, target, def, eff)
-		hit = append(hit, id)
-		ctx.trace("projectile_launched", ctx.currentActionPath, map[string]any{
-			"target": id, "amount": amount, "chainCount": eff.ChainCount,
-		})
-	}
-	return hit
 }
 
 // vortexTickMagnitudes are the vortex's editable magnitudes as recovered by

@@ -7,6 +7,7 @@ import {
   MIN_VIEW_WORLD_WIDTH,
   PREVIEW_FRAME_DT_SECONDS,
   computeSceneBBox,
+  computeSceneBBoxFromPoints,
   frameIndexAt,
   previewClockMs,
 } from './previewPlayback'
@@ -216,5 +217,48 @@ describe('computeSceneBBox', () => {
     expect(bbox.centerY).toBe(300) // (0 + 600) / 2
     expect(bbox.viewWidth).toBe(1000 + BBOX_PADDING_WORLD * 2)
     expect(bbox.viewHeight).toBe(600 + BBOX_PADDING_WORLD * 2)
+  })
+})
+
+// computeSceneBBoxFromPoints (Phase 6b): the edit-mode canvas's camera
+// framing — same padded/floored bbox math as computeSceneBBox, but over a
+// flat list of live (caster + scene unit) points instead of a captured
+// frame sequence. computeSceneBBox itself is now implemented in terms of
+// this function, so these cases double as regression coverage for that
+// refactor too.
+describe('computeSceneBBoxFromPoints', () => {
+  it('returns the fallback bbox for an empty point list', () => {
+    expect(computeSceneBBoxFromPoints([])).toEqual(FALLBACK_BBOX)
+  })
+
+  it('floors the view size to MIN_VIEW_WORLD_* for a single (or co-located) point', () => {
+    const bbox = computeSceneBBoxFromPoints([{ x: 600, y: 500 }])
+    expect(bbox.centerX).toBe(600)
+    expect(bbox.centerY).toBe(500)
+    expect(bbox.viewWidth).toBe(MIN_VIEW_WORLD_WIDTH)
+    expect(bbox.viewHeight).toBe(MIN_VIEW_WORLD_HEIGHT)
+  })
+
+  it('spans a spread of points, plus padding on each axis (a caster + two dragged units)', () => {
+    const bbox = computeSceneBBoxFromPoints([
+      { x: 600, y: 500 }, // caster
+      { x: 720, y: 500 }, // enemy
+      { x: 520, y: 500 }, // ally
+    ])
+    expect(bbox.centerX).toBe(620) // (520 + 720) / 2
+    expect(bbox.centerY).toBe(500)
+    expect(bbox.viewWidth).toBe(200 + BBOX_PADDING_WORLD * 2) // 720 - 520
+    expect(bbox.viewHeight).toBe(MIN_VIEW_WORLD_HEIGHT) // no Y spread — floored
+  })
+
+  it('agrees with computeSceneBBox when fed the same points via a single frame', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 1000, y: 0 },
+      { x: 0, y: 600 },
+    ]
+    const viaPoints = computeSceneBBoxFromPoints(points)
+    const viaFrames = computeSceneBBox([{ tick: 0, t: 0, snapshot: { units: points } as PreviewFrame['snapshot'] }])
+    expect(viaPoints).toEqual(viaFrames)
   })
 })

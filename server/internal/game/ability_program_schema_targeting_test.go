@@ -28,10 +28,12 @@ func TestActionTargetingShape_MatchesExecuteUsage(t *testing.T) {
 		// (SrcInitialTarget) rather than chaining off a preceding
 		// select_targets action.
 		ActionLaunchProjectile: true,
-		// Reads targets[0] as the ONE unit the beam channels at
-		// (ability_exec_channel.go); compileChannelBeamAction gives it its
-		// own direct TargetQueryDef for the same reason as launch_projectile.
-		ActionChannelBeam: true,
+		// The unified beam action (ability_exec_beam.go): momentary loops over
+		// every resolved target; channeled reads targets[0] as the ONE unit it
+		// channels at. Both the chain compiler and compileChannelBeamAction give
+		// it its own direct TargetQueryDef — same reasoning as
+		// ActionLaunchProjectile above.
+		ActionBeam: true,
 
 		// Every action below reads its incoming `targets` slice (or ignores
 		// targets entirely) but is normally fed via a preceding
@@ -118,7 +120,7 @@ func TestActionTargetingShape_TargetQueryFieldsDeclared(t *testing.T) {
 	wantFields := map[ActionType][]string{
 		ActionSelectTargets:    targetQueryFieldsFull,
 		ActionLaunchProjectile: targetQueryFieldsSourceOnly,
-		ActionChannelBeam:      targetQueryFieldsSourceOnly,
+		ActionBeam:             targetQueryFieldsSourceOnly,
 	}
 	for typ, want := range wantFields {
 		desc, ok := lookupActionDescriptor(typ)
@@ -238,11 +240,16 @@ func TestFieldVisible_NilShowWhenAlwaysVisible(t *testing.T) {
 	}
 }
 
-// TestLaunchProjectile_ChainOnlyFieldsShowWhen proves the concrete case the
-// ticket asked for: amount/type/bounceRange/bounceDamageFalloff are hidden
-// until chainCount > 0; chainCount itself and the always-relevant fields stay
-// unconditionally visible.
-func TestLaunchProjectile_ChainOnlyFieldsShowWhen(t *testing.T) {
+// TestLaunchProjectile_TravelModeFieldsShowWhen proves target/distance's
+// ShowWhen gating on travelMode. chain_lightning no longer compiles onto
+// this action at all (compileChainLightningActions builds a fully authored
+// chain of nested launch_beam actions instead — ability_compile.go), and the
+// chainCount-gated amount/type/bounceRange/bounceDamageFalloff/chainCount
+// schema fields that used to live here (the pre-redesign
+// launchProjectileConfig.ChainCount shim) were retired along with it — see
+// ability_chain_bounce_attribution_test.go for the attribution guarantee
+// that shim used to protect.
+func TestLaunchProjectile_TravelModeFieldsShowWhen(t *testing.T) {
 	desc, ok := lookupActionDescriptor(ActionLaunchProjectile)
 	if !ok {
 		t.Fatal("launch_projectile has no registered descriptor")
@@ -250,35 +257,6 @@ func TestLaunchProjectile_ChainOnlyFieldsShowWhen(t *testing.T) {
 	byKey := map[string]SchemaField{}
 	for _, f := range desc.Schema.Fields {
 		byKey[f.Key] = f
-	}
-
-	chainOnly := []string{"amount", "type", "bounceRange", "bounceDamageFalloff"}
-	notChaining := map[string]any{"chainCount": float64(0)}
-	chaining := map[string]any{"chainCount": float64(3)}
-
-	for _, key := range chainOnly {
-		f, ok := byKey[key]
-		if !ok {
-			t.Fatalf("launch_projectile schema missing field %q", key)
-		}
-		if f.ShowWhen == nil {
-			t.Fatalf("launch_projectile field %q should declare ShowWhen (chain-only)", key)
-		}
-		if FieldVisible(f, notChaining) {
-			t.Errorf("field %q should be hidden when chainCount == 0", key)
-		}
-		if !FieldVisible(f, chaining) {
-			t.Errorf("field %q should be visible when chainCount > 0", key)
-		}
-	}
-
-	// chainCount itself: always visible (it's the toggle).
-	cc, ok := byKey["chainCount"]
-	if !ok {
-		t.Fatal("launch_projectile schema missing chainCount field")
-	}
-	if cc.ShowWhen != nil {
-		t.Errorf("chainCount must stay unconditionally visible (it's the toggle for the other chain-only fields)")
 	}
 
 	// target: visible in BOTH travel modes (no ShowWhen) — direction mode

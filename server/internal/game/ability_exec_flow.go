@@ -100,6 +100,10 @@ func namedContextValueNonEmpty(v ContextValue) bool {
 // context key (ctx.Named[As]) without altering the target set itself.
 type storeTargetsConfig struct {
 	As string `json:"as"`
+	// Merge, when true, unions the incoming target IDs into the existing
+	// named ctxUnitSet at As (dedup, preserving first-seen order) instead of
+	// replacing it. Lets a chain accumulate a visited set across hops.
+	Merge bool `json:"merge,omitempty"`
 }
 
 func (storeTargetsConfig) actionConfig() {}
@@ -196,8 +200,33 @@ func init() {
 				ctx.Named = map[string]ContextValue{}
 			}
 			stored := append([]int(nil), targets...)
+			if c.Merge {
+				if existing, ok := ctx.Named[c.As]; ok && existing.Kind == ctxUnitSet {
+					// Union existing-then-new, deduped, deterministic order:
+					// walk the existing slice first (already in its stored
+					// order), then the incoming slice, skipping anything
+					// already seen. Never range a map to build the output.
+					seen := make(map[int]struct{}, len(existing.UnitIDs)+len(stored))
+					merged := make([]int, 0, len(existing.UnitIDs)+len(stored))
+					for _, id := range existing.UnitIDs {
+						if _, dup := seen[id]; dup {
+							continue
+						}
+						seen[id] = struct{}{}
+						merged = append(merged, id)
+					}
+					for _, id := range stored {
+						if _, dup := seen[id]; dup {
+							continue
+						}
+						seen[id] = struct{}{}
+						merged = append(merged, id)
+					}
+					stored = merged
+				}
+			}
 			ctx.Named[c.As] = ContextValue{Kind: ctxUnitSet, UnitIDs: stored}
-			ctx.trace("targets_stored", ctx.currentActionPath, map[string]any{"as": c.As, "count": len(stored)})
+			ctx.trace("targets_stored", ctx.currentActionPath, map[string]any{"as": c.As, "count": len(stored), "merge": c.Merge})
 			return targets
 		},
 	})

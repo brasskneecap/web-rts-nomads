@@ -103,15 +103,22 @@ type PreviewSceneUnit struct {
 // world point for a point-target one), and how long to step the sim
 // afterward.
 type PreviewRequest struct {
-	Ability         AbilityDef         `json:"ability"`
-	Seed            int64              `json:"seed"`
-	CasterX         float64            `json:"casterX"`
-	CasterY         float64            `json:"casterY"`
-	Units           []PreviewSceneUnit `json:"units"`
-	Target          int                `json:"target"` // index into Units for a unit-target cast; -1 = none
-	CastX           float64            `json:"castX"`
-	CastY           float64            `json:"castY"`
-	DurationSeconds float64            `json:"durationSeconds"`
+	Ability AbilityDef         `json:"ability"`
+	Seed    int64              `json:"seed"`
+	CasterX float64            `json:"casterX"`
+	CasterY float64            `json:"casterY"`
+	Units   []PreviewSceneUnit `json:"units"`
+	Target  int                `json:"target"` // index into Units for a unit-target cast; -1 = none
+	CastX   float64            `json:"castX"`
+	CastY   float64            `json:"castY"`
+	// CasterCharge seeds the caster's Arcane Charge before the sim steps, so a
+	// charge-fire passive (arcane_missiles: a positive charge threshold, no
+	// castable action) can be previewed — set it at or above the ability's
+	// chargeRequired and the passive auto-fires a volley on the first tick that
+	// finds a hostile in range. Ignored for any ability that isn't a charge-fire
+	// passive (the charge is simply never read). Default 0.
+	CasterCharge    float64 `json:"casterCharge"`
+	DurationSeconds float64 `json:"durationSeconds"`
 }
 
 // PreviewUnitResult is one scene unit's HP before/after the preview run,
@@ -253,6 +260,16 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	caster.Abilities = []string{pdef.ID}
 	caster.AutoCastEnabled = nil
 	s.initializeCombatUnitLocked(caster)
+	// Seed Arcane Charge so a charge-fire passive (arcane_missiles) can be
+	// previewed: with the ability under test as the caster's only ability and
+	// nothing spending mana, the charge loop would otherwise never cross its
+	// threshold. Set after initializeCombatUnitLocked so it isn't reset. Gated
+	// on IsChargeFirePassive so a stale/erroneous CasterCharge from the client
+	// can never leak into a non-charge ability's preview — the field only makes
+	// sense for a charge-fire passive in the first place.
+	if pdef.IsChargeFirePassive() {
+		caster.ArcaneCharge = req.CasterCharge
+	}
 	manaBefore := caster.CurrentMana
 	casterID := caster.ID
 
@@ -356,12 +373,18 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 			}
 		}
 	}
-	// For a point-target ability targetUnitID is ignored by
-	// RequestAbilityCast (it routes on def.TargetsPoint); req.CastX/CastY
-	// are always passed and are likewise ignored on the unit-target path.
-	ok, reason := s.RequestAbilityCast(previewCasterOwner, casterID, pdef.ID, targetUnitID, req.CastX, req.CastY)
-	if !ok {
-		res.Error = reason
+	// A passive (arcane_missiles) has no castable action — attempting a cast
+	// would just fail and surface a spurious error. Its behavior is driven
+	// entirely by the sim loop below (the seeded Arcane Charge crossing its
+	// threshold), so skip the cast for passives and let the tick loop fire it.
+	if !pdef.IsPassive() {
+		// For a point-target ability targetUnitID is ignored by
+		// RequestAbilityCast (it routes on def.TargetsPoint); req.CastX/CastY
+		// are always passed and are likewise ignored on the unit-target path.
+		ok, reason := s.RequestAbilityCast(previewCasterOwner, casterID, pdef.ID, targetUnitID, req.CastX, req.CastY)
+		if !ok {
+			res.Error = reason
+		}
 	}
 
 	// ── Step ────────────────────────────────────────────────────────────

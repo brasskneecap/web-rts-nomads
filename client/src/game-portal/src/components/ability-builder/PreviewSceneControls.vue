@@ -1,9 +1,10 @@
 <template>
   <SectionCard title="Preview Scene" data-test="preview-scene-controls">
-    <div class="pv-scene__grid">
-      <EditorField label="Enemies" for-id="pv-enemy-count">
+    <div class="pv-scene__row">
+      <EditorField label="Enemies" for-id="pv-enemy-count" inline class="pv-scene__field">
         <input
           id="pv-enemy-count"
+          class="pv-scene__num"
           type="number"
           min="0"
           max="8"
@@ -12,9 +13,10 @@
           @input="onEnemyCountInput"
         />
       </EditorField>
-      <EditorField label="Allies" hint="(pre-damaged, so heals show)" for-id="pv-ally-count">
+      <EditorField label="Allies" for-id="pv-ally-count" inline class="pv-scene__field">
         <input
           id="pv-ally-count"
+          class="pv-scene__num"
           type="number"
           min="0"
           max="8"
@@ -23,24 +25,27 @@
           @input="onAllyCountInput"
         />
       </EditorField>
-    </div>
-
-    <EditorField label="Target" for-id="pv-target">
-      <select id="pv-target" :value="targetSelector" data-test="preview-target-selector" @change="onTargetSelectorChange">
-        <option value="first_enemy">First enemy</option>
-        <option value="first_ally">First ally</option>
-        <option value="self">Self</option>
-        <option value="point">Point</option>
-      </select>
-    </EditorField>
-
-    <div class="pv-scene__grid">
-      <EditorField label="Seed" for-id="pv-seed">
-        <input id="pv-seed" type="number" :value="seed" data-test="preview-seed" @input="onSeedInput" />
+      <EditorField label="Target" for-id="pv-target" inline class="pv-scene__field">
+        <select
+          id="pv-target"
+          class="pv-scene__select"
+          :value="targetSelector"
+          data-test="preview-target-selector"
+          @change="onTargetSelectorChange"
+        >
+          <option value="first_enemy">First enemy</option>
+          <option value="first_ally">First ally</option>
+          <option value="self">Self</option>
+          <option value="point">Point</option>
+        </select>
       </EditorField>
-      <EditorField label="Duration" hint="(seconds)" for-id="pv-duration">
+      <EditorField label="Seed" for-id="pv-seed" inline class="pv-scene__field">
+        <input id="pv-seed" class="pv-scene__num" type="number" :value="seed" data-test="preview-seed" @input="onSeedInput" />
+      </EditorField>
+      <EditorField label="Duration" for-id="pv-duration" inline class="pv-scene__field">
         <input
           id="pv-duration"
+          class="pv-scene__num"
           type="number"
           min="0.1"
           step="0.5"
@@ -49,30 +54,77 @@
           @input="onDurationInput"
         />
       </EditorField>
+      <!-- Only for charge-fire passives (arcane_missiles): seed the caster's
+           Arcane Charge so the passive fires. Prefilled to the ability's own
+           chargeRequired so one volley is ready by default; bump it to test
+           multiple volleys. Hidden for every other ability. -->
+      <EditorField
+        v-if="chargeRequired != null"
+        :label="`Charge`"
+        :hint="`(fires at ${chargeRequired})`"
+        for-id="pv-charge"
+        inline
+        class="pv-scene__field"
+      >
+        <input
+          id="pv-charge"
+          class="pv-scene__num"
+          type="number"
+          min="0"
+          :value="casterCharge"
+          data-test="preview-caster-charge"
+          @input="onCasterChargeInput"
+        />
+      </EditorField>
     </div>
+
+    <p class="pv-scene__hint">
+      Drag units (and the caster) on the preview canvas above to place them. Allies start pre-damaged so heals show.
+    </p>
   </SectionCard>
 </template>
 
 <script setup lang="ts">
-// PreviewSceneControls: a compact, count-based scene editor for the preview
-// panel. Enemies/allies are spread along the x-axis at fixed increments
-// rather than individually placed — good enough to see an ability's effect
-// radius/targeting fan out, not a full scene designer.
-// TODO(phase-6b?): per-unit drag placement on a mini preview canvas, once
-// the preview panel needs finer scene control than "how many, roughly where".
+// PreviewSceneControls: the COUNT/target/seed/duration half of the preview
+// scene editor (Phase 6b). Positions are no longer this component's concern
+// — it used to build a full `units[]` at fixed offsets (see the previous
+// TODO this change resolves), but per-unit placement is now done by
+// DRAGGING units directly on AbilityPreviewCanvas. This component only
+// decides HOW MANY enemies/allies exist and how the cast is aimed; the
+// parent (AbilityPreviewPanel) owns the actual `sceneUnits[]` array and its
+// live positions, reconciling it against `enemyCount`/`allyCount` here
+// on every change (see reconcileSceneUnitCounts in AbilityPreviewPanel.vue)
+// while preserving whatever positions the user already dragged units to.
 import { computed, ref, watch } from 'vue'
 import EditorField from '@/components/editor/EditorField.vue'
 import SectionCard from '@/components/editor/SectionCard.vue'
-import type { PreviewRequest, PreviewSceneUnit } from '@/game/abilities/program/programPreview'
 import { defaultPreviewRequest } from '@/game/abilities/program/programPreview'
-import { PREVIEW_SCENE_ORIGIN } from './previewScene'
 
-// PreviewScene is the subset of PreviewRequest this control owns — the
-// caster's own position (casterX/casterY) and the ability under test are
-// the panel's concern, not the scene's.
-export type PreviewScene = Pick<PreviewRequest, 'units' | 'target' | 'castX' | 'castY' | 'seed' | 'durationSeconds'>
+export type TargetSelector = 'first_enemy' | 'first_ally' | 'self' | 'point'
 
-const emit = defineEmits<{ 'update:modelValue': [scene: PreviewScene] }>()
+// PreviewSceneConfig is everything this control owns: unit COUNTS (not
+// positions — see the module doc comment above), how the cast is aimed, the
+// run's seed/duration, and the caster's seeded Arcane Charge (charge-fire
+// passives only). The panel derives the actual `target`/`castX`/`castY`
+// PreviewRequest fields from `targetSelector` against its own live
+// `sceneUnits`/`casterPos`.
+export interface PreviewSceneConfig {
+  enemyCount: number
+  allyCount: number
+  targetSelector: TargetSelector
+  seed: number
+  durationSeconds: number
+  casterCharge: number
+}
+
+// chargeRequired: the ability-under-preview's own charge threshold, supplied by
+// the panel when (and only when) it's a charge-fire passive. Non-null unlocks
+// the Charge input (prefilled to this value so one volley is ready); null hides
+// it. The emitted casterCharge is still sent regardless — it's simply ignored
+// server-side for any ability that isn't a charge-fire passive.
+const props = defineProps<{ chargeRequired?: number | null }>()
+
+const emit = defineEmits<{ 'update:modelValue': [config: PreviewSceneConfig] }>()
 
 // Seeded from defaultPreviewRequest's own scene (1 enemy, 1 pre-damaged
 // ally, seed 1, 3s) — the ability param it takes is unused by the scene
@@ -81,78 +133,35 @@ const seedDefaults = defaultPreviewRequest({ id: '' })
 
 const enemyCount = ref(seedDefaults.units.filter((u) => u.team === 'enemy').length)
 const allyCount = ref(seedDefaults.units.filter((u) => u.team === 'ally').length)
-type TargetSelector = 'first_enemy' | 'first_ally' | 'self' | 'point'
 const targetSelector = ref<TargetSelector>('first_enemy')
 const seed = ref(seedDefaults.seed)
 const durationSeconds = ref(seedDefaults.durationSeconds)
+const casterCharge = ref(seedDefaults.casterCharge)
 
-// The layout below is authored RELATIVE to the caster (allies at negative X,
-// enemies at positive X); PREVIEW_SCENE_ORIGIN shifts the whole thing onto
-// the map's terrain — see previewScene.ts for why.
-const ENEMY_START_X = PREVIEW_SCENE_ORIGIN.x + 120
-const ENEMY_STEP_X = 40
-const ALLY_START_X = PREVIEW_SCENE_ORIGIN.x - 80
-const ALLY_STEP_X = -40
-const SCENE_Y = PREVIEW_SCENE_ORIGIN.y
-// POINT_CAST: fixed ground point used for the "Point" target selector — not
-// individually configurable in v1 (see the module doc comment's TODO).
-const POINT_CAST = { x: PREVIEW_SCENE_ORIGIN.x + 150, y: PREVIEW_SCENE_ORIGIN.y }
+// Keep casterCharge in lockstep with whether a charge field is even shown:
+// prefill to the ability's own threshold when a charge-fire ability is under
+// preview (so the first Run fires a volley without the author looking the
+// number up), and reset to 0 when it isn't — otherwise the hidden field's stale
+// value would keep riding along in the emitted config after switching to a
+// non-charge ability.
+watch(
+  () => props.chargeRequired,
+  (req) => {
+    casterCharge.value = typeof req === 'number' && req > 0 ? req : 0
+  },
+  { immediate: true },
+)
 
-function buildUnits(): PreviewSceneUnit[] {
-  const enemies: PreviewSceneUnit[] = Array.from({ length: enemyCount.value }, (_, i) => ({
-    team: 'enemy',
-    x: ENEMY_START_X + i * ENEMY_STEP_X,
-    y: SCENE_Y,
-    hp: 200,
-    maxHp: 200,
-  }))
-  const allies: PreviewSceneUnit[] = Array.from({ length: allyCount.value }, (_, i) => ({
-    team: 'ally',
-    x: ALLY_START_X + i * ALLY_STEP_X,
-    y: SCENE_Y,
-    hp: 40,
-    maxHp: 100,
-  }))
-  return [...enemies, ...allies]
-}
+const config = computed<PreviewSceneConfig>(() => ({
+  enemyCount: enemyCount.value,
+  allyCount: allyCount.value,
+  targetSelector: targetSelector.value,
+  seed: seed.value,
+  durationSeconds: durationSeconds.value,
+  casterCharge: casterCharge.value,
+}))
 
-const scene = computed<PreviewScene>(() => {
-  const units = buildUnits()
-  const firstAllyIndex = enemyCount.value // allies are appended after every enemy
-  switch (targetSelector.value) {
-    case 'first_enemy':
-      return enemyCount.value > 0
-        ? { units, target: 0, castX: units[0].x, castY: units[0].y, seed: seed.value, durationSeconds: durationSeconds.value }
-        : { units, target: -1, castX: POINT_CAST.x, castY: POINT_CAST.y, seed: seed.value, durationSeconds: durationSeconds.value }
-    case 'first_ally':
-      return allyCount.value > 0
-        ? {
-            units,
-            target: firstAllyIndex,
-            castX: units[firstAllyIndex].x,
-            castY: units[firstAllyIndex].y,
-            seed: seed.value,
-            durationSeconds: durationSeconds.value,
-          }
-        : { units, target: -1, castX: POINT_CAST.x, castY: POINT_CAST.y, seed: seed.value, durationSeconds: durationSeconds.value }
-    case 'self':
-      // The caster stands at the scene origin (AbilityPreviewPanel spawns it
-      // there), so a self-cast's ground point is the origin — not (0,0).
-      return {
-        units,
-        target: -1,
-        castX: PREVIEW_SCENE_ORIGIN.x,
-        castY: PREVIEW_SCENE_ORIGIN.y,
-        seed: seed.value,
-        durationSeconds: durationSeconds.value,
-      }
-    case 'point':
-    default:
-      return { units, target: -1, castX: POINT_CAST.x, castY: POINT_CAST.y, seed: seed.value, durationSeconds: durationSeconds.value }
-  }
-})
-
-watch(scene, (v) => emit('update:modelValue', v), { immediate: true })
+watch(config, (v) => emit('update:modelValue', v), { immediate: true })
 
 function onEnemyCountInput(e: Event) {
   const n = Number((e.target as HTMLInputElement).value)
@@ -177,12 +186,51 @@ function onDurationInput(e: Event) {
   const n = Number((e.target as HTMLInputElement).value)
   durationSeconds.value = Number.isFinite(n) && n > 0 ? n : 0.1
 }
+
+function onCasterChargeInput(e: Event) {
+  const n = Number((e.target as HTMLInputElement).value)
+  casterCharge.value = Number.isFinite(n) && n >= 0 ? n : 0
+}
 </script>
 
 <style scoped>
-.pv-scene__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+/* All five controls flow in a single wrapping row, each as a compact
+   label-left-of-input pair. flex-wrap keeps them on one row when the rail is
+   wide enough and gracefully drops to a second row when it isn't. */
+.pv-scene__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+/* Override EditorField's inline default (space-between, gap 8) so the label
+   hugs its input and the whole pair sizes to content instead of stretching. */
+.pv-scene__field {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: 5px;
+}
+
+/* Shrink the controls well below the base width:100%. Selectors carry the row
+   class + element + control class so they out-specify editor-controls.css's
+   `.ed-shell input[type='number']` / `.ed-shell select` width:100% rule. */
+.pv-scene__row input.pv-scene__num {
+  width: 46px;
+  min-width: 0;
+  padding-left: 6px;
+  padding-right: 4px;
+}
+
+.pv-scene__row select.pv-scene__select {
+  width: auto;
+  min-width: 92px;
+}
+
+.pv-scene__hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ed-text-dim);
+  font-style: italic;
 }
 </style>

@@ -321,6 +321,25 @@ type dealDamageConfig struct {
 	// Not surfaced in Schema (below) for exactly that reason: an inspector
 	// field for it would advertise a capability this action has never had.
 	Radius float64 `json:"radius,omitempty"`
+	// FlatOffset is a flat, UNFOLDED adjustment added to Amount's fold result
+	// as the LAST step, after both the SpellModifier fold and the
+	// ctx.effectiveDamageMultiplier scaling — i.e. it never itself scales
+	// with the caster's modifiers. Built for chain_lightning's authored
+	// bounce chain (compileChainLightningActions, ability_compile.go):
+	// legacy folds a spell's modifiers exactly ONCE, at cast time, off the
+	// RAW primary damage, then subtracts an UNFOLDED BounceDamageFalloff*hop
+	// from that single folded value for every bounce
+	// (fireProcBeamLocked, projectile.go — `dmg := p.Damage -
+	// p.BounceDamageFalloff*hop`). A bounce hop's deal_damage therefore sets
+	// Amount to the SAME value as the primary hit's (so it folds through the
+	// identical modifiers to the identical base) and FlatOffset to
+	// -(BounceDamageFalloff*hop) — reproducing "subtract a flat amount from
+	// the already-scaled primary hit" instead of "scale a pre-reduced raw
+	// amount" (which diverges from legacy the moment a multiplicative
+	// modifier is active: fold(x-c) != fold(x)-c when mul != 1). 0/absent
+	// (every deal_damage authored before this field existed, and the primary
+	// hit's own dmg action) is a no-op.
+	FlatOffset int `json:"flatOffset,omitempty"`
 }
 
 func (dealDamageConfig) actionConfig() {}
@@ -383,6 +402,14 @@ func init() {
 			if m := ctx.effectiveDamageMultiplier(); m != 1.0 {
 				amount = int(math.Round(float64(amount) * m))
 			}
+			// FlatOffset (see the field's doc comment) applies LAST, after
+			// both scaling steps, and is itself never scaled.
+			amount += c.FlatOffset
+			// lastAppliedDamage is reset here (start of this Execute) and
+			// accumulated below so a 0-hit run reports 0 rather than leaking a
+			// stale value from a previous action's run on the same ctx -- see
+			// that field's doc comment (ability_exec.go).
+			ctx.lastAppliedDamage = 0
 			hit := make([]int, 0, len(targets))
 			for _, id := range targets {
 				u := s.getUnitByIDLocked(id)
@@ -391,6 +418,7 @@ func init() {
 				}
 				s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", DamageType: dt, SourceAbilityID: ctx.AbilityID})
 				hit = append(hit, id)
+				ctx.lastAppliedDamage += amount
 				ctx.trace("damage_applied", ctx.currentActionPath, map[string]any{"unit": id, "amount": amount, "type": string(dt)})
 			}
 			return hit

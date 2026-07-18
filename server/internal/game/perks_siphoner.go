@@ -2,6 +2,18 @@ package game
 
 import "math"
 
+// siphonLifeAbilityID is the catalog id of the Siphoner's life-drain channel.
+// The Siphoner perks that augment that channel (repurposed_life's mana-on-kill,
+// beam_mastery's range multiplier) are gated to this specific ability by id —
+// deliberately per-ability, so an unrelated future channel a Siphoner might
+// carry doesn't silently inherit these perks (see the doc comments at each gate
+// site). This named constant replaces the literal "siphon_life" that used to be
+// duplicated across the three gate sites (channelRangeMultiplierForCasterLocked,
+// clearChannelStateLocked, onSiphonVictimDeathLocked): a rename is now one edit
+// and every gate is greppable. If a second siphon-style channel is ever added,
+// generalize the gates here rather than adding a second literal.
+const siphonLifeAbilityID = "siphon_life"
+
 // ═════════════════════════════════════════════════════════════════════════════
 // SIPHONER PERKS
 //
@@ -1525,7 +1537,7 @@ func (s *GameState) onSiphonVictimDeathLocked(victim *Unit) {
 		if u == nil || u.HP <= 0 {
 			continue
 		}
-		if u.ChannelAbilityID != "siphon_life" || u.ChannelTargetID != victim.ID {
+		if u.ChannelAbilityID != siphonLifeAbilityID || u.ChannelTargetID != victim.ID {
 			continue
 		}
 		if !containsString(u.PerkIDs, "repurposed_life") {

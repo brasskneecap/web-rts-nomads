@@ -3,6 +3,7 @@ package game
 import (
 	"encoding/json"
 	"math"
+	"strconv"
 )
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -125,47 +126,70 @@ func compileCastActions(def AbilityDef) ([]AbilityActionDef, []PresentationInsta
 
 // ── channel (siphon_life) ──────────────────────────────────────────────────
 
-// channelBeamConfig is the compiled config for channel_beam (siphon_life's
-// composable migration). ActionChannelBeam has a registered ActionDescriptor
-// (ability_exec_channel.go): its Execute delegates to the SAME seam the
-// legacy channel-start path uses (startChannelLocked — see
-// ability_channel.go's file doc comment), so every field the channel
-// lifecycle reads off an AbilityDef (via channelSpecFor) must be baked in
-// here rather than read back off a def at execute time — a converted
-// (schemaVersion 2) ability has its legacy mechanic fields cleared (see
-// ConvertLegacyAbility), so Config is this action's ONLY source of truth for
-// them once that conversion happens. ChannelType round-trips too (mirroring
-// chargeFireVolleyConfig's Targeting field): describeAbility's
-// abilityMechanicsShadow recovery needs it to restore the shadow def's
-// ChannelType so describeLegacyAbility's dispatch switch still selects
-// describeChannelAbility — see ability_describe.go.
-type channelBeamConfig struct {
-	ChannelType         string  `json:"channelType"`
-	TickIntervalSeconds float64 `json:"tickIntervalSeconds"`
-	ManaCostPerTick     int     `json:"manaCostPerTick,omitempty"`
-	DamagePerTick       int     `json:"damagePerTick,omitempty"`
-	HealingMultiplier   float64 `json:"healingMultiplier,omitempty"`
-	AllyHealRadius      float64 `json:"allyHealRadius,omitempty"`
-}
-
-// compileChannelBeamAction builds the single channel_beam action for a
-// channel-type def (siphon_life's shape). Carries its own Target query
-// (SrcInitialTarget, matching compileProjectileActions' single-target cast
-// precedent) rather than a preceding select_targets action.
+// compileChannelBeamAction builds the single channeled beam action for a
+// channel-type def (siphon_life's shape): a beam action with Channeled=true.
+// Carries its own Target query (SrcInitialTarget, matching
+// compileProjectileActions' single-target cast precedent) rather than a
+// preceding select_targets action.
+//
+// Every field the channel lifecycle reads off an AbilityDef (via channelSpecFor)
+// is baked into the config, because a converted (schemaVersion 2) ability has
+// its legacy mechanic fields cleared (ConvertLegacyAbility) — Config is the
+// only source of truth once converted. ChannelType round-trips so
+// describeAbility's abilityMechanicsShadow recovery can restore the shadow
+// def's ChannelType (ability_describe.go).
+//
+// cfg.Triggers additionally carries the on_beam_tick trigger
+// (compileChannelBeamTickTrigger below): the authored per-tick DAMAGE step
+// tickUnitChannelLocked fires every channel tick, so damage runs through the
+// real deal_damage action (fold via ctx.damageEffectivenessMultiplier) instead
+// of a hardcoded computation. The channel LIFECYCLE (start/stop/mana/heal
+// distribution/perks) stays in Go, reading the magnitudes via channelSpecFor.
 func compileChannelBeamAction(def AbilityDef) AbilityActionDef {
-	cfg := channelBeamConfig{
+	cfg := beamConfig{
+		Channeled:           true,
 		ChannelType:         def.ChannelType,
 		TickIntervalSeconds: def.TickIntervalSeconds,
 		ManaCostPerTick:     def.ManaCostPerTick,
 		DamagePerTick:       def.DamagePerTick,
 		HealingMultiplier:   def.HealingMultiplier,
 		AllyHealRadius:      def.AllyHealRadius,
+		Triggers:            []AbilityTriggerDef{compileChannelBeamTickTrigger(def)},
 	}
 	return AbilityActionDef{
 		ID:     "channel",
-		Type:   ActionChannelBeam,
+		Type:   ActionBeam,
 		Target: &TargetQueryDef{Source: SrcInitialTarget},
 		Config: marshalConfig(cfg),
+	}
+}
+
+// compileChannelBeamTickTrigger builds the on_beam_tick trigger fired once
+// per channel tick: a single deal_damage action for def.DamagePerTick against
+// the channel's one target. Targets via SrcInitialTarget -- the per-tick
+// RuntimeAbilityContext tickUnitChannelLocked builds sets InitialTarget to
+// the channel's (re-resolved, already-validated) target every tick, mirroring
+// beginAbilityChannelLocked's own ctx build (ability_channel.go) -- so this
+// needs no preceding select_targets action, same as channel_beam's own
+// Target query above.
+//
+// The channel LIFECYCLE (mana cost, heal distribution, all four Siphoner
+// perk hooks) intentionally stays out of this trigger and out of the
+// composable executor entirely -- see tickUnitChannelLocked's doc comment
+// for why: they all read tickDamage (this action's applied amount, via
+// ctx.lastAppliedDamage) as an INPUT, not as an authored program step.
+func compileChannelBeamTickTrigger(def AbilityDef) AbilityTriggerDef {
+	return AbilityTriggerDef{
+		ID:   "beam_tick",
+		Type: TriggerOnBeamTick,
+		Actions: []AbilityActionDef{
+			{
+				ID:     "dmg",
+				Type:   ActionDealDamage,
+				Target: &TargetQueryDef{Source: SrcInitialTarget},
+				Config: marshalConfig(dealDamageConfig{Amount: def.DamagePerTick, Type: def.DamageType}),
+			},
+		},
 	}
 }
 
@@ -333,13 +357,9 @@ func compileOffensiveActions(def AbilityDef) ([]AbilityActionDef, []Presentation
 // on_action_complete; it fires only when the spawned Projectile actually
 // lands — see fireProjectileImpactLocked, projectile.go).
 //
-// chain_lightning is the ONE exception, kept exactly as it was before this
-// redesign: its bounce is not a projectile delivery at all — it resolves the
-// whole beam-bounce chain inline via fireAbilityChainLocked at fire time
-// (chain_lightning never spawns a Projectile). Amount/Type/ChainCount/
-// BounceRange/BounceDamageFalloff/MinorDamage stay baked here and keep
-// delegating unchanged, gated on ChainCount > 0 — see
-// ability_exec_projectile.go's Execute.
+// chain_lightning never reaches this config at all: its bounce is not a
+// projectile delivery, so it compiles onto a fully authored chain of nested
+// launch_beam actions instead — see compileChainLightningActions below.
 type launchProjectileConfig struct {
 	Projectile string `json:"projectile"`
 	// TravelMode selects how the bolt gets from launch to impact:
@@ -392,14 +412,6 @@ type launchProjectileConfig struct {
 	// actually offers, and why the rest are deliberately withheld.
 	SpawnOrigin TargetOrigin `json:"spawnOrigin,omitempty"`
 
-	// ── chain_lightning's kept shim (see the type doc comment above) ──
-	Amount              int        `json:"amount,omitempty"`
-	Type                DamageType `json:"type,omitempty"`
-	MinorDamage         bool       `json:"minorDamage,omitempty"`
-	ChainCount          int        `json:"chainCount,omitempty"`
-	BounceRange         float64    `json:"bounceRange,omitempty"`
-	BounceDamageFalloff int        `json:"bounceDamageFalloff,omitempty"`
-
 	// ── arcane_orb's ticking-vortex shim (retired launch_vortex's fields) ──
 	// TickInterval > 0 selects the vortex shape: a "direction" travelMode
 	// bolt that NEVER fires on_projectile_impact (it flies its full Distance
@@ -439,9 +451,9 @@ type launchProjectileConfig struct {
 	// Triggers carries the compiled on_projectile_impact trigger(s), OR (for
 	// the TickInterval>0 vortex shape) the on_projectile_tick trigger shown
 	// in the flow view — this action's nested-trigger slot. Populated for
-	// every non-chain composable projectile (arcane_bolt/fireball's migrated
-	// shape, and arcane_orb's vortex shape); empty for the chain_lightning
-	// shim (its "impact" is the inline beam chain, not a nested trigger).
+	// every composable projectile compiled through this config (arcane_bolt/
+	// fireball's migrated shape, and arcane_orb's vortex shape). chain_lightning
+	// never reaches this config at all (see the type doc comment above).
 	Triggers []AbilityTriggerDef `json:"triggers,omitempty"`
 }
 
@@ -458,24 +470,19 @@ const projectileImpactTriggerID = "impact"
 // still alive" guard (the query's default AliveState excludes HP<=0), mirroring
 // legacy's `eff.Damage > 0 && target.HP > 0` gate in resolveAbilityCastOnTargetLocked.
 //
-// chain_lightning (ChainCount > 0) keeps the pre-redesign baked-amount shim
-// untouched — see launchProjectileConfig's doc comment. Every other
-// projectile ability (arcane_bolt/fireball) gets its damage (+ splash)
-// composed into a nested on_projectile_impact trigger instead.
+// chain_lightning (ChainCount > 0) is compiled onto a fully authored chain of
+// nested launch_beam actions — see compileChainLightningActions — rather
+// than the launchProjectileConfig baked-amount shim it used to keep here.
+// Every other projectile ability (arcane_bolt/fireball) gets its damage
+// (+ splash) composed into a nested on_projectile_impact trigger instead.
 func compileProjectileActions(def AbilityDef) []AbilityActionDef {
+	if def.ChainCount > 0 {
+		return compileChainLightningActions(def)
+	}
 	cfg := launchProjectileConfig{
 		Projectile:      def.Projectile,
 		ProjectileScale: def.ProjectileScale,
-	}
-	if def.ChainCount > 0 {
-		cfg.Amount = def.DamageAmount
-		cfg.Type = def.DamageType
-		cfg.MinorDamage = def.MinorDamage
-		cfg.ChainCount = def.ChainCount
-		cfg.BounceRange = def.BounceRange
-		cfg.BounceDamageFalloff = def.BounceDamageFalloff
-	} else {
-		cfg.Triggers = []AbilityTriggerDef{compileProjectileImpactTrigger(def)}
+		Triggers:        []AbilityTriggerDef{compileProjectileImpactTrigger(def)},
 	}
 	return []AbilityActionDef{{
 		ID:     "proj",
@@ -483,6 +490,138 @@ func compileProjectileActions(def AbilityDef) []AbilityActionDef {
 		Target: &TargetQueryDef{Source: SrcInitialTarget},
 		Config: marshalConfig(cfg),
 	}}
+}
+
+// chainLightningHitSetKey names the ctxUnitSet (ctx.Named) that
+// compileChainLightningActions' chain accumulates already-struck victims
+// into, across hops, via store_targets(merge:true) — fed to each subsequent
+// hop's select_targets query as ExcludeRef so the chain can never bounce back
+// onto a unit it has already hit (or the caster, via ExcludeSource). Named
+// once here so every level of the recursive builder below uses the exact
+// same key.
+const chainLightningHitSetKey = "hit"
+
+// compileChainLightningActions builds chain_lightning's authored bounce chain
+// as nested launch_beam actions — the composable replacement for the
+// pre-redesign launchProjectileConfig.ChainCount shim (executeChainLightning
+// ShimLocked, ability_exec_projectile.go, which is kept dormant, unused by
+// any compiled program after this change, for a later retirement task).
+//
+// Shape: level k=0 is the primary hit (spawns from the caster, targets
+// ctx.InitialTarget); level k=1..ChainCount is bounce hop k (spawns from the
+// PREVIOUS hop's impact position, targets the single victim its parent's
+// select_targets query resolved). Each level's on_beam_impact trigger deals
+// (DamageAmount - BounceDamageFalloff*k) damage to the unit the beam actually
+// hit (SrcCurrentEvent), then — if a deeper hop would still deal positive
+// damage — records that victim into the shared "hit" set and selects the
+// nearest not-yet-hit enemy within BounceRange of it before recursing into
+// the next level's launch_beam.
+//
+// PARITY WITH LEGACY (fireProcBeamLocked / nearestChainBounceTargetLocked,
+// projectile.go / perks_siphoner.go): legacy folds the caster's spell
+// modifiers into EffectiveSpell.Damage exactly ONCE — at cast time, off the
+// RAW DamageAmount — then subtracts an UNFOLDED BounceDamageFalloff*hop from
+// that single folded value for every hop (dmg := p.Damage - falloff*hop).
+// deal_damage's own Execute (ability_program_registry.go) instead folds its
+// OWN Config.Amount independently, every time it runs, through the identical
+// applySpellModField/effectiveAbilityDamageLocked seam. Folding is additive
+// (+add) then multiplicative (*mul); +add distributes over an integer
+// subtraction exactly (fold(x)-c == fold(x-c) whenever hasMul is false, which
+// covers every additive-only modifier) — but a MULTIPLICATIVE modifier does
+// NOT distribute the same way (fold(x-c) != fold(x)-c when mul != 1), which
+// is exactly what a naive "Amount: DamageAmount - falloff*k" per hop gets
+// wrong under the golden test's own +50%-multiply modified_caster case.
+// RECONCILED via dealDamageConfig.FlatOffset (see its doc comment): every
+// hop's deal_damage sets Amount to the SAME def.DamageAmount as the primary
+// (so it folds through the identical modifiers to the identical base,
+// producing the identical folded P every time) and FlatOffset to the
+// UNFOLDED -(BounceDamageFalloff*k), applied as the very last step after
+// folding — reproducing legacy's "subtract a flat, unscaled amount from the
+// already-scaled primary hit" exactly, instead of "scale a pre-reduced raw
+// amount".
+func compileChainLightningActions(def AbilityDef) []AbilityActionDef {
+	return []AbilityActionDef{compileChainLightningHop(def, 0)}
+}
+
+// compileChainLightningHop builds level k of the chain (0 = primary hit, 1..
+// ChainCount = bounce hops) as a single launch_beam action, recursing into
+// k+1 only while the NEXT hop's damage would still be positive (mirrors
+// legacy's `if dmg <= 0 { break }` — that hop, and every deeper one, is never
+// emitted at all, not merely skipped at runtime). The raw (unfolded)
+// DamageAmount/BounceDamageFalloff arithmetic below decides ONLY which
+// levels get emitted at compile time — it cannot see runtime spell
+// modifiers, so an extreme modifier could in principle make the compiled
+// program's hop count differ from a fresh per-cast recomputation off the
+// folded primary (legacy's own break condition IS runtime-folded). Not
+// exercised by the shipped catalog fixture or the golden test's +50% case;
+// see this task's report for the tradeoff.
+func compileChainLightningHop(def AbilityDef, k int) AbilityActionDef {
+	variant := def.Projectile
+	offset := -def.BounceDamageFalloff * k
+	suffix := strconv.Itoa(k) // every id below must be UNIQUE across the whole
+	// compiled program (AbilityProgramValidate rejects repeats, even across
+	// nesting levels — see the duplicate_id check), so each hop's action/
+	// trigger ids carry their level number rather than reusing "dmg"/"store"/
+	// "select"/"impact" at every depth.
+
+	var query *TargetQueryDef
+	var spawnOrigin TargetOrigin
+	if k == 0 {
+		query = &TargetQueryDef{Source: SrcInitialTarget}
+		// spawnOrigin left "" — launch_beam's own default (caster position),
+		// matching procSourceFromUnit(caster)'s OriginX/Y for the primary hit.
+	} else {
+		query = &TargetQueryDef{Source: SrcPrevActionTargets}
+		spawnOrigin = OriginCurrentEventPos
+	}
+
+	impactActions := []AbilityActionDef{{
+		ID:     "dmg" + suffix,
+		Type:   ActionDealDamage,
+		Target: &TargetQueryDef{Source: SrcCurrentEvent},
+		Config: marshalConfig(dealDamageConfig{Amount: def.DamageAmount, Type: def.DamageType, FlatOffset: offset}),
+	}}
+
+	nextAmount := def.DamageAmount - def.BounceDamageFalloff*(k+1)
+	if k < def.ChainCount && nextAmount > 0 {
+		impactActions = append(impactActions,
+			AbilityActionDef{
+				ID:     "store" + suffix,
+				Type:   ActionStoreTargets,
+				Target: &TargetQueryDef{Source: SrcCurrentEvent},
+				Config: marshalConfig(storeTargetsConfig{As: chainLightningHitSetKey, Merge: true}),
+			},
+			AbilityActionDef{
+				ID:   "select" + suffix,
+				Type: ActionSelectTargets,
+				Target: &TargetQueryDef{
+					Source:        SrcAllInScene,
+					Origin:        OriginCurrentEventPos,
+					Relations:     []TargetRelation{RelEnemy},
+					Radius:        def.BounceRange,
+					Ordering:      OrderClosest,
+					MaxCount:      1,
+					ExcludeSource: true,
+					ExcludeRef:    &ContextRef{Key: chainLightningHitSetKey},
+				},
+			},
+			compileChainLightningHop(def, k+1),
+		)
+	}
+
+	return AbilityActionDef{
+		ID:     "beam" + suffix,
+		Type:   ActionBeam,
+		Target: query,
+		Config: marshalConfig(beamConfig{
+			// Channeled defaults to false — a momentary bounce beam.
+			Variant:     variant,
+			SpawnOrigin: spawnOrigin,
+			Triggers: []AbilityTriggerDef{
+				{ID: "impact" + suffix, Type: TriggerOnBeamImpact, Actions: impactActions},
+			},
+		}),
+	}
 }
 
 // compileProjectileImpactTrigger builds the on_projectile_impact trigger for

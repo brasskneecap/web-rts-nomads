@@ -42,10 +42,10 @@
           :save-disabled="saveDisabled"
           :saved-label="builder.savedLabel.value"
           :error="builder.saveError.value"
-          :remove-label="isNewAbility ? '' : 'Delete / Reset'"
+          :remove-label="removeLabel"
           @update:id="onIdInput"
           @save="builder.save"
-          @remove="builder.remove"
+          @remove="onRemove"
         />
 
         <div class="ab-panel__toolbar">
@@ -79,6 +79,9 @@
             <span>{{ issueSummary }}</span>
             <span v-if="hasErrors" class="ab-panel__validation-blocked">— Save is blocked until fixed</span>
           </div>
+          <span v-if="builder.statusNote.value" class="ab-panel__status-note" data-test="status-note">
+            {{ builder.statusNote.value }}
+          </span>
         </div>
 
         <!-- Tabs sit directly under the header/toolbar, matching the unit and
@@ -118,10 +121,14 @@
     </template>
 
     <!-- ── Inspector: schema-driven fields for the flow-selected trigger/
-         action, in its own column between the flow and the preview. Same
-         editing gate as the rail — nothing to inspect before an ability is
-         open. -->
-    <template v-if="builder.editing.value" #inspector>
+         action, in its own column between the flow and the preview. Only
+         provided when a trigger or action is actually selected — with nothing
+         (or the ability node) selected the bar had nothing but a hint to show,
+         so the whole column is omitted and EditorShell reclaims its width for
+         the flow/preview (see inspectorVisible). Appears the moment a
+         trigger/action is clicked in the flow, and disappears again when the
+         selection returns to the ability node (e.g. switching to Identity). -->
+    <template v-if="inspectorVisible" #inspector>
       <InspectorBar />
     </template>
   </EditorShell>
@@ -182,6 +189,18 @@ const MAIN_TABS: EditorTab[] = [
   { id: 'build', label: 'Build Ability' },
 ]
 
+// inspectorVisible: the inspector column only exists while a trigger or action
+// is selected in the flow. The ability node (and the no-selection case) is
+// handled entirely by the Identity tab, so the bar would otherwise show just a
+// "select a trigger or action" hint taking a whole column — hide it instead and
+// let the flow/preview use that width. Gated implicitly on editing too: nothing
+// is selectable in the flow until an ability is open, so `selected` is only ever
+// trigger/action-shaped while editing.
+const inspectorVisible = computed(() => {
+  const kind = builder.selected.value.kind
+  return kind === 'trigger' || kind === 'action'
+})
+
 // Landing on Identity also selects the ability node. This is the Task 4
 // stale-selection decision: without it, switching tabs after selecting a
 // trigger/action in Build would leave the bottom InspectorBar still showing
@@ -217,6 +236,23 @@ const search = ref('')
 const isNewAbility = computed(() =>
   builder.editing.value && !builder.abilities.value.some((a) => a.id === builder.form.value.id),
 )
+
+// selectedIsCustom reads `custom` off the LOADED CATALOG ENTRY (builder.abilities),
+// not the form — `custom` is read-only, server-computed display metadata and is
+// stripped out of the form on save (see saveRequestFromForm), so the form itself
+// is never a reliable source for it. Mirrors ItemEditorPanel's selectedIsCustom.
+const selectedIsCustom = computed(() =>
+  builder.abilities.value.find((a) => a.id === builder.form.value.id)?.custom === true)
+
+// Deleting an ability you authored and resetting a shipped one to its catalog
+// default are different acts — the button must say which one it is. This is
+// the fix for the misclick incident: the old label was the ambiguous static
+// "Delete / Reset" no matter which case applied. An unsaved draft has nothing
+// to remove, so it shows no button at all.
+const removeLabel = computed(() => {
+  if (!isNewAbility.value) return selectedIsCustom.value ? 'Delete' : 'Reset'
+  return ''
+})
 
 const sidebarGroups = computed<SidebarGroup[]>(() => {
   const q = search.value.trim().toLowerCase()
@@ -310,6 +346,21 @@ const issueSummary = computed(() => {
   if (warnings) parts.push(`${warnings} warning${warnings === 1 ? '' : 's'}`)
   return parts.join(' · ')
 })
+
+// onRemove confirms before the destructive/restorative action fires — the
+// button gave no warning before this fix, which is exactly how uncommitted
+// authored work got permanently lost to a misclick. Wording names the ACTUAL
+// consequence for the case at hand rather than a generic "are you sure?".
+// window.confirm matches confirmDiscard's existing pattern above (the
+// project's established affordance for this kind of guard).
+function onRemove() {
+  const name = builder.form.value.displayName || builder.form.value.id
+  const ok = selectedIsCustom.value
+    ? window.confirm(`Delete the ability "${name}"? This permanently removes it and cannot be undone.`)
+    : window.confirm(`Reset "${name}" to its saved/default state? Your unsaved editor changes to it will be discarded.`)
+  if (!ok) return
+  void builder.remove()
+}
 
 function onIdInput(raw: string) {
   if (!isNewAbility.value) return
@@ -408,6 +459,11 @@ onBeforeUnmount(() => {
 .ab-panel__validation-blocked {
   color: var(--ed-danger);
   font-weight: 600;
+}
+
+.ab-panel__status-note {
+  font-size: 0.76rem;
+  color: var(--ed-ok);
 }
 
 .ab-panel__scroll {

@@ -47,6 +47,14 @@ export interface PreviewRequest {
   target: number
   castX: number
   castY: number
+  /**
+   * Arcane Charge to seed onto the caster before the sim steps. Lets a
+   * charge-fire passive (arcane_missiles — a charge threshold with no castable
+   * action) be previewed: set it at/above the ability's chargeRequired and the
+   * passive auto-fires a volley once a hostile is in range. Ignored by every
+   * other ability. Default 0.
+   */
+  casterCharge: number
   durationSeconds: number
 }
 
@@ -145,6 +153,7 @@ export function defaultPreviewRequest(ability: AuthoredAbilityDef): PreviewReque
     target: 0,
     castX: 120,
     castY: 0,
+    casterCharge: 0,
     durationSeconds: 3,
   }
 }

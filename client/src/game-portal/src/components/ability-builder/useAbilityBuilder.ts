@@ -90,6 +90,11 @@ export function useAbilityBuilder() {
   const saveError = ref('')
   const savedLabel = ref('')
   const warnings = ref<string[]>([])
+  // statusNote: transient feedback after remove() — "deleted" vs "reverted"
+  // vs "reset" are three different outcomes the author needs to see, not
+  // just a generic success/fail (see remove() below and the Items editor's
+  // matching removeOrReset()).
+  const statusNote = ref('')
 
   // ── Undo / redo ────────────────────────────────────────────────────────
   const undoStack = ref<Snapshot[]>([])
@@ -314,6 +319,7 @@ export function useAbilityBuilder() {
     warnings.value = []
     saveError.value = ''
     savedLabel.value = ''
+    statusNote.value = ''
   }
 
   function selectAbility(id: string) {
@@ -402,14 +408,30 @@ export function useAbilityBuilder() {
     }
   }
 
+  // remove() deletes an author-created ability, or undoes the last save on a
+  // shipped one. The server decides which and says so in its status (see
+  // DeleteEditorAbility): `deleted` genuinely removes it (close the editor —
+  // there's nothing left to show); `reverted`/`reset` restore it to an
+  // earlier state, so the ability still exists and must be reloaded back
+  // into the editor rather than closed (closing would read as "gone").
   async function remove() {
-    if (!form.value.id) return
+    const id = form.value.id
+    if (!id) return
     busy.value = true
     saveError.value = ''
+    statusNote.value = ''
     try {
-      await deleteEditorAbility(form.value.id)
+      const status = await deleteEditorAbility(id)
       await reloadAbilities()
-      editing.value = false
+      if (status === 'deleted') {
+        editing.value = false
+        statusNote.value = 'Ability deleted.'
+        return
+      }
+      selectAbility(id) // reload the restored def back into the editor
+      statusNote.value = status === 'reverted'
+        ? 'Reverted to the state before your last save.'
+        : 'Reset to the catalog default.'
     } catch (e) {
       saveError.value = e instanceof EditorValidationError ? e.serverMessage : errorMessage(e)
     } finally {
@@ -436,6 +458,7 @@ export function useAbilityBuilder() {
     saveError,
     savedLabel,
     warnings,
+    statusNote,
     // undo/redo
     canUndo,
     canRedo,

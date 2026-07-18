@@ -52,6 +52,20 @@ type abilityCatalogEntry struct {
 	// non-runnable abilities so authors know the composable view is
 	// incomplete, not broken.
 	Runnable bool `json:"runnable"`
+	// Custom reports whether this id is author-created (true) or ships in the
+	// embedded catalog (false, whether or not it currently has an override
+	// saved over it). This is what lets the client label its destructive
+	// button "Delete" vs "Reset" BEFORE the click, matching the items editor
+	// (ItemDef.Custom, items.go). It lives on this response-only wrapper
+	// rather than on game.AbilityDef itself: unlike ItemDef (whose disk write
+	// path goes through an itemDefDisk shadow type specifically so runtime-
+	// only provenance never reaches the saved file), SaveAbilityDef
+	// json.MarshalIndents the AbilityDef directly — adding Custom to
+	// AbilityDef would mean either introducing that same shadow-type
+	// indirection for abilities or trusting every write path to zero it by
+	// hand first. Keeping it here instead means AbilityDef never carries a
+	// runtime-only field at all, so there is nothing to strip.
+	Custom bool `json:"custom"`
 }
 
 func registerAbilityCatalogRoutes(mux *http.ServeMux) {
@@ -82,6 +96,7 @@ func registerAbilityCatalogRoutes(mux *http.ServeMux) {
 				GeneratedDescription: d.GeneratedDescription(),
 				CompiledProgram:      compiled,
 				Runnable:             game.AbilityProgramRunnable(prog),
+				Custom:               !game.AbilityIsEmbedded(d.ID),
 			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"abilities": entries})

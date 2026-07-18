@@ -895,11 +895,14 @@ describe('addTrigger — nested slot rule', () => {
   // Go descriptor and fired by the object it creates. Put an
   // on_projectile_impact trigger in `children` and it fires when the bolt is
   // LAUNCHED, not when it lands — and the Go decoder never sees it at all.
-  // Mirrors the three Go configs that decode a Triggers field.
+  // Mirrors the four Go configs that decode a Triggers field (beam covers both
+  // its momentary on_beam_impact and channeled on_beam_tick shapes).
   const CONFIG_SLOT: [string, string][] = [
     ['create_zone', 'on_zone_tick'],
     ['apply_status', 'on_status_tick'],
     ['launch_projectile', 'on_projectile_impact'],
+    ['beam', 'on_beam_impact'],
+    ['beam', 'on_beam_tick'],
   ]
 
   it.each(CONFIG_SLOT)('%s nests a new trigger into config.triggers, not children', (actionType, triggerType) => {

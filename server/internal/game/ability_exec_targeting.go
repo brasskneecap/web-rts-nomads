@@ -71,6 +71,36 @@ func (s *GameState) resolveOriginLocked(ctx *RuntimeAbilityContext, origin Targe
 	}
 }
 
+// originUnitForSpawnLocked returns the unit whose sprite a spawned beam should
+// visually lift its endpoint from for the given SpawnOrigin, or 0 when the
+// origin is a pure world position with no single owning unit. It mirrors
+// resolveOriginLocked's origin→position mapping but yields the UNIT id (for the
+// client's origin-lift sprite lookup, Beam.CasterUnitID) rather than the
+// position. This is what makes a chain_lightning bounce read as CONTINUOUS: a
+// bounce hop's launch_beam uses SpawnOrigin=current_event_position, so its
+// visual origin must lift from the PREVIOUS VICTIM's chest — exactly where the
+// incoming bolt terminated — not from the original caster. Matches legacy's
+// spawnMomentaryDamageBeamLocked(cursor.ID) which set CasterUnitID to the
+// previous victim, never the caster.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) originUnitForSpawnLocked(ctx *RuntimeAbilityContext, origin TargetOrigin) int {
+	switch origin {
+	case OriginCurrentEventPos:
+		return ctx.CurrentEventUnitID
+	case OriginInitialTarget, OriginInitialTargetPos:
+		return ctx.InitialTarget
+	case OriginCastPoint, OriginImpactPosition, OriginZoneCenter, OriginProjectilePos:
+		// Pure world positions with no single owning unit — the client falls
+		// back to its default beam anchor offset when the unit id is 0/absent.
+		return 0
+	default:
+		// OriginCaster and every caster-fallback case in resolveOriginLocked
+		// (empty origin, named-context, status/summon-owner not-yet-threaded).
+		return ctx.CasterID
+	}
+}
+
 // candidatePoolIDsLocked gathers the raw (unfiltered) unit-id candidate pool
 // for a TargetQueryDef's Source. Caller holds s.mu.
 //
@@ -216,6 +246,23 @@ func (s *GameState) resolveTargetQueryLocked(ctx *RuntimeAbilityContext, q Targe
 func (s *GameState) applyTargetFiltersLocked(ctx *RuntimeAbilityContext, caster *Unit, candidates []*Unit, q TargetQueryDef) []int {
 	origin := s.resolveOriginLocked(ctx, q.Origin, q.OriginRef)
 
+	// ExcludeRef: drop every candidate whose ID is present in the named
+	// ctxUnitSet at q.ExcludeRef.Key (e.g. a chain's accumulated "already hit"
+	// set). Absent key or a Kind other than ctxUnitSet is a no-op — mirrors
+	// SrcNamedContext's own "wrong kind -> nothing" convention rather than
+	// erroring. Built as a membership map for O(1) lookup; the candidates
+	// slice itself is filtered in its existing order below, so map iteration
+	// order never influences the result.
+	var excludeSet map[int]struct{}
+	if q.ExcludeRef != nil && q.ExcludeRef.Key != "" && ctx.Named != nil {
+		if v, ok := ctx.Named[q.ExcludeRef.Key]; ok && v.Kind == ctxUnitSet {
+			excludeSet = make(map[int]struct{}, len(v.UnitIDs))
+			for _, id := range v.UnitIDs {
+				excludeSet[id] = struct{}{}
+			}
+		}
+	}
+
 	// Resolve the effective radius (handles the match-attack-range sentinel).
 	radiusActive := q.Radius != 0
 	effRadius := q.Radius
@@ -269,6 +316,11 @@ func (s *GameState) applyTargetFiltersLocked(ctx *RuntimeAbilityContext, caster 
 		// unset ctx field as if it names a real unit id).
 		if q.ExcludeCurrentEvent && ctx.CurrentEventUnitID != 0 && u.ID == ctx.CurrentEventUnitID {
 			return false
+		}
+		if excludeSet != nil {
+			if _, dropped := excludeSet[u.ID]; dropped {
+				return false
+			}
 		}
 		return true
 	}

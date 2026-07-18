@@ -24,6 +24,14 @@ export interface AuthoredAbilityDef {
   // the action registry. Sent by GET /catalog/abilities. NEVER persisted —
   // stripped in saveRequestFromForm.
   runnable?: boolean
+  // custom: READ-ONLY, server-computed flag — true when the author CREATED
+  // this ability (it does not ship in the embedded catalog), false when it's
+  // a shipped ability the author has an override for. Drives whether the
+  // editor's remove button reads "Delete" (permanent) or "Reset" (restores
+  // the shipped default) — see AbilityBuilderPanel's removeLabel. Sent by
+  // GET /catalog/abilities. NEVER persisted — stripped in saveRequestFromForm,
+  // same as generatedDescription/compiledProgram/runnable.
+  custom?: boolean
   // description: OPTIONAL author override of the tooltip prose. Empty ⇒ the
   // generated text (see generatedDescription) is used at runtime. Persisted.
   description?: string
@@ -110,7 +118,7 @@ export type AbilityFamily = 'basic' | 'channel' | 'charge' | 'meteor' | 'archmag
 // in the form's `remainder`.
 const MODELED_KEYS = [
   'id','displayName','description','generatedDescription',
-  'schemaVersion','program','compiledProgram','runnable',
+  'schemaVersion','program','compiledProgram','runnable','custom',
   'type','canTargetSelf','canTargetAllies','canTargetEnemies',
   'targetsPoint','castRange','castTime','manaCost','cooldown','damageType','tags',
   'category','targetCount','supportsAutoCast','autoCastTargetSelector','defaultAutoCast',
@@ -149,13 +157,14 @@ export function saveRequestFromForm(form: AbilityEditorForm): AuthoredAbilityDef
     if (v === undefined) continue
     out[k] = v
   }
-  // generatedDescription / compiledProgram / runnable are server-computed
-  // display metadata, never authored — they must not be persisted back (the
-  // server's AbilityDef has no such fields and would ignore them anyway, but
-  // stripping keeps the saved JSON clean).
+  // generatedDescription / compiledProgram / runnable / custom are
+  // server-computed display metadata, never authored — they must not be
+  // persisted back (the server's AbilityDef has no such fields and would
+  // ignore them anyway, but stripping keeps the saved JSON clean).
   delete out.generatedDescription
   delete out.compiledProgram
   delete out.runnable
+  delete out.custom
   return out as AuthoredAbilityDef
 }
 

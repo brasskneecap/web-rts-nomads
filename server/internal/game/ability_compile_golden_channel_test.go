@@ -97,10 +97,56 @@ func TestAbilityCompileGolden_SiphonLife(t *testing.T) {
 	// Drive well past the mana budget (50 ticks) so damage/heal/mana-decay
 	// fire repeatedly AND the mana-exhaustion stop path (castFailNotEnoughMana,
 	// beam despawn) is exercised on both legs.
+	//
+	// Per-tick capture: dt == interval so each Update call fires AT MOST one
+	// channel tick (see channelMaxTicksPerUpdate), letting a single before/
+	// after HP+mana snapshot around each call stand in as "this tick's"
+	// damage/heal/mana-spend. Comparing the two legs' PER-TICK sequences
+	// (not just the final cumulative state) is what actually proves the
+	// on_beam_tick/deal_damage authored path folds
+	// mods.DamageMult/ctx.damageEffectivenessMultiplier identically to the
+	// legacy inline `round(DamagePerTick * mods.DamageMult)` computation on
+	// every single tick, including the exact tick the channel runs out of
+	// mana and stops — not merely that the two 70-tick runs happen to land
+	// on the same total by coincidence.
 	interval := legacyDef.TickIntervalSeconds
+	type channelTickSample struct {
+		targetDamage    int
+		casterHeal      int
+		casterManaSpent int
+	}
+	var legacySamples, execSamples []channelTickSample
 	for i := 0; i < 70; i++ {
+		beforeTargetHPL, beforeCasterHPL, beforeManaL := targetL.HP, casterL.HP, casterL.CurrentMana
 		sLegacy.Update(interval)
+		legacySamples = append(legacySamples, channelTickSample{
+			targetDamage:    beforeTargetHPL - targetL.HP,
+			casterHeal:      casterL.HP - beforeCasterHPL,
+			casterManaSpent: beforeManaL - casterL.CurrentMana,
+		})
+
+		beforeTargetHPE, beforeCasterHPE, beforeManaE := targetE.HP, casterE.HP, casterE.CurrentMana
 		sExec.Update(interval)
+		execSamples = append(execSamples, channelTickSample{
+			targetDamage:    beforeTargetHPE - targetE.HP,
+			casterHeal:      casterE.HP - beforeCasterHPE,
+			casterManaSpent: beforeManaE - casterE.CurrentMana,
+		})
+	}
+
+	// Same tick COUNT (channel duration) and, tick-by-tick, the exact same
+	// damage/heal/mana-drain — no aggregate can hide a divergence on any one
+	// tick (e.g. a fold applied twice, or not at all, would still land on a
+	// different final HP most of the time, but a per-tick mismatch that
+	// happens to net out to the same total over 70 ticks could otherwise
+	// slip through).
+	if len(legacySamples) != len(execSamples) {
+		t.Fatalf("tick-count mismatch: legacy=%d exec=%d", len(legacySamples), len(execSamples))
+	}
+	for i := range legacySamples {
+		if legacySamples[i] != execSamples[i] {
+			t.Errorf("tick %d mismatch: legacy=%+v exec=%+v", i, legacySamples[i], execSamples[i])
+		}
 	}
 
 	sLegacy.mu.Lock()

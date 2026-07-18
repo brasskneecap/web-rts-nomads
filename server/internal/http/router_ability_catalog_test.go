@@ -20,6 +20,7 @@ type catalogAbilityEntry struct {
 	CompiledProgram      json.RawMessage `json:"compiledProgram"`
 	Runnable             bool            `json:"runnable"`
 	GeneratedDescription string          `json:"generatedDescription"`
+	Custom               bool            `json:"custom"`
 }
 
 // TestCatalogAbilitiesCompiledProgram covers Phase 5a Task 4: GET
@@ -146,5 +147,78 @@ func TestCatalogAbilitiesCompiledProgram(t *testing.T) {
 	}
 	if raiseSkeleton.GeneratedDescription == "" {
 		t.Fatalf("raise_skeleton generatedDescription is empty; regression in existing field")
+	}
+}
+
+// TestCatalogAbilitiesCustomFlag covers the provenance flag GET
+// /catalog/abilities exposes so the editor can label its destructive button
+// "Delete" vs "Reset" before the click (see abilityCatalogEntry.Custom):
+// true for an author-created id, false for a shipped catalog id (whether or
+// not it currently has an override saved over it). Seeded the same way as
+// TestCatalogAbilitiesCompiledProgram's scratch legacy ability.
+func TestCatalogAbilitiesCustomFlag(t *testing.T) {
+	t.Setenv("ABILITY_CATALOG_DIR", t.TempDir())
+	mux := http.NewServeMux()
+	registerAbilityCatalogRoutes(mux)
+	registerEditorRoutes(mux)
+
+	seedBody := `{"ability":{"id":"catalog_test_custom_bolt","damageAmount":5}}`
+	seed := httptest.NewRequest(http.MethodPost, "/abilities", strings.NewReader(seedBody))
+	seedRec := httptest.NewRecorder()
+	mux.ServeHTTP(seedRec, seed)
+	if seedRec.Code != http.StatusCreated {
+		t.Fatalf("seed status: %d %s", seedRec.Code, seedRec.Body.String())
+	}
+
+	// Also override a shipped ability, to prove Custom stays false even for
+	// an embedded id that currently has an editor override on top of it.
+	overrideBody := `{"ability":{"id":"fireball","displayName":"Overridden Fireball"}}`
+	override := httptest.NewRequest(http.MethodPost, "/abilities", strings.NewReader(overrideBody))
+	overrideRec := httptest.NewRecorder()
+	mux.ServeHTTP(overrideRec, override)
+	if overrideRec.Code != http.StatusCreated {
+		t.Fatalf("override status: %d %s", overrideRec.Code, overrideRec.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/catalog/abilities", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /catalog/abilities status = %d, want 200", rec.Code)
+	}
+
+	var body struct {
+		Abilities []catalogAbilityEntry `json:"abilities"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
+	byID := make(map[string]catalogAbilityEntry, len(body.Abilities))
+	for _, e := range body.Abilities {
+		byID[e.ID] = e
+	}
+
+	authored, ok := byID["catalog_test_custom_bolt"]
+	if !ok {
+		t.Fatalf("catalog missing seeded scratch ability %q", "catalog_test_custom_bolt")
+	}
+	if !authored.Custom {
+		t.Errorf("catalog_test_custom_bolt custom = false, want true (author-created)")
+	}
+
+	shipped, ok := byID["fireball"]
+	if !ok {
+		t.Fatalf("catalog missing %q", "fireball")
+	}
+	if shipped.Custom {
+		t.Errorf("fireball custom = true, want false (shipped, even with an override on top)")
+	}
+
+	arcaneOrb, ok := byID["arcane_orb"]
+	if !ok {
+		t.Fatalf("catalog missing %q", "arcane_orb")
+	}
+	if arcaneOrb.Custom {
+		t.Errorf("arcane_orb custom = true, want false (shipped)")
 	}
 }

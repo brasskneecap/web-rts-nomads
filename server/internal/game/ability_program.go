@@ -43,6 +43,16 @@ const (
 	// an impact-shaped "direction" bolt) — a ticking bolt never fires impact
 	// at all.
 	TriggerOnProjectileTick TriggerType = "on_projectile_tick"
+	// TriggerOnBeamImpact fires once, a beat after a launch_beam action spawns
+	// a momentary beam — the beam analogue of TriggerOnProjectileImpact. See
+	// launchBeamConfig's doc comment (ability_exec_beam.go) and
+	// fireBeamImpactLocked (beam.go) for the exact firing mechanics.
+	TriggerOnBeamImpact TriggerType = "on_beam_impact"
+	// TriggerOnBeamTick is reserved for a future channeling/ticking beam shape
+	// (Task 3 of the composable-beam plan); not fired by anything in this
+	// task. Declared now alongside TriggerOnBeamImpact so both beam trigger
+	// types exist together rather than trickling in one at a time.
+	TriggerOnBeamTick       TriggerType = "on_beam_tick"
 	TriggerOnZoneTick       TriggerType = "on_zone_tick"
 	TriggerOnZoneEnter      TriggerType = "on_zone_enter"
 	TriggerOnZoneExit       TriggerType = "on_zone_exit"
@@ -76,6 +86,20 @@ const (
 	// lock, no impact hit — it just never fires on_projectile_impact and
 	// instead fires on_projectile_tick repeatedly while airborne).
 	ActionLaunchProjectile ActionType = "launch_projectile"
+	// ActionBeam spawns a beam between the caster (or a spawn origin) and a
+	// resolved target. Its `channeled` config toggle selects one of two shapes:
+	//   - Momentary (channeled=false): an instantaneous Beam visual that, a beat
+	//     later (impactDelaySeconds), runs a nested on_beam_impact trigger —
+	//     mirroring launch_projectile's on_projectile_impact seam. chain_lightning.
+	//   - Channeled (channeled=true): hands off to the multi-tick channel
+	//     lifecycle (ability_channel.go, startChannelLocked), persisting across
+	//     many future ticks driven by Unit.Channel* state and running a nested
+	//     on_beam_tick trigger each tick. siphon_life.
+	// A channeled beam is ONLY valid as the channel-start action of a root
+	// on_cast_complete trigger (channels can only START from the cast-begin
+	// gating path — see ability_channel.go's "THE ORDERING DECISION"); the
+	// validator rejects it anywhere else. See beamConfig (ability_exec_beam.go).
+	ActionBeam ActionType = "beam"
 	// ActionChargeFireVolley enqueues the staggered volley of a charge-fire
 	// passive's on_charge_full trigger (arcane_missiles). Kept distinct from
 	// every other action rather than folded into an existing one: its identity
@@ -85,18 +109,7 @@ const (
 	// no direct damage application, and its own trigger type (on_charge_full)
 	// is unlike every cast-driven/zone-tick-driven action — see
 	// spell_charge.go's file doc comment for the full design rationale.
-	ActionChargeFireVolley ActionType = "charge_fire_volley"
-	// ActionChannelBeam starts a channeled beam (siphon_life's per-tick
-	// drain/heal loop). Kept distinct from every other action rather than
-	// folded into an existing one: its identity is "given a validated
-	// caster+target, hand off to the multi-tick channel lifecycle
-	// (ability_channel.go) instead of resolving once" — unlike deal_damage/
-	// restore_health it has no single amount to apply, and unlike
-	// launch_projectile/launch_vortex it persists across many future ticks
-	// driven entirely by Unit.Channel* state, not by this action itself —
-	// see ability_exec_channel.go's file doc comment for the full design
-	// rationale.
-	ActionChannelBeam       ActionType = "channel_beam"
+	ActionChargeFireVolley  ActionType = "charge_fire_volley"
 	ActionSummonUnit        ActionType = "summon_unit"
 	ActionMoveUnit          ActionType = "move_unit"
 	ActionApplyForce        ActionType = "apply_force"
@@ -415,9 +428,13 @@ type TargetQueryDef struct {
 	// trigger actually bound a current-event unit (ctx.CurrentEventUnitID !=
 	// 0, e.g. on_projectile_impact/on_zone_enter/on_zone_exit); a query run
 	// from a context with no bound current-event unit is unaffected.
-	ExcludeCurrentEvent bool   `json:"excludeCurrentEvent,omitempty"`
-	RequireLineOfSight  bool   `json:"requireLineOfSight,omitempty"`
-	AliveState          string `json:"aliveState,omitempty"`
+	ExcludeCurrentEvent bool `json:"excludeCurrentEvent,omitempty"`
+	// ExcludeRef drops every unit whose ID is present in the named ctxUnitSet
+	// ExcludeRef.Key — e.g. a chain that must not re-hit already-struck
+	// victims. No-op when the key is absent or not a unit-set.
+	ExcludeRef         *ContextRef `json:"excludeRef,omitempty"`
+	RequireLineOfSight bool        `json:"requireLineOfSight,omitempty"`
+	AliveState         string      `json:"aliveState,omitempty"`
 }
 
 // TargetFilter is a placeholder for a richer unit/object filter (defined further

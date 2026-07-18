@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"webrts/server/pkg/protocol"
 )
 
 // ── store_targets ────────────────────────────────────────────────────────
@@ -46,6 +48,120 @@ func TestActionStoreTargets_BindsSelectionUnderNamedKey(t *testing.T) {
 	}
 	if !traceHas(tr, "targets_stored") {
 		t.Fatalf("missing targets_stored trace event: %+v", tr.Events)
+	}
+}
+
+// TestActionStoreTargets_Merge_UnionsAcrossHopsDedupedInOrder proves the
+// chain-lightning accumulator primitive: two successive store_targets
+// actions with Merge:true against the same key must union their incoming
+// target ids (existing-then-new, deduped, deterministic order) rather than
+// replacing the stored set each time. Hop 1's query (origin: caster) and
+// hop 2's query (origin: current_event_position, set far away) are
+// deliberately DISJOINT — e1 is only reachable from hop 1, e2/e3 only from
+// hop 2 — so a wrongly-disabled/replaced merge is distinguishable from a
+// real union (a bug that silently replaced would drop e1).
+func TestActionStoreTargets_Merge_UnionsAcrossHopsDedupedInOrder(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	e1 := teamCombatUnit(t, s, "p2", 10, 0)
+	e2 := teamCombatUnit(t, s, "p2", 500, 0)
+	e3 := teamCombatUnit(t, s, "p2", 510, 0)
+
+	prog := &AbilityProgram{
+		Triggers: []AbilityTriggerDef{{
+			ID:   "t",
+			Type: TriggerOnCastComplete,
+			Actions: []AbilityActionDef{
+				// Hop 1: select e1 only (radius 50 around caster), merge into "visited".
+				{ID: "sel1", Type: ActionSelectTargets,
+					Target: &TargetQueryDef{Source: SrcAllInScene, Origin: OriginCaster,
+						Relations: []TargetRelation{RelEnemy}, Radius: 50, Ordering: OrderUnitID}},
+				{ID: "store1", Type: ActionStoreTargets, Config: json.RawMessage(`{"as":"visited","merge":true}`)},
+				// Hop 2: select e2+e3 only (radius 50 around the current-event
+				// position, far from caster/e1), merge again.
+				{ID: "sel2", Type: ActionSelectTargets,
+					Target: &TargetQueryDef{Source: SrcAllInScene, Origin: OriginCurrentEventPos,
+						Relations: []TargetRelation{RelEnemy}, Radius: 50, Ordering: OrderUnitID}},
+				{ID: "store2", Type: ActionStoreTargets, Config: json.RawMessage(`{"as":"visited","merge":true}`)},
+			},
+		}},
+	}
+	tr := &AbilityExecutionTrace{}
+	ctx := &RuntimeAbilityContext{
+		CasterID:      caster.ID,
+		Named:         map[string]ContextValue{},
+		Trace:         tr,
+		EventPosition: protocol.Vec2{X: 505, Y: 0}, // near e2/e3, far from e1
+	}
+	s.runProgramTriggersLocked(ctx, prog.Triggers, TriggerOnCastComplete)
+
+	v, ok := ctx.Named["visited"]
+	if !ok {
+		t.Fatalf("ctx.Named[%q] missing; want the merged set stored", "visited")
+	}
+	want := []int{e1.ID, e2.ID, e3.ID}
+	if len(v.UnitIDs) != len(want) {
+		t.Fatalf("stored UnitIDs = %v; want %v (existing-then-new, deduped)", v.UnitIDs, want)
+	}
+	for i, id := range want {
+		if v.UnitIDs[i] != id {
+			t.Fatalf("stored UnitIDs = %v; want %v (order matters: existing e1 then new e2,e3)", v.UnitIDs, want)
+		}
+	}
+}
+
+// TestActionStoreTargets_MergeFalse_StillReplaces guards the default
+// behavior: Merge left false (or explicitly false) must behave exactly like
+// before this primitive existed — replace, not union. Uses the same disjoint
+// hop 1/hop 2 target sets as the merge test above, so a REPLACE result
+// ([e2,e3], e1 dropped) is distinguishable from a (wrong) UNION result
+// ([e1,e2,e3]).
+func TestActionStoreTargets_MergeFalse_StillReplaces(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	_ = teamCombatUnit(t, s, "p2", 10, 0) // e1: must NOT survive into the final replace
+	e2 := teamCombatUnit(t, s, "p2", 500, 0)
+	e3 := teamCombatUnit(t, s, "p2", 510, 0)
+
+	prog := &AbilityProgram{
+		Triggers: []AbilityTriggerDef{{
+			ID:   "t",
+			Type: TriggerOnCastComplete,
+			Actions: []AbilityActionDef{
+				{ID: "sel1", Type: ActionSelectTargets,
+					Target: &TargetQueryDef{Source: SrcAllInScene, Origin: OriginCaster,
+						Relations: []TargetRelation{RelEnemy}, Radius: 50, Ordering: OrderUnitID}},
+				{ID: "store1", Type: ActionStoreTargets, Config: json.RawMessage(`{"as":"visited"}`)},
+				{ID: "sel2", Type: ActionSelectTargets,
+					Target: &TargetQueryDef{Source: SrcAllInScene, Origin: OriginCurrentEventPos,
+						Relations: []TargetRelation{RelEnemy}, Radius: 50, Ordering: OrderUnitID}},
+				{ID: "store2", Type: ActionStoreTargets, Config: json.RawMessage(`{"as":"visited"}`)},
+			},
+		}},
+	}
+	ctx := &RuntimeAbilityContext{
+		CasterID:      caster.ID,
+		Named:         map[string]ContextValue{},
+		EventPosition: protocol.Vec2{X: 505, Y: 0},
+	}
+	s.runProgramTriggersLocked(ctx, prog.Triggers, TriggerOnCastComplete)
+
+	v, ok := ctx.Named["visited"]
+	if !ok {
+		t.Fatalf("ctx.Named[%q] missing", "visited")
+	}
+	want := []int{e2.ID, e3.ID}
+	if len(v.UnitIDs) != len(want) {
+		t.Fatalf("stored UnitIDs = %v; want %v (second store_targets REPLACED, not merged)", v.UnitIDs, want)
+	}
+	for i, id := range want {
+		if v.UnitIDs[i] != id {
+			t.Fatalf("stored UnitIDs = %v; want %v", v.UnitIDs, want)
+		}
 	}
 }
 

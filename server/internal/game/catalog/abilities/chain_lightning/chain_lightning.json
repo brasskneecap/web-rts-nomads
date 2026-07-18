@@ -33,18 +33,152 @@
         "type": "on_cast_complete",
         "actions": [
           {
-            "id": "proj",
-            "type": "launch_projectile",
+            "id": "beam0",
+            "type": "beam",
             "target": {
               "source": "initial_target"
             },
             "config": {
-              "projectile": "lightning_bolt",
-              "amount": 65,
-              "type": "lightning",
-              "chainCount": 2,
-              "bounceRange": 220,
-              "bounceDamageFalloff": 5
+              "variant": "lightning_bolt",
+              "triggers": [
+                {
+                  "id": "impact0",
+                  "type": "on_beam_impact",
+                  "actions": [
+                    {
+                      "id": "dmg0",
+                      "type": "deal_damage",
+                      "target": {
+                        "source": "current_event"
+                      },
+                      "config": {
+                        "amount": 65,
+                        "type": "lightning"
+                      }
+                    },
+                    {
+                      "id": "store0",
+                      "type": "store_targets",
+                      "target": {
+                        "source": "current_event"
+                      },
+                      "config": {
+                        "as": "hit",
+                        "merge": true
+                      }
+                    },
+                    {
+                      "id": "select0",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "origin": "current_event_position",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radius": 220,
+                        "maxCount": 1,
+                        "ordering": "closest",
+                        "excludeSource": true,
+                        "excludeRef": {
+                          "key": "hit"
+                        }
+                      }
+                    },
+                    {
+                      "id": "beam1",
+                      "type": "beam",
+                      "target": {
+                        "source": "previous_action_targets"
+                      },
+                      "config": {
+                        "variant": "lightning_bolt",
+                        "spawnOrigin": "current_event_position",
+                        "triggers": [
+                          {
+                            "id": "impact1",
+                            "type": "on_beam_impact",
+                            "actions": [
+                              {
+                                "id": "dmg1",
+                                "type": "deal_damage",
+                                "target": {
+                                  "source": "current_event"
+                                },
+                                "config": {
+                                  "amount": 65,
+                                  "type": "lightning",
+                                  "flatOffset": -5
+                                }
+                              },
+                              {
+                                "id": "store1",
+                                "type": "store_targets",
+                                "target": {
+                                  "source": "current_event"
+                                },
+                                "config": {
+                                  "as": "hit",
+                                  "merge": true
+                                }
+                              },
+                              {
+                                "id": "select1",
+                                "type": "select_targets",
+                                "target": {
+                                  "source": "all_in_scene",
+                                  "origin": "current_event_position",
+                                  "relations": [
+                                    "enemy"
+                                  ],
+                                  "radius": 220,
+                                  "maxCount": 1,
+                                  "ordering": "closest",
+                                  "excludeSource": true,
+                                  "excludeRef": {
+                                    "key": "hit"
+                                  }
+                                }
+                              },
+                              {
+                                "id": "beam2",
+                                "type": "beam",
+                                "target": {
+                                  "source": "previous_action_targets"
+                                },
+                                "config": {
+                                  "variant": "lightning_bolt",
+                                  "spawnOrigin": "current_event_position",
+                                  "triggers": [
+                                    {
+                                      "id": "impact2",
+                                      "type": "on_beam_impact",
+                                      "actions": [
+                                        {
+                                          "id": "dmg2",
+                                          "type": "deal_damage",
+                                          "target": {
+                                            "source": "current_event"
+                                          },
+                                          "config": {
+                                            "amount": 65,
+                                            "type": "lightning",
+                                            "flatOffset": -10
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           }
         ]

@@ -121,6 +121,15 @@ export interface UnitSpriteSet {
   // SUPERSEDED / UNUSED — see the manifest field's doc comment above; the
   // beam render path resolves origins via getResolvedAttackOriginFor now.
   beamOrigin: { x: number; y: number }
+  // Measured fraction of the sprite frame that is transparent padding above the
+  // head / below the feet, computed lazily from the idle/south frame's alpha
+  // channel (see getSpritePaddingFrac). Undefined until first measured; callers
+  // must go through getSpritePaddingFrac, which fills it in and falls back to
+  // the UNIT_SPRITE_*_PADDING constants when the image isn't decodable yet
+  // (jsdom, cross-origin taint, not-yet-loaded). Replaces the old flat 15%
+  // assumption so shadows sit under the real feet and overhead UI hugs the real
+  // head, per-sprite, instead of one guess for every unit.
+  measuredPadding?: { top: number; bottom: number }
 }
 
 export interface DrawableFrame {
@@ -536,8 +545,9 @@ export function getUnitBodyRect(args: {
 
   if (spriteSet) {
     const spriteH = spriteSet.size.height * UNIT_SPRITE_SCALE
-    const visibleBottomY = args.y + bounds.bottom - spriteH * UNIT_SPRITE_BOTTOM_PADDING
-    const visibleTopY = args.y + bounds.bottom - spriteH * (1 - UNIT_SPRITE_TOP_PADDING)
+    const pad = getSpritePaddingFrac(spriteSet)
+    const visibleBottomY = args.y + bounds.bottom - spriteH * pad.bottom
+    const visibleTopY = args.y + bounds.bottom - spriteH * (1 - pad.top)
     return {
       minX: args.x - bounds.halfWidth - padding,
       maxX: args.x + bounds.halfWidth + padding,
@@ -627,4 +637,72 @@ export function getUnitFrame(
     srcW: idle.naturalWidth,
     srcH: idle.naturalHeight,
   }
+}
+
+// Scratch canvas reused across every padding measurement — a single hidden
+// element rather than one per sprite, since measurement is one-shot per set
+// (result is memoized on set.measuredPadding).
+let paddingScratch: HTMLCanvasElement | null = null
+
+// measureSpritePadding scans the idle/south frame's alpha channel to find the
+// first and last rows containing any opaque pixel, returning the transparent
+// padding above/below as fractions of the frame height. Returns null (caller
+// falls back to the constants) when nothing can be measured: no decoded frame,
+// no 2D canvas (jsdom unit tests), or a cross-origin-tainted image whose pixels
+// can't be read. Deliberately uses the SAME idle/south frame the unit renders
+// at rest, so the measured feet/head match what's actually on screen.
+function measureSpritePadding(set: UnitSpriteSet): { top: number; bottom: number } | null {
+  const frame = getUnitFrame(set, 'idle', 'south', 0)
+  if (!frame) return null
+  if (typeof document === 'undefined') return null
+  const cv = paddingScratch ?? (paddingScratch = document.createElement('canvas'))
+  cv.width = frame.srcW
+  cv.height = frame.srcH
+  const ctx = cv.getContext('2d')
+  if (!ctx) return null
+  ctx.clearRect(0, 0, cv.width, cv.height)
+  ctx.drawImage(frame.image, frame.srcX, frame.srcY, frame.srcW, frame.srcH, 0, 0, frame.srcW, frame.srcH)
+  let data: Uint8ClampedArray
+  try {
+    data = ctx.getImageData(0, 0, cv.width, cv.height).data
+  } catch {
+    return null // tainted canvas (cross-origin sprite without CORS)
+  }
+  const w = cv.width
+  const h = cv.height
+  let top = -1
+  let bottom = -1
+  for (let y = 0; y < h; y++) {
+    let opaque = false
+    const rowBase = y * w * 4
+    for (let x = 0; x < w; x++) {
+      if (data[rowBase + x * 4 + 3] > 16) {
+        opaque = true
+        break
+      }
+    }
+    if (opaque) {
+      if (top < 0) top = y
+      bottom = y
+    }
+  }
+  if (top < 0) return null // fully transparent — nothing to measure
+  return { top: top / h, bottom: (h - 1 - bottom) / h }
+}
+
+// getSpritePaddingFrac returns the per-sprite transparent-padding fractions,
+// measuring + memoizing on first call and falling back to the flat
+// UNIT_SPRITE_*_PADDING constants until a real measurement is possible. This is
+// the single seam every renderer/hit-test path uses to place shadows under the
+// visible feet and overhead UI at the visible head — replacing the old flat
+// 15% assumption that under-counted the ~26% padding these sprites actually
+// carry (shadow drawn too low, health bars floated too high).
+export function getSpritePaddingFrac(set: UnitSpriteSet): { top: number; bottom: number } {
+  if (set.measuredPadding) return set.measuredPadding
+  const measured = measureSpritePadding(set)
+  if (measured) {
+    set.measuredPadding = measured
+    return measured
+  }
+  return { top: UNIT_SPRITE_TOP_PADDING, bottom: UNIT_SPRITE_BOTTOM_PADDING }
 }

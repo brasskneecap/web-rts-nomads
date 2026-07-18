@@ -3,7 +3,20 @@
     <div class="ab-preview-canvas__stage">
       <canvas ref="canvasEl" class="ab-preview-canvas__canvas" />
       <canvas ref="overlayCanvasEl" class="ab-preview-canvas__overlay" />
-      <p v-if="!frames.length" class="ab-preview-canvas__empty" data-test="preview-canvas-empty">
+      <!-- Drag-to-place layer (Phase 6b): the only pointer-interactive
+           element in the stage, and only while there's no result to replay
+           yet (frames: []). Mounted/unmounted with edit mode itself so a
+           replay never has a stray hit-testable layer sitting over it. -->
+      <div
+        v-if="!frames.length"
+        class="ab-preview-canvas__drag-layer"
+        data-test="preview-drag-layer"
+        @pointerdown="onDragPointerDown"
+        @pointermove="onDragPointerMove"
+        @pointerup="onDragPointerUp"
+        @pointercancel="onDragPointerUp"
+      />
+      <p v-if="!frames.length && !sceneUnits.length" class="ab-preview-canvas__empty" data-test="preview-canvas-empty">
         Run a preview to see how this ability executes.
       </p>
     </div>
@@ -132,11 +145,23 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { GameState, mapUnitSnapshot } from '@/game/core/GameState'
 import { Camera } from '@/game/rendering/Camera'
 import { CanvasRenderer } from '@/game/rendering/CanvasRenderer'
-import type { PreviewFrame } from '@/game/abilities/program/programPreview'
+import type { UnitSnapshot } from '@/game/network/protocol'
+import type { PreviewFrame, PreviewSceneUnit } from '@/game/abilities/program/programPreview'
 import type { AbilityExecutionTraceEvent } from '@/game/abilities/program/programPreview'
-import { FALLBACK_BBOX, PREVIEW_FRAME_DT_SECONDS, computeCameraFit, computeSceneBBox, frameIndexAt, previewClockMs, type SceneBBox } from './previewPlayback'
+import {
+  FALLBACK_BBOX,
+  PREVIEW_FRAME_DT_SECONDS,
+  computeCameraFit,
+  computeSceneBBox,
+  computeSceneBBoxFromPoints,
+  frameIndexAt,
+  previewClockMs,
+  type SceneBBox,
+} from './previewPlayback'
 import { damageNumbersForFrameIndex } from './previewDamageNumbers'
-import { overlayCircles } from './PreviewOverlays'
+import { overlayCircles, screenToWorld } from './PreviewOverlays'
+import { getUnitSpriteSet, isPointInUnitBody, UNIT_SPRITE_SCALE } from '@/game/rendering/unitSprites'
+import { getUnitBoundsFor } from '@/game/maps/unitDefs'
 
 interface Props {
   frames: PreviewFrame[]
@@ -169,18 +194,33 @@ interface Props {
   /** Cast/impact world position — Task 8 supplies this from the preview request's cast coords. */
   castX?: number
   castY?: number
+  /**
+   * The live, user-draggable scene units (Phase 6b) — ally/enemy placements
+   * the panel owns, edited by dragging on this canvas BEFORE any run.
+   * Rendered as a synthetic scene whenever `frames` is empty (see the "edit
+   * mode" section below); ignored once real frames exist (a replay is 100%
+   * server-authoritative, same as always). Defaults to `[]` so every
+   * existing caller/test that predates drag placement keeps working
+   * unchanged — idle state stays idle with no scene units.
+   */
+  sceneUnits?: PreviewSceneUnit[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
   playing: true,
   speed: 1,
   trace: () => [],
+  sceneUnits: () => [],
 })
 
 const emit = defineEmits<{
   'update:currentTick': [tick: number]
   'update:playing': [playing: boolean]
   'update:speed': [speed: number]
+  /** Phase 6b: a drag moved scene unit `index` (into the `sceneUnits` prop) to a new world position. */
+  'update:scene-unit': [payload: { index: number; x: number; y: number }]
+  /** Phase 6b: a drag moved the caster to a new world position. */
+  'update:caster': [payload: { x: number; y: number }]
 }>()
 
 // ── camera framing ──────────────────────────────────────────────────────
@@ -253,6 +293,101 @@ function applyFrame(i: number) {
   state.projectiles = snap.projectiles ?? []
   state.beams = snap.beams ?? []
   state.effects = snap.effects ?? []
+}
+
+// ── edit-mode synthetic scene (Phase 6b: drag-to-place) ─────────────────
+// Before any Run, `frames` is empty — instead of a blank stage, render the
+// caster + live scene units so the user can see and drag them against real
+// unit sprites/terrain. isEditMode is just `frames.length === 0`; it flips
+// back to false the instant a run produces frames (or stays false with a
+// non-empty frames array from a run that genuinely captured none — same
+// "idle" fallback applyFrame already used).
+const isEditMode = computed(() => props.frames.length === 0)
+
+// Synthetic ownerId/color/unitType assignments MIRROR ability_preview.go's
+// RunAbilityPreview spawn loop exactly (previewCasterOwner/previewEnemyOwner,
+// "#3498db"/"#e74c3c", adept/raider/soldier) — see that file's doc comments.
+// Matching it here means the caster/ally/enemy sprites the user drags around
+// are colored/team-tinted IDENTICALLY to how the real preview run renders
+// them once Run is clicked; no separate "editor-only" palette to keep in
+// sync by hand. Both ally and enemy scene units share the same "#e74c3c"
+// color server-side (only ownerId/team differ) — reproduced verbatim, not
+// "fixed" to look more distinct, since a mismatch here would be the actual
+// bug.
+const EDIT_CASTER_OWNER = 'preview_caster'
+const EDIT_ALLY_OWNER = 'preview_caster'
+const EDIT_ENEMY_OWNER = 'preview_enemy'
+const EDIT_CASTER_COLOR = '#3498db'
+const EDIT_SCENE_UNIT_COLOR = '#e74c3c'
+const EDIT_CASTER_UNIT_TYPE = 'adept'
+const EDIT_ENEMY_UNIT_TYPE = 'raider'
+const EDIT_ALLY_UNIT_TYPE = 'soldier'
+// The caster is a single fixed synthetic id; scene units are numbered off
+// their index in `props.sceneUnits`. These ids are internal-only — they
+// never travel to the server and never coexist with real server-assigned
+// ids in the same GameState (edit mode and replay mode are mutually
+// exclusive, gated by isEditMode) — they only need to stay stable across
+// this component's own re-renders of the SAME array, which indexing off
+// array position already gives us.
+const EDIT_CASTER_ID = -1
+
+// buildEditModeUnits produces synthetic wire UnitSnapshots for the caster +
+// every scene unit, positioned at their LIVE (possibly mid-drag) coordinates.
+// Fed through the SAME mapUnitSnapshot() the real replay path uses (see
+// applyFrame above) so edit mode can never silently diverge from how a real
+// snapshot's units get mapped onto GameState.
+function buildEditModeUnits(casterX: number, casterY: number, sceneUnits: PreviewSceneUnit[]): UnitSnapshot[] {
+  const units: UnitSnapshot[] = [
+    {
+      id: EDIT_CASTER_ID,
+      ownerId: EDIT_CASTER_OWNER,
+      color: EDIT_CASTER_COLOR,
+      unitType: EDIT_CASTER_UNIT_TYPE,
+      name: 'Caster',
+      visible: true,
+      x: casterX,
+      y: casterY,
+      hp: 1,
+      maxHp: 1,
+      moving: false,
+    },
+  ]
+  sceneUnits.forEach((su, index) => {
+    const isEnemy = su.team === 'enemy'
+    units.push({
+      id: -(index + 2),
+      ownerId: isEnemy ? EDIT_ENEMY_OWNER : EDIT_ALLY_OWNER,
+      color: EDIT_SCENE_UNIT_COLOR,
+      unitType: isEnemy ? EDIT_ENEMY_UNIT_TYPE : EDIT_ALLY_UNIT_TYPE,
+      name: isEnemy ? `Enemy ${index + 1}` : `Ally ${index + 1}`,
+      visible: true,
+      x: su.x,
+      y: su.y,
+      hp: Math.max(0, su.hp),
+      maxHp: Math.max(1, su.maxHp),
+      moving: false,
+    })
+  })
+  return units
+}
+
+// editModePoints: every world point currently on the edit-mode stage (caster
+// + scene units), for computeSceneBBoxFromPoints to frame the camera around.
+function editModePoints(): Array<{ x: number; y: number }> {
+  const pts: Array<{ x: number; y: number }> = [{ x: props.casterX ?? 0, y: props.casterY ?? 0 }]
+  for (const u of props.sceneUnits) pts.push({ x: u.x, y: u.y })
+  return pts
+}
+
+// applyEditModeScene writes the synthetic caster+scene-unit snapshot onto
+// the standalone GameState — the edit-mode equivalent of applyFrame above.
+// No projectiles/beams/effects exist before a cast is ever requested.
+function applyEditModeScene() {
+  if (!state) return
+  state.units = buildEditModeUnits(props.casterX ?? 0, props.casterY ?? 0, props.sceneUnits).map(mapUnitSnapshot)
+  state.projectiles = []
+  state.beams = []
+  state.effects = []
 }
 
 // ── floating damage/heal numbers (Task 9) ───────────────────────────────
@@ -339,13 +474,15 @@ function drawOverlays(cam: Camera, canvas: HTMLCanvasElement) {
   if (ocanvas.height !== canvas.height) ocanvas.height = canvas.height
   octx.clearRect(0, 0, ocanvas.width, ocanvas.height)
 
-  // Idle (no preview run yet): there's no cast/impact scene to ring, and
-  // casterX/castX etc. still hold stale values from the LAST run (or their
-  // 0-fallback), so drawing rings here would paint a cast-range/AoE circle
-  // over an otherwise-empty stage — the exact "looks broken before any run"
-  // regression this guards against. Only the idle placeholder text shows.
-  if (props.frames.length === 0) return
-
+  // Edit mode (frames: [], Phase 6b) used to early-return here: casterX/castX
+  // etc. held STALE values from the last run (or their 0-fallback), so a
+  // ring would paint over an otherwise-empty stage. That's no longer true —
+  // the panel now feeds this component LIVE caster/cast coordinates while
+  // editing (only freezing them at run time for an actual replay), so the
+  // rings drawn below are exactly what dragging the caster/cast point around
+  // would produce once Run is clicked. Showing them while placing units is
+  // the whole point of Phase 6b (test range/radius against real geometry
+  // before running), so this now falls through unconditionally.
   const { castRange, aoe } = overlayCircles(
     {
       castRange: props.castRange,
@@ -381,6 +518,153 @@ function drawOverlays(cam: Camera, canvas: HTMLCanvasElement) {
     octx.strokeStyle = 'rgba(224, 178, 88, 0.75)'
     octx.stroke()
   }
+}
+
+// ── drag-to-place (Phase 6b, edit mode only) ─────────────────────────────
+// The overlay/render canvases stay pointer-events:none (CanvasRenderer never
+// needs to know a drag is happening); the `.ab-preview-canvas__drag-layer`
+// div in the template is the ONLY interactive element, mounted/unmounted
+// alongside edit mode itself (`v-if="!frames.length"`).
+//
+// Hit-testing converts the pointer to a WORLD position (screenToWorld) and
+// tests it against each candidate's actual on-screen SPRITE BODY via
+// isPointInUnitBody — the SAME world-space body-rect the in-match unit
+// selection uses (game/rendering/unitSprites.ts), which accounts for the
+// sprite being anchored at the unit's FEET with its body extending upward.
+// A naive "radius around unit.x/unit.y" test would target the feet/shadow,
+// not the visible model — and since the preview zooms in far, the gap between
+// a unit's feet (its world y) and its body is large in screen space, so clicks
+// on the model would miss. Using the sprite body rect makes clicks land on the
+// visible character exactly as they do when selecting units in a real match.
+
+type DragTarget = { kind: 'caster' } | { kind: 'unit'; index: number }
+let dragTarget: DragTarget | null = null
+let dragPointerId: number | null = null
+// World-space offset from the grabbed point to the unit's anchor, captured at
+// pointer-down. Preserved for the whole drag so the sprite stays exactly where
+// you grabbed it under the cursor — without it, every move snaps the unit's
+// anchor (unit.x/unit.y) to the cursor, which yanks the visible body (drawn
+// well above the anchor) up and away from the pointer on the first move.
+let dragGrabOffset = { x: 0, y: 0 }
+
+function currentCam(): { x: number; y: number; zoom: number } | null {
+  return camera ? { x: camera.x, y: camera.y, zoom: camera.zoom } : null
+}
+
+// unitFrameContains tests a WORLD point against the FULL sprite draw box the
+// renderer blits — [x ± w/2] × [y + bounds.bottom - h, y + bounds.bottom],
+// where w/h are the sheet frame size × UNIT_SPRITE_SCALE (see CanvasRenderer's
+// unit draw: dx = unit.x - w/2, dy = unit.y + bounds.bottom - h). We use the
+// FULL frame, not the padding-trimmed getUnitBodyRect, because a sprite's
+// visible feet can sit above the trimmed rect's bottom (transparent padding
+// varies per sheet), which made clicks land BELOW the visible model. The full
+// frame always contains the whole sprite, so clicking the model always grabs
+// it. Falls back to the body rect when the sprite sheet hasn't decoded yet.
+function unitFrameContains(worldX: number, worldY: number, x: number, y: number, unitType: string): boolean {
+  const spriteSet = getUnitSpriteSet(undefined, unitType)
+  if (!spriteSet) return isPointInUnitBody(worldX, worldY, { x, y, unitType })
+  const bounds = getUnitBoundsFor({ unitType })
+  const w = spriteSet.size.width * UNIT_SPRITE_SCALE
+  const h = spriteSet.size.height * UNIT_SPRITE_SCALE
+  const maxY = y + bounds.bottom
+  return worldX >= x - w / 2 && worldX <= x + w / 2 && worldY >= maxY - h && worldY <= maxY
+}
+
+function pointerToStageScreen(canvas: HTMLCanvasElement, e: PointerEvent): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect()
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+}
+
+// hitTestEditScene finds the draggable (caster or scene unit) whose sprite
+// body contains the given screen position. On overlap it prefers the one drawn
+// ON TOP (greater world y is painted later — see drawUnits' anchorY sort), so a
+// click lands on the unit you can actually see. Returns null when the click is
+// on empty stage (a pointerdown there is a no-op, not a drag). Uses the SAME
+// unit types buildEditModeUnits renders with, and omits `path` identically, so
+// the hit box matches the drawn sprite exactly.
+function hitTestEditScene(screenX: number, screenY: number): DragTarget | null {
+  const cam = currentCam()
+  if (!cam) return null
+  const world = screenToWorld(screenX, screenY, cam)
+
+  const candidates: Array<{ target: DragTarget; x: number; y: number; unitType: string }> = [
+    { target: { kind: 'caster' }, x: props.casterX ?? 0, y: props.casterY ?? 0, unitType: EDIT_CASTER_UNIT_TYPE },
+    ...props.sceneUnits.map((u, index) => ({
+      target: { kind: 'unit' as const, index },
+      x: u.x,
+      y: u.y,
+      unitType: u.team === 'enemy' ? EDIT_ENEMY_UNIT_TYPE : EDIT_ALLY_UNIT_TYPE,
+    })),
+  ]
+
+  let best: { target: DragTarget; y: number } | null = null
+  for (const c of candidates) {
+    if (!unitFrameContains(world.x, world.y, c.x, c.y, c.unitType)) continue
+    if (!best || c.y > best.y) best = { target: c.target, y: c.y }
+  }
+  return best ? best.target : null
+}
+
+function onDragPointerDown(e: PointerEvent) {
+  const canvas = canvasEl.value
+  if (!canvas || !isEditMode.value) return
+  const { x: screenX, y: screenY } = pointerToStageScreen(canvas, e)
+  const hit = hitTestEditScene(screenX, screenY)
+  if (!hit) return
+  dragTarget = hit
+  dragPointerId = e.pointerId
+  // Capture the grab offset (anchor - grabbed world point) so the sprite
+  // tracks the cursor from wherever it was clicked, instead of teleporting its
+  // anchor onto the pointer.
+  const cam = currentCam()
+  if (cam) {
+    const world = screenToWorld(screenX, screenY, cam)
+    const anchor =
+      hit.kind === 'caster'
+        ? { x: props.casterX ?? 0, y: props.casterY ?? 0 }
+        : { x: props.sceneUnits[hit.index]?.x ?? 0, y: props.sceneUnits[hit.index]?.y ?? 0 }
+    dragGrabOffset = { x: anchor.x - world.x, y: anchor.y - world.y }
+  } else {
+    dragGrabOffset = { x: 0, y: 0 }
+  }
+  // Optional chaining: happy-dom/jsdom (unit tests) don't implement pointer
+  // capture at all — harmless no-op there, real browsers get the intended
+  // "a fast drag doesn't drop the target when the pointer leaves the layer"
+  // behavior.
+  ;(e.currentTarget as (HTMLElement & { setPointerCapture?: (id: number) => void }) | null)?.setPointerCapture?.(
+    e.pointerId,
+  )
+}
+
+function onDragPointerMove(e: PointerEvent) {
+  if (!dragTarget || dragPointerId === null || e.pointerId !== dragPointerId) return
+  const canvas = canvasEl.value
+  const cam = currentCam()
+  if (!canvas || !cam) return
+  const { x: screenX, y: screenY } = pointerToStageScreen(canvas, e)
+  const pointerWorld = screenToWorld(screenX, screenY, cam)
+  // Apply the grab offset so the unit's anchor keeps the same relationship to
+  // the cursor it had at pointer-down (no first-move jump).
+  let world = { x: pointerWorld.x + dragGrabOffset.x, y: pointerWorld.y + dragGrabOffset.y }
+  // Clamp to the map's actual bounds — dragging a unit off the terrain
+  // entirely isn't a useful test of range/radius against real geometry.
+  if (state) {
+    world = {
+      x: Math.min(Math.max(world.x, 0), state.mapWidth),
+      y: Math.min(Math.max(world.y, 0), state.mapHeight),
+    }
+  }
+  if (dragTarget.kind === 'caster') {
+    emit('update:caster', { x: world.x, y: world.y })
+  } else {
+    emit('update:scene-unit', { index: dragTarget.index, x: world.x, y: world.y })
+  }
+}
+
+function onDragPointerUp(e: PointerEvent) {
+  if (dragPointerId === null || e.pointerId !== dragPointerId) return
+  dragTarget = null
+  dragPointerId = null
 }
 
 // ── playback clock ──────────────────────────────────────────────────────
@@ -502,26 +786,40 @@ function onRestart() {
 const maxTimeSeconds = computed(() => Math.max(0, props.frames.length - 1) * PREVIEW_FRAME_DT_SECONDS)
 
 // A new preview run replaces `frames` wholesale — snap back to frame 0 and
-// recompute the camera framing for the new scene.
+// recompute the camera framing for the new scene. Also fires on the reverse
+// transition (a drag clears `result` back to edit mode — see
+// AbilityPreviewPanel.vue's onUpdateSceneUnit/onUpdateCaster): frames goes
+// from populated back to `[]`, and this branches into the edit-mode bbox/
+// scene application instead of the replay one. tick() below re-derives both
+// continuously anyway while actually IN edit mode (a live drag doesn't
+// change `frames` at all, so this watcher alone can't track a drag — see
+// tick()'s own edit-mode branch), so this handler only needs to get the
+// FIRST frame of either mode right.
 watch(
   () => props.frames,
   (frames) => {
-    sceneBBox.value = computeSceneBBox(frames)
+    if (frames.length === 0) {
+      sceneBBox.value = computeSceneBBoxFromPoints(editModePoints())
+      applyEditModeScene()
+    } else {
+      sceneBBox.value = computeSceneBBox(frames)
+      // New scene data for the same index (0) — force applyFrame's re-apply
+      // guard in tick() to run again instead of treating 0 as already-applied.
+      lastAppliedIndex = -1
+      applyFrame(0)
+      lastAppliedIndex = 0
+    }
     seekBase.value = 0
     startedAtMs.value = performance.now()
-    // New scene data for the same index (0) — force applyFrame's re-apply
-    // guard in tick() to run again instead of treating 0 as already-applied.
-    lastAppliedIndex = -1
-    applyFrame(0)
-    lastAppliedIndex = 0
     emitTick(0)
-    // A re-run (or the error path clearing frames) must not leave the
-    // PREVIOUS run's floating numbers on screen fading out over the new
-    // scene — clear, then immediately (re)spawn whatever frame 0 of the
-    // fresh trace carries (typically none; frame 0 is captured before the
-    // cast is even requested — see ability_preview.go).
+    // A re-run (or the error path clearing frames, or a drag returning to
+    // edit mode) must not leave the PREVIOUS run's floating numbers on
+    // screen fading out over the new scene — clear, then (replay only)
+    // immediately (re)spawn whatever frame 0 of the fresh trace carries
+    // (typically none; frame 0 is captured before the cast is even
+    // requested — see ability_preview.go). Edit mode has no trace at all.
     clearDamageNumbers()
-    spawnDamageNumbersForIndex(0)
+    if (frames.length > 0) spawnDamageNumbersForIndex(0)
   },
 )
 
@@ -535,6 +833,22 @@ function tick() {
   const st = state
   const cam = camera
   const rend = renderer
+
+  if (isEditMode.value) {
+    // Static, user-editable scene: no frame index to advance — re-derive the
+    // synthetic caster/scene-unit snapshot and camera framing from whatever
+    // the panel currently holds every tick (cheap: a handful of objects),
+    // so a live drag (which changes props.sceneUnits/casterX/Y but NOT
+    // `frames` — the watcher above can't see it) is reflected immediately,
+    // not just at mode-transition edges.
+    previewFrameIndex = 0
+    sceneBBox.value = computeSceneBBoxFromPoints(editModePoints())
+    applyEditModeScene()
+    refreshCamera(canvas, cam, sceneBBox.value, st.mapWidth, st.mapHeight)
+    rend.render()
+    drawOverlays(cam, canvas)
+    return
+  }
 
   const index = frameIndexAt({
     playing: playing.value,
@@ -600,11 +914,16 @@ onMounted(() => {
   renderer = rend
   overlayCtx = overlayCanvasEl.value?.getContext('2d') ?? null
 
-  sceneBBox.value = computeSceneBBox(props.frames)
-  previewFrameIndex = props.currentTick
-  applyFrame(props.currentTick)
-  lastAppliedIndex = props.currentTick
-  spawnDamageNumbersForIndex(props.currentTick)
+  if (isEditMode.value) {
+    sceneBBox.value = computeSceneBBoxFromPoints(editModePoints())
+    applyEditModeScene()
+  } else {
+    sceneBBox.value = computeSceneBBox(props.frames)
+    previewFrameIndex = props.currentTick
+    applyFrame(props.currentTick)
+    lastAppliedIndex = props.currentTick
+    spawnDamageNumbersForIndex(props.currentTick)
+  }
   refreshCamera(canvas, cam, sceneBBox.value, st.mapWidth, st.mapHeight)
   rend.render()
   drawOverlays(cam, canvas)
@@ -649,6 +968,17 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+/* The only interactive layer in the stage (Phase 6b drag-to-place) — no
+   `cursor:` declaration here: the app's custom game cursor already wins via
+   the global rule in style.css, a draggable unit needs no cursor change. */
+.ab-preview-canvas__drag-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
 }
 
 .ab-preview-canvas__empty {

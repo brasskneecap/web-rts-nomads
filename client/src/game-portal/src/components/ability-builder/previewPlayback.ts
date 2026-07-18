@@ -101,24 +101,24 @@ export const FALLBACK_BBOX: SceneBBox = {
   viewHeight: MIN_VIEW_WORLD_HEIGHT,
 }
 
-// computeSceneBBox unions every unit's (x, y) across every captured frame —
-// cheap for a preview run (a handful of units × a few dozen ticks) — so the
-// camera framing stays stable across the whole replay instead of jittering
-// as units move tick-to-tick.
-export function computeSceneBBox(frames: PreviewFrame[]): SceneBBox {
+// computeSceneBBoxFromPoints unions a flat list of world (x, y) points into
+// the same padded/floored SceneBBox shape computeSceneBBox produces from a
+// frame sequence. Factored out (Phase 6b) so the edit-mode canvas — which
+// has no frames yet, only the live caster + scene-unit positions being
+// dragged — can frame its camera with the identical math, instead of
+// forking a parallel bbox implementation that could drift from this one.
+export function computeSceneBBoxFromPoints(points: Array<{ x: number; y: number }>): SceneBBox {
   let minX = Infinity
   let maxX = -Infinity
   let minY = Infinity
   let maxY = -Infinity
   let found = false
-  for (const frame of frames) {
-    for (const u of frame.snapshot.units ?? []) {
-      found = true
-      if (u.x < minX) minX = u.x
-      if (u.x > maxX) maxX = u.x
-      if (u.y < minY) minY = u.y
-      if (u.y > maxY) maxY = u.y
-    }
+  for (const p of points) {
+    found = true
+    if (p.x < minX) minX = p.x
+    if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.y > maxY) maxY = p.y
   }
   if (!found) return FALLBACK_BBOX
   return {
@@ -127,6 +127,20 @@ export function computeSceneBBox(frames: PreviewFrame[]): SceneBBox {
     viewWidth: Math.max(maxX - minX + BBOX_PADDING_WORLD * 2, MIN_VIEW_WORLD_WIDTH),
     viewHeight: Math.max(maxY - minY + BBOX_PADDING_WORLD * 2, MIN_VIEW_WORLD_HEIGHT),
   }
+}
+
+// computeSceneBBox unions every unit's (x, y) across every captured frame —
+// cheap for a preview run (a handful of units × a few dozen ticks) — so the
+// camera framing stays stable across the whole replay instead of jittering
+// as units move tick-to-tick.
+export function computeSceneBBox(frames: PreviewFrame[]): SceneBBox {
+  const points: Array<{ x: number; y: number }> = []
+  for (const frame of frames) {
+    for (const u of frame.snapshot.units ?? []) {
+      points.push({ x: u.x, y: u.y })
+    }
+  }
+  return computeSceneBBoxFromPoints(points)
 }
 
 // ── camera fit (zoom + pan) ──────────────────────────────────────────────

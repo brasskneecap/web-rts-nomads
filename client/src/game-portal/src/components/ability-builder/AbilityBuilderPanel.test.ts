@@ -40,7 +40,11 @@ function jsonResponse(body: unknown, status = 200) {
 
 // Stubs every /catalog + /abilities endpoint useAbilityBuilder touches on
 // mount + selection, mirroring useAbilityBuilder.test.ts's makeFetchMock.
-function stubFetch(abilities: AuthoredAbilityDef[]) {
+// `deleteStatus` controls what DELETE /abilities/{id} reports; `deleteCalls`
+// (returned) records every id it was invoked with, so a test can assert the
+// confirm-cancel path never reaches the network.
+function stubFetch(abilities: AuthoredAbilityDef[], deleteStatus: 'deleted' | 'reverted' | 'reset' = 'deleted') {
+  const deleteCalls: string[] = []
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
     const method = init?.method ?? 'GET'
@@ -53,9 +57,15 @@ function stubFetch(abilities: AuthoredAbilityDef[]) {
     if (method === 'GET' && u.endsWith('/catalog/autocast-selectors')) return jsonResponse({ autoCastSelectors: [] })
     if (method === 'GET' && u.endsWith('/catalog/units')) return jsonResponse({ units: [] })
     if (method === 'POST' && u.endsWith('/abilities/validate')) return jsonResponse({ issues: [] })
+    if (method === 'DELETE' && u.includes('/abilities/')) {
+      const id = decodeURIComponent(u.split('/abilities/')[1])
+      deleteCalls.push(id)
+      return jsonResponse({ id, status: deleteStatus })
+    }
     return jsonResponse({})
   })
   vi.stubGlobal('fetch', fn)
+  return { deleteCalls }
 }
 
 afterEach(() => vi.restoreAllMocks())
@@ -70,7 +80,7 @@ describe('AbilityBuilderPanel', () => {
     expect(wrapper.find('[data-test="ability-flow"]').exists()).toBe(false)
   })
 
-  it('selecting a sidebar entry renders the header, lands on Identity by default, and shows the bottom inspector bar', async () => {
+  it('selecting a sidebar entry renders the header, lands on Identity by default, with no inspector column yet', async () => {
     stubFetch([legacyAbility, composableAbility])
     const wrapper = mount(AbilityBuilderPanel)
     await flushPromises()
@@ -83,8 +93,9 @@ describe('AbilityBuilderPanel', () => {
     // rendered until the author switches to it.
     expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ability-flow"]').exists()).toBe(false)
-    // The bottom InspectorBar spans both tabs, not just Build.
-    expect(wrapper.find('[data-test="inspector-bar"]').exists()).toBe(true)
+    // The inspector column is hidden until a trigger/action is selected — the
+    // ability node lands on Identity, which has nothing for the bar to show.
+    expect(wrapper.find('[data-test="inspector-bar"]').exists()).toBe(false)
   })
 
   it('disables Save and shows Convert for a selected legacy ability', async () => {
@@ -132,9 +143,11 @@ describe('AbilityBuilderPanel', () => {
       if (method === 'POST' && u.endsWith('/abilities')) {
         // Mimic the real backend: a save persists the ability, so the NEXT
         // GET /catalog/abilities (reloadAbilities, inside builder.save())
-        // must include it.
+        // must include it — tagged `custom: true` because an author-created
+        // id that didn't previously exist in the catalog IS, by definition,
+        // a custom entry (see the DELETE contract's custom/deleted meaning).
         const { ability } = JSON.parse(String(init?.body)) as { ability: AuthoredAbilityDef }
-        abilities.push(ability)
+        abilities.push({ ...ability, custom: true })
         return jsonResponse({})
       }
       return jsonResponse({})
@@ -151,7 +164,7 @@ describe('AbilityBuilderPanel', () => {
     const idInput = wrapper.find('#ab-id')
     expect(idInput.attributes('disabled')).toBeUndefined()
     // Delete/Reset is a "this def already exists" action — hidden for a draft.
-    expect(wrapper.findAll('button').some((b) => b.text() === 'Delete / Reset')).toBe(false)
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Delete' || b.text() === 'Reset')).toBe(false)
 
     await idInput.setValue('new_bolt')
     await flushPromises()
@@ -163,7 +176,10 @@ describe('AbilityBuilderPanel', () => {
 
     const idInputAfterSave = wrapper.find('#ab-id')
     expect(idInputAfterSave.attributes('disabled')).toBeDefined()
-    expect(wrapper.findAll('button').some((b) => b.text() === 'Delete / Reset')).toBe(true)
+    // Author-created (custom: true) → "Delete", never the old ambiguous
+    // static "Delete / Reset" label.
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Delete')).toBe(true)
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Delete / Reset')).toBe(false)
   })
 
   it('shows a validation summary with error/warning counts, and a blocked hint when there are errors', async () => {
@@ -237,9 +253,10 @@ describe('AbilityBuilderPanel', () => {
     expect(wrapper.find('[data-test="ability-builder-tab-identity"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ability-flow"]').exists()).toBe(false)
-    // The InspectorBar (bottom) and the preview panel (rail) are independent
-    // of the tab — both are visible regardless of which tab is active.
-    expect(wrapper.find('[data-test="inspector-bar"]').exists()).toBe(true)
+    // The preview panel (rail) is always present while editing; the inspector
+    // column is NOT — it only appears once a trigger/action is selected, which
+    // hasn't happened yet (selection is the ability node on Identity).
+    expect(wrapper.find('[data-test="inspector-bar"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="ability-preview-panel"]').exists()).toBe(true)
 
     await wrapper.find('[data-test="ability-builder-tab-build"]').trigger('click')
@@ -247,7 +264,9 @@ describe('AbilityBuilderPanel', () => {
 
     expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="ability-flow"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="inspector-bar"]').exists()).toBe(true)
+    // Switching to Build alone doesn't select a node, so the inspector stays
+    // hidden until the author clicks a trigger/action in the flow.
+    expect(wrapper.find('[data-test="inspector-bar"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="ability-preview-panel"]').exists()).toBe(true)
 
     await wrapper.find('[data-test="ability-builder-tab-identity"]').trigger('click')
@@ -320,16 +339,18 @@ describe('AbilityBuilderPanel', () => {
     await wrapper.find('.flow-action__body').trigger('click')
     await flushPromises()
 
-    // An action is selected — the InspectorBar has fields, not the hint.
+    // An action is selected — the inspector column appears with fields (not the
+    // hint), since a trigger/action is now selected.
+    expect(wrapper.find('[data-test="inspector-bar"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="inspector-bar-empty"]').exists()).toBe(false)
 
     await wrapper.find('[data-test="ability-builder-tab-identity"]').trigger('click')
     await flushPromises()
 
-    // Selection follows the tab back to the ability node, so the bar and
-    // the Identity tab agree instead of the bar silently keeping stale
-    // action fields nobody can see anymore.
-    expect(wrapper.find('[data-test="inspector-bar-empty"]').exists()).toBe(true)
+    // Selection follows the tab back to the ability node — with nothing
+    // trigger/action-shaped selected, the inspector column is omitted entirely
+    // instead of lingering with stale action fields nobody can see anymore.
+    expect(wrapper.find('[data-test="inspector-bar"]').exists()).toBe(false)
   })
 
   it("clicking the overview card's identity button navigates from Build back to Identity", async () => {
@@ -349,5 +370,97 @@ describe('AbilityBuilderPanel', () => {
 
     expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ability-flow"]').exists()).toBe(false)
+  })
+})
+
+describe('AbilityBuilderPanel delete/reset (3-way contract)', () => {
+  it('shows "Reset" (never "Delete / Reset") for a shipped ability', async () => {
+    // composableAbility carries no `custom` flag — undefined reads the same
+    // as false, matching ItemEditorPanel's selectedIsCustom contract.
+    stubFetch([composableAbility])
+    const wrapper = mount(AbilityBuilderPanel)
+    await flushPromises()
+
+    await wrapper.find('.ed-side__pick').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Reset')).toBe(true)
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Delete')).toBe(false)
+  })
+
+  it('shows "Delete" for an author-created ability', async () => {
+    const customAbility: AuthoredAbilityDef = { ...composableAbility, custom: true }
+    stubFetch([customAbility])
+    const wrapper = mount(AbilityBuilderPanel)
+    await flushPromises()
+
+    await wrapper.find('.ed-side__pick').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Delete')).toBe(true)
+  })
+
+  it('cancelling the confirm does NOT call the delete API (the anti-misclick guard)', async () => {
+    const customAbility: AuthoredAbilityDef = { ...composableAbility, custom: true }
+    const { deleteCalls } = stubFetch([customAbility])
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    const wrapper = mount(AbilityBuilderPanel)
+    await flushPromises()
+    await wrapper.find('.ed-side__pick').trigger('click')
+    await flushPromises()
+
+    const removeButton = wrapper.findAll('button').find((b) => b.text() === 'Delete')
+    await removeButton!.trigger('click')
+    await flushPromises()
+
+    expect(window.confirm).toHaveBeenCalledOnce()
+    expect(deleteCalls).toEqual([])
+    // The ability is still open — a cancelled confirm must not close the editor.
+    expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(true)
+  })
+
+  it('confirming Delete on a custom ability names the permanent-removal consequence, then calls the API and closes the editor', async () => {
+    const customAbility: AuthoredAbilityDef = { ...composableAbility, custom: true }
+    const { deleteCalls } = stubFetch([customAbility], 'deleted')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const wrapper = mount(AbilityBuilderPanel)
+    await flushPromises()
+    await wrapper.find('.ed-side__pick').trigger('click')
+    await flushPromises()
+
+    const removeButton = wrapper.findAll('button').find((b) => b.text() === 'Delete')
+    await removeButton!.trigger('click')
+    await flushPromises()
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/permanently removes it and cannot be undone/),
+    )
+    expect(deleteCalls).toEqual(['fireball'])
+    expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Select an ability, or create a new one.')
+  })
+
+  it('confirming Reset on a shipped ability names the discard-unsaved-changes consequence, then reloads it back into the editor', async () => {
+    const { deleteCalls } = stubFetch([composableAbility], 'reverted')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const wrapper = mount(AbilityBuilderPanel)
+    await flushPromises()
+    await wrapper.find('.ed-side__pick').trigger('click')
+    await flushPromises()
+
+    const removeButton = wrapper.findAll('button').find((b) => b.text() === 'Reset')
+    await removeButton!.trigger('click')
+    await flushPromises()
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/unsaved editor changes.*discarded/),
+    )
+    expect(deleteCalls).toEqual(['fireball'])
+    // reverted/reset keeps the ability open, reselected — not closed.
+    expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="status-note"]').text()).toBe('Reverted to the state before your last save.')
   })
 })

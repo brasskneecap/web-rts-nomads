@@ -49,11 +49,10 @@ import { getRankToneColor } from './rankColors'
 import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
 import { getPerkAuraRadius, PERK_DEF_MAP } from '../maps/perkDefs'
 import {
+  getSpritePaddingFrac,
   getUnitFrame,
   getUnitSpriteSet,
   UNIT_SPRITE_SCALE,
-  UNIT_SPRITE_TOP_PADDING,
-  UNIT_SPRITE_BOTTOM_PADDING,
 } from './unitSprites'
 import { getObjectSpriteSet } from './objectSprites'
 import { getEffectSprite } from './effectSprites'
@@ -2596,7 +2595,7 @@ export class CanvasRenderer {
       // ring up by that amount so it sits under the visible feet, not the
       // canvas edge.
       const ringLift = spriteSet
-        ? spriteSet.size.height * UNIT_SPRITE_SCALE * UNIT_SPRITE_BOTTOM_PADDING
+        ? spriteSet.size.height * UNIT_SPRITE_SCALE * getSpritePaddingFrac(spriteSet).bottom
         : 0
       const selectionRadiusX = Math.max(15, halfWidth + 2)
       const selectionRadiusY = Math.max(8, Math.min(12, selectionRadiusX * 0.52))
@@ -2751,7 +2750,7 @@ export class CanvasRenderer {
       // chevrons, buffs, debuffs, rank-up text). Sprite-aware so big sprites
       // push the UI clear of the head instead of floating over the chest.
       const headTopY = spriteSet
-        ? unit.y + bottomOffset - spriteSet.size.height * UNIT_SPRITE_SCALE * (1 - UNIT_SPRITE_TOP_PADDING)
+        ? unit.y + bottomOffset - spriteSet.size.height * UNIT_SPRITE_SCALE * (1 - getSpritePaddingFrac(spriteSet).top)
         : unit.y + unitBounds.top
 
       // Health bar always visible for all units. Color rules:
@@ -3669,8 +3668,9 @@ export class CanvasRenderer {
     const bounds = getUnitBoundsFor({ path, unitType })
     const bottomOffset = bounds.bottom
     const h = spriteSet.size.height * UNIT_SPRITE_SCALE
-    const visibleBottom = bottomOffset - h * UNIT_SPRITE_BOTTOM_PADDING
-    const visibleTop = bottomOffset - h * (1 - UNIT_SPRITE_TOP_PADDING)
+    const pad = getSpritePaddingFrac(spriteSet)
+    const visibleBottom = bottomOffset - h * pad.bottom
+    const visibleTop = bottomOffset - h * (1 - pad.top)
     return {
       x: 0,
       y: visibleTop + (visibleBottom - visibleTop) * fraction,

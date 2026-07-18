@@ -184,33 +184,126 @@ func TestAbilityOnUnitDeath_DoesNotFireForNonAbilityProcBounceKill(t *testing.T)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test 3: direct unit test of the plumbing itself — fireAbilityChainLocked
-// stamps def.ID onto the ProcSource, which flows through to every Beam
-// (primary + bounce) and lands on the deferred DamageSource.SourceAbilityID.
+// Test 3: direct unit test of the AUTHORED plumbing — every launch_beam hop
+// compileChainLightningActions emits (primary + every bounce) stamps its
+// ability id onto the spawned Beam so deal_damage's Execute
+// (ability_program_registry.go) folds it into DamageSource.SourceAbilityID
+// when the hop's on_beam_impact fires. This is the composable-path analogue
+// of the old direct fireAbilityChainLocked unit test (which stamped
+// ProcSource.SourceAbilityID onto every Beam.SourceAbilityID up front, since
+// that legacy seam resolves the whole chain inline in one call): the
+// authored chain instead spawns ONE beam per hop, sequentially, a tick apart
+// (see compileChainLightningActions' doc comment, ability_compile.go), so
+// this test walks the chain tick-by-tick and checks every beam it observes —
+// proving the stamp holds on EVERY hop, not just the primary — via
+// Beam.AbilityIDForCtx (the composable-launch_beam field, distinct from the
+// legacy Beam.SourceAbilityID field fireAbilityChainLocked's proc route
+// still uses — see Test 2 above).
 // ─────────────────────────────────────────────────────────────────────────────
-func TestFireAbilityChainLocked_StampsSourceAbilityIDOnEveryHop(t *testing.T) {
+func TestChainLightningAuthoredChain_StampsAbilityIDOnEveryHop(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	const (
+		baseDamage  = 100
+		falloff     = 10
+		bounceRange = 200.0
+	)
+	ability := buildChainBounceTestAbility(t, "test_stamp_ability", baseDamage, falloff, bounceRange)
+	registerRuntimeTestAbility(t, ability)
+
 	caster := spawnProjTestUnit(t, s, "p1", 100, 100)
+	caster.Abilities = []string{ability.ID}
+	caster.MaxMana, caster.CurrentMana = 100, 100
+
 	primary := spawnProjTestUnit(t, s, enemyPlayerID, 300, 100)
-	bounce := spawnProjTestUnit(t, s, enemyPlayerID, 400, 100)
+	primary.MaxHP, primary.HP = 1_000_000, 1_000_000
+	primary.MoveSpeed = 0
 
-	def := AbilityDef{ID: "test_stamp_ability", DamageType: DamagePhysical, Projectile: "lightning_bolt"}
-	eff := EffectiveSpell{Damage: 100, ChainCount: 1}
-	def.BounceRange = 200
-	def.BounceDamageFalloff = 10
+	bounce := spawnProjTestUnit(t, s, enemyPlayerID, 400, 100) // 100px from primary, within bounceRange
+	bounce.MaxHP, bounce.HP = 1_000_000, 1_000_000
+	bounce.MoveSpeed = 0
 
-	s.fireAbilityChainLocked(caster, primary, def, eff)
-
-	if len(s.Beams) != 2 {
-		t.Fatalf("expected 2 beams (primary + 1 bounce), got %d", len(s.Beams))
+	ok, reason := s.beginAbilityCastLocked(caster, ability.ID, primary)
+	if !ok {
+		t.Fatalf("beginAbilityCastLocked(%q) failed: %q", ability.ID, reason)
 	}
-	for _, b := range s.Beams {
-		if b.SourceAbilityID != def.ID {
-			t.Errorf("beam (target=%d) SourceAbilityID = %q, want %q", b.TargetUnitID, b.SourceAbilityID, def.ID)
+
+	seenBeamIDs := map[string]bool{}
+	for i := 0; i < 40 && len(s.Beams) > 0; i++ {
+		for _, b := range s.Beams {
+			if !seenBeamIDs[b.ID] {
+				seenBeamIDs[b.ID] = true
+				if b.AbilityIDForCtx != ability.ID {
+					t.Errorf("beam %s (target=%d) AbilityIDForCtx = %q, want %q", b.ID, b.TargetUnitID, b.AbilityIDForCtx, ability.ID)
+				}
+			}
 		}
+		s.tickBeamsLocked(0.05)
 	}
-	_ = bounce
+	if len(s.Beams) != 0 {
+		t.Fatalf("chain left %d beam(s) unresolved after 40 ticks", len(s.Beams))
+	}
+	if len(seenBeamIDs) != 2 {
+		t.Fatalf("expected exactly 2 beams (primary + 1 bounce) across the chain's lifetime, observed %d", len(seenBeamIDs))
+	}
+}
+
+// A chain bounce beam must VISUALLY ORIGINATE from the PREVIOUS victim, not the
+// original caster: Beam.CasterUnitID drives the client's origin-lift sprite
+// lookup, so a bounce whose CasterUnitID is the caster lifts its start from the
+// caster's chest instead of the previous victim's — making the bounce look like
+// it springs from the wrong place instead of continuing the chain from where
+// the incoming bolt landed. Legacy set CasterUnitID to the previous victim
+// (spawnMomentaryDamageBeamLocked(cursor.ID)); the authored path reproduces
+// that via originUnitForSpawnLocked(SpawnOrigin=current_event_position).
+func TestChainLightningAuthoredChain_BounceOriginatesFromPreviousVictim(t *testing.T) {
+	s := newProjectileTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ability := buildChainBounceTestAbility(t, "test_bounce_origin", 100, 10, 200.0)
+	registerRuntimeTestAbility(t, ability)
+
+	caster := spawnProjTestUnit(t, s, "p1", 100, 100)
+	caster.Abilities = []string{ability.ID}
+	caster.MaxMana, caster.CurrentMana = 100, 100
+
+	primary := spawnProjTestUnit(t, s, enemyPlayerID, 300, 100)
+	primary.MaxHP, primary.HP = 1_000_000, 1_000_000
+	primary.MoveSpeed = 0
+
+	bounce := spawnProjTestUnit(t, s, enemyPlayerID, 400, 100) // within bounceRange of primary
+	bounce.MaxHP, bounce.HP = 1_000_000, 1_000_000
+	bounce.MoveSpeed = 0
+
+	ok, reason := s.beginAbilityCastLocked(caster, ability.ID, primary)
+	if !ok {
+		t.Fatalf("beginAbilityCastLocked(%q) failed: %q", ability.ID, reason)
+	}
+
+	// Record each beam's visual-origin unit (CasterUnitID) the first time it
+	// appears, keyed by the enemy it targets.
+	originByTarget := map[int]int{}
+	seen := map[string]bool{}
+	for i := 0; i < 40 && len(s.Beams) > 0; i++ {
+		for _, b := range s.Beams {
+			if !seen[b.ID] {
+				seen[b.ID] = true
+				originByTarget[b.TargetUnitID] = b.CasterUnitID
+			}
+		}
+		s.tickBeamsLocked(0.05)
+	}
+
+	// Hop 0 (caster -> primary): originates from the caster.
+	if got := originByTarget[primary.ID]; got != caster.ID {
+		t.Errorf("primary-hit beam CasterUnitID = %d, want caster %d", got, caster.ID)
+	}
+	// Hop 1 (primary -> bounce): must originate from the PREVIOUS VICTIM
+	// (primary), NOT the caster — the chain-continuity fix.
+	if got := originByTarget[bounce.ID]; got != primary.ID {
+		t.Errorf("bounce beam CasterUnitID = %d, want previous victim %d (not caster %d) — chain would render discontinuous", got, primary.ID, caster.ID)
+	}
 }

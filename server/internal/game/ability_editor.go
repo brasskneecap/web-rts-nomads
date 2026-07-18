@@ -20,9 +20,46 @@ func SaveEditorAbility(req EditorAbilitySaveRequest) error {
 	return SaveAbilityDef(&ability)
 }
 
-// DeleteEditorAbility removes an override; embed-backed ids reset to default.
-func DeleteEditorAbility(id string) (existed bool, err error) {
-	return DeleteAbilityOverride(id)
+// DeleteEditorAbility is the editor's destructive action, and what it means
+// depends on where the ability came from — mirrors DeleteEditorItem
+// (item_editor.go) exactly:
+//
+//   - A SHIPPED ability is RESET, not deleted. It goes back to the state it
+//     was in before the author's last save ("reverted"), or — with no undo
+//     step recorded — to the shipped catalog default ("reset"). The def file
+//     always survives (see ResetAbilityDef's doc comment for why).
+//   - An AUTHOR-CREATED ability is genuinely deleted ("deleted").
+//
+// The returned status is what the client shows, so it must say which
+// happened. existed is false when the id names nothing.
+//
+// Reference guard: unlike items (itemReferences) there is currently NO
+// ability-reference scanner — nothing here checks whether a unit loadout,
+// perk, spell-pool, or advancement grant still names this ability id before
+// deleting an author-created override. That means an authored-ability
+// delete is UNGUARDED: a live dangling reference is possible. This is safe
+// in the sense that it can never destroy a SHIPPED ability (that branch
+// always goes through ResetAbilityDef, which never removes the file), but a
+// dangling reference to a deleted author-created id is a real, currently
+// unflagged gap. Flagged here for a follow-up scanner, not built in this
+// change (scope: editor/persistence three-way delete only).
+func DeleteEditorAbility(id string) (status string, existed bool, err error) {
+	if AbilityIsEmbedded(id) {
+		mode, ok, rerr := ResetAbilityDef(id)
+		if rerr != nil || !ok {
+			return "", ok, rerr
+		}
+		if mode == "undo" {
+			return "reverted", true, nil
+		}
+		return "reset", true, nil
+	}
+
+	existed, err = DeleteAbilityOverride(id)
+	if err != nil || !existed {
+		return "", existed, err
+	}
+	return "deleted", true, nil
 }
 
 // EditorAbilityIssues is a READ-ONLY dry-run inspection of def: it mirrors

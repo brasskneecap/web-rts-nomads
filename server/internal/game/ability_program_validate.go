@@ -10,7 +10,7 @@ import "fmt"
 var allActionTypes = []ActionType{
 	ActionSelectTargets, ActionStoreTargets, ActionFilterTargets, ActionDealDamage,
 	ActionRestoreHealth, ActionApplyStatus, ActionRemoveStatus, ActionCreateZone,
-	ActionLaunchProjectile, ActionChargeFireVolley, ActionChannelBeam, ActionSummonUnit, ActionMoveUnit, ActionApplyForce,
+	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionMoveUnit, ActionApplyForce,
 	ActionModifyResource, ActionTriggerEvent, ActionPlayPresentation, ActionPlaySound,
 	ActionChangeRenderLayer, ActionCameraShake, ActionWait, ActionConditional,
 	ActionRepeat, ActionCustom,
@@ -51,14 +51,20 @@ func validateAbilityProgram(prog *AbilityProgram) []ValidationIssue {
 	w := &validationWalker{seenIDs: map[string]bool{}}
 
 	for i, trig := range prog.Triggers {
-		w.walkTrigger(trig, fmt.Sprintf("triggers[%d]", i))
+		// A channeled beam may only START from a ROOT on_cast_complete trigger
+		// (channels can only begin from the cast-begin gating path — see
+		// ability_channel.go's ORDERING DECISION). Root on_cast_complete
+		// triggers pass channeledBeamAllowed=true; everything else (other root
+		// trigger types, named triggers, presentations, and every NESTED
+		// trigger) passes false, so a channeled beam anywhere else is flagged.
+		w.walkTrigger(trig, fmt.Sprintf("triggers[%d]", i), trig.Type == TriggerOnCastComplete)
 	}
 	for key, trig := range prog.NamedTriggers {
-		w.walkTrigger(trig, fmt.Sprintf("namedTriggers[%s]", key))
+		w.walkTrigger(trig, fmt.Sprintf("namedTriggers[%s]", key), false)
 	}
 	for p, pres := range prog.Presentations {
 		for i, trig := range pres.Triggers {
-			w.walkTrigger(trig, fmt.Sprintf("presentations[%d].triggers[%d]", p, i))
+			w.walkTrigger(trig, fmt.Sprintf("presentations[%d].triggers[%d]", p, i), false)
 		}
 	}
 
@@ -77,7 +83,7 @@ func validateAbilityProgram(prog *AbilityProgram) []ValidationIssue {
 // walkTrigger validates one trigger (duplicate id, tick-interval requirement)
 // and then walks its actions, recursing into any child triggers nested
 // inside those actions.
-func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string) {
+func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string, channeledBeamAllowed bool) {
 	w.checkDuplicateID(trig.ID, path)
 
 	if trig.Type == TriggerOnZoneTick || trig.Type == TriggerOnStatusTick {
@@ -92,13 +98,15 @@ func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string) {
 	}
 
 	for i, action := range trig.Actions {
-		w.walkAction(action, fmt.Sprintf("%s.actions[%d]", path, i))
+		w.walkAction(action, fmt.Sprintf("%s.actions[%d]", path, i), channeledBeamAllowed)
 	}
 }
 
 // walkAction validates one action (duplicate id, known type, decode +
 // descriptor validation) and recurses into any child triggers.
-func (w *validationWalker) walkAction(action AbilityActionDef, path string) {
+// channeledBeamAllowed is true only for a direct action of a root
+// on_cast_complete trigger — the one place a channeled beam may start.
+func (w *validationWalker) walkAction(action AbilityActionDef, path string, channeledBeamAllowed bool) {
 	w.numAction++
 	w.checkDuplicateID(action.ID, path)
 
@@ -128,32 +136,53 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string) {
 				w.issues = append(w.issues, issue)
 			}
 
-			// create_zone, apply_status(authored), and launch_projectile
-			// (non-chain) are the ActionTypes whose config carries a decoded,
-			// live trigger container (createZoneConfig.Triggers /
-			// applyStatusConfig.Triggers / launchProjectileConfig.Triggers,
-			// json "triggers" — see ability_zone.go / ability_status.go /
-			// ability_compile.go). Only recurse when the decode above
-			// succeeded: on failure cfg is the zero value and walking it would
-			// validate garbage instead of reporting invalid_config once (which
-			// the branch above already did).
+			// A channeled beam may only START from a root on_cast_complete
+			// trigger (channeledBeamAllowed). Anywhere else it would try to
+			// start a channel from a call site that can't gate it — flag it
+			// loudly instead of letting it silently no-op.
+			if action.Type == ActionBeam && !channeledBeamAllowed {
+				if bc, ok := cfg.(beamConfig); ok && bc.Channeled {
+					w.issues = append(w.issues, ValidationIssue{
+						Path:     path,
+						Code:     "invalid_channeled_beam_placement",
+						Message:  "a channeled beam can only be the channel-start action of a root on_cast_complete trigger",
+						Severity: "error",
+					})
+				}
+			}
+
+			// create_zone, apply_status(authored), launch_projectile
+			// (non-chain), and beam are the ActionTypes whose config carries a
+			// decoded, live trigger container (json "triggers" — see
+			// ability_zone.go / ability_status.go / ability_compile.go /
+			// ability_exec_beam.go). Nested triggers can never host a channel
+			// start, so they always pass channeledBeamAllowed=false. Only
+			// recurse when the decode above succeeded: on failure cfg is the
+			// zero value and walking it would validate garbage instead of
+			// reporting invalid_config once (which the branch above already did).
 			switch action.Type {
 			case ActionCreateZone:
 				if zc, ok := cfg.(createZoneConfig); ok {
 					for i, child := range zc.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i))
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false)
 					}
 				}
 			case ActionApplyStatus:
 				if ac, ok := cfg.(applyStatusConfig); ok {
 					for i, child := range ac.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i))
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false)
 					}
 				}
 			case ActionLaunchProjectile:
 				if lc, ok := cfg.(launchProjectileConfig); ok {
 					for i, child := range lc.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i))
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false)
+					}
+				}
+			case ActionBeam:
+				if bc, ok := cfg.(beamConfig); ok {
+					for i, child := range bc.Triggers {
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false)
 					}
 				}
 			}
@@ -163,7 +192,7 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string) {
 	// silently (no decode, no flag). See task doc for rationale.
 
 	for i, child := range action.Children {
-		w.walkTrigger(child, fmt.Sprintf("%s.children[%d]", path, i))
+		w.walkTrigger(child, fmt.Sprintf("%s.children[%d]", path, i), false)
 	}
 }
 

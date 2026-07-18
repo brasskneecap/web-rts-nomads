@@ -357,3 +357,90 @@ func TestResolveTargetQuery_OrderRandom_DeterministicUnderSeed(t *testing.T) {
 	assertPermutation(t, got1, enemyIDs1)
 	assertPermutation(t, got2, enemyIDs2)
 }
+
+// TestResolveTargetQuery_ExcludeRef_DropsUnitsInNamedSet proves the chain-
+// lightning primitive: a query with ExcludeRef pointing at a named ctxUnitSet
+// drops every candidate whose ID is in that set, keeping the rest.
+func TestResolveTargetQuery_ExcludeRef_DropsUnitsInNamedSet(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	hit1 := teamCombatUnit(t, s, "p2", 10, 0)
+	hit2 := teamCombatUnit(t, s, "p2", 20, 0)
+	fresh := teamCombatUnit(t, s, "p2", 30, 0)
+
+	ctx := &RuntimeAbilityContext{
+		CasterID: caster.ID,
+		Named: map[string]ContextValue{
+			"hit": {Kind: ctxUnitSet, UnitIDs: []int{hit1.ID, hit2.ID}},
+		},
+	}
+	q := TargetQueryDef{
+		Source:     SrcAllInScene,
+		Origin:     OriginCaster,
+		Relations:  []TargetRelation{RelEnemy},
+		Radius:     1000,
+		Ordering:   OrderUnitID,
+		ExcludeRef: &ContextRef{Key: "hit"},
+	}
+	got := s.resolveTargetQueryLocked(ctx, q)
+	if len(got) != 1 || got[0] != fresh.ID {
+		t.Fatalf("got %v, want [%d] (already-hit units excluded)", got, fresh.ID)
+	}
+}
+
+// TestResolveTargetQuery_ExcludeRef_MissingKey_NoOp guards the no-op default:
+// an ExcludeRef pointing at a key that was never bound must not change the
+// result at all.
+func TestResolveTargetQuery_ExcludeRef_MissingKey_NoOp(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	enemy := teamCombatUnit(t, s, "p2", 10, 0)
+
+	ctx := &RuntimeAbilityContext{CasterID: caster.ID, Named: map[string]ContextValue{}}
+	q := TargetQueryDef{
+		Source:     SrcAllInScene,
+		Origin:     OriginCaster,
+		Relations:  []TargetRelation{RelEnemy},
+		Radius:     1000,
+		Ordering:   OrderUnitID,
+		ExcludeRef: &ContextRef{Key: "never_bound"},
+	}
+	got := s.resolveTargetQueryLocked(ctx, q)
+	if len(got) != 1 || got[0] != enemy.ID {
+		t.Fatalf("got %v, want [%d] (missing key is a no-op)", got, enemy.ID)
+	}
+}
+
+// TestResolveTargetQuery_ExcludeRef_WrongKind_NoOp guards the "not a unit
+// set" no-op: ExcludeRef naming a key bound to a ctxPosition (or any other
+// non-ctxUnitSet kind) must not exclude anything.
+func TestResolveTargetQuery_ExcludeRef_WrongKind_NoOp(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	enemy := teamCombatUnit(t, s, "p2", 10, 0)
+
+	ctx := &RuntimeAbilityContext{
+		CasterID: caster.ID,
+		Named: map[string]ContextValue{
+			"pos": {Kind: ctxPosition, Position: protocol.Vec2{X: 5, Y: 5}},
+		},
+	}
+	q := TargetQueryDef{
+		Source:     SrcAllInScene,
+		Origin:     OriginCaster,
+		Relations:  []TargetRelation{RelEnemy},
+		Radius:     1000,
+		Ordering:   OrderUnitID,
+		ExcludeRef: &ContextRef{Key: "pos"},
+	}
+	got := s.resolveTargetQueryLocked(ctx, q)
+	if len(got) != 1 || got[0] != enemy.ID {
+		t.Fatalf("got %v, want [%d] (non-unit-set kind is a no-op)", got, enemy.ID)
+	}
+}

@@ -37,10 +37,26 @@ export interface OverlayCamera {
   zoom: number
 }
 
-function worldToScreen(worldX: number, worldY: number, cam: OverlayCamera) {
+// Exported (not just used internally for the range/AoE rings above) so the
+// preview canvas's drag-to-place hit-testing (Phase 6b) can project a scene
+// unit's world position to screen space with the exact same formula the
+// rings use, guaranteeing a dragged unit's hitbox always lines up with
+// whatever the renderer/overlays actually painted at that world point.
+export function worldToScreen(worldX: number, worldY: number, cam: OverlayCamera) {
   return {
     x: (worldX - cam.x) * cam.zoom,
     y: (worldY - cam.y) * cam.zoom,
+  }
+}
+
+// screenToWorld is the EXACT algebraic inverse of worldToScreen above —
+// solve `screenX = (worldX - cam.x) * cam.zoom` for worldX. Used by the
+// preview canvas's drag handlers to convert a pointer event's screen
+// position into the world position a dragged unit/caster should move to.
+export function screenToWorld(screenX: number, screenY: number, cam: OverlayCamera) {
+  return {
+    x: screenX / cam.zoom + cam.x,
+    y: screenY / cam.zoom + cam.y,
   }
 }
 

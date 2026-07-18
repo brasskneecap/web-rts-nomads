@@ -84,6 +84,18 @@ type RuntimeAbilityContext struct {
 	// legacy's own effectiveness scaling never touches heal amounts either —
 	// resolveAbilityCastOnTargetLocked reads def.HealAmount directly, not eff.
 	damageEffectivenessMultiplier float64
+	// lastAppliedDamage is the total damage the most recent deal_damage action
+	// applied this run (reset to 0 at the start of every deal_damage Execute,
+	// then set to the sum of `amount` across every unit it actually hit — see
+	// that action's Execute, ability_program_registry.go). Read by the
+	// siphon_life channel loop (tickUnitChannelLocked, ability_channel.go) so
+	// the per-tick heal amount and every Siphoner perk hook drive off the
+	// SAME single authority a converted (SchemaVersion>=2) def's on_beam_tick
+	// deal_damage actually applied, instead of recomputing the fold
+	// separately and risking it drift from what deal_damage really did. A
+	// general, additive field — no other caller reads it, so nothing else's
+	// behavior changes.
+	lastAppliedDamage int
 	// opsUsed counts total executeActionLocked invocations across the whole
 	// program run (not just the current recursion stack). This bounds TOTAL
 	// WORK, which ctx.depth/maxTriggerDepth alone does not: a bounded-depth

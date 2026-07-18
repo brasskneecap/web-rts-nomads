@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { overlayCircles, type OverlayInput } from './PreviewOverlays'
+import { overlayCircles, screenToWorld, worldToScreen, type OverlayCamera, type OverlayInput } from './PreviewOverlays'
 
 // Base input: caster and cast point both provided, both toggles on, both
 // radii set. Individual tests override just the field under test.
@@ -93,5 +93,64 @@ describe('overlayCircles', () => {
     )
     expect(castRange).toEqual({ cx: 0, cy: 0, radius: 300 })
     expect(aoe).toEqual({ cx: 600, cy: 0, radius: 120 })
+  })
+})
+
+// screenToWorld (Phase 6b: drag-to-place) — the preview canvas's drag
+// handlers use this to convert a pointer event's screen position into the
+// world position a dragged unit/caster should move to. It MUST be the exact
+// algebraic inverse of worldToScreen (the same formula overlayCircles uses
+// above), or a dragged unit would visibly drift from the cursor.
+describe('screenToWorld', () => {
+  const cams: OverlayCamera[] = [
+    { x: 0, y: 0, zoom: 1 },
+    { x: 10, y: 20, zoom: 2 },
+    { x: -50, y: 300, zoom: 0.5 },
+    { x: 600, y: 500, zoom: 1.75 },
+  ]
+
+  it('is the exact inverse of worldToScreen for a range of world points and cameras', () => {
+    const worldPoints = [
+      { x: 0, y: 0 },
+      { x: 123.5, y: -45 },
+      { x: -1000, y: 2000 },
+      { x: 600, y: 500 },
+    ]
+    for (const cam of cams) {
+      for (const p of worldPoints) {
+        const screen = worldToScreen(p.x, p.y, cam)
+        const roundTripped = screenToWorld(screen.x, screen.y, cam)
+        expect(roundTripped.x).toBeCloseTo(p.x, 9)
+        expect(roundTripped.y).toBeCloseTo(p.y, 9)
+      }
+    }
+  })
+
+  it('is the exact inverse in the other direction too: worldToScreen(screenToWorld(...)) round-trips', () => {
+    const screenPoints = [
+      { x: 0, y: 0 },
+      { x: 400, y: 300 },
+      { x: -20, y: 1000 },
+    ]
+    for (const cam of cams) {
+      for (const s of screenPoints) {
+        const world = screenToWorld(s.x, s.y, cam)
+        const roundTripped = worldToScreen(world.x, world.y, cam)
+        expect(roundTripped.x).toBeCloseTo(s.x, 9)
+        expect(roundTripped.y).toBeCloseTo(s.y, 9)
+      }
+    }
+  })
+
+  it('matches the documented formula directly (world = screen / zoom + cam)', () => {
+    const cam = { x: 10, y: 20, zoom: 2 }
+    const world = screenToWorld(80, 80, cam)
+    expect(world.x).toBe(80 / 2 + 10) // 50
+    expect(world.y).toBe(80 / 2 + 20) // 60
+  })
+
+  it('zoom 1, camera at origin is the identity mapping', () => {
+    const cam = { x: 0, y: 0, zoom: 1 }
+    expect(screenToWorld(42, -17, cam)).toEqual({ x: 42, y: -17 })
   })
 })

@@ -145,28 +145,101 @@ func channelSpecFor(def AbilityDef) (channelSpec, bool) {
 }
 
 // findChannelBeamConfig walks prog's top-level triggers for an
-// on_cast_complete trigger with a channel_beam action and decodes its
-// config. Also the seam AbilityDef.IsChannelAbility() uses to recognize a
-// converted channel ability by its Program's SHAPE (never by a cleared flat
-// field) — mirrors findChargeFireVolleyConfig (spell_charge.go).
-func findChannelBeamConfig(prog *AbilityProgram) (channelBeamConfig, bool) {
+// on_cast_complete trigger with a CHANNELED beam action (a beam whose config
+// Channeled == true) and decodes its config. Also the seam
+// AbilityDef.IsChannelAbility() uses to recognize a converted channel ability
+// by its Program's SHAPE (never by a cleared flat field) — mirrors
+// findChargeFireVolleyConfig (spell_charge.go). The Channeled flag is what
+// distinguishes siphon_life's channel-start beam from chain_lightning's
+// momentary bounce beams, which are the same ActionBeam type.
+func findChannelBeamConfig(prog *AbilityProgram) (beamConfig, bool) {
 	if prog == nil {
-		return channelBeamConfig{}, false
+		return beamConfig{}, false
 	}
 	for _, trig := range prog.Triggers {
 		if trig.Type != TriggerOnCastComplete {
 			continue
 		}
 		for _, act := range trig.Actions {
-			if act.Type != ActionChannelBeam {
+			if act.Type != ActionBeam {
 				continue
 			}
-			var cfg channelBeamConfig
+			var cfg beamConfig
 			decodeActionConfig(act.Config, &cfg)
+			if !cfg.Channeled {
+				continue
+			}
 			return cfg, true
 		}
 	}
-	return channelBeamConfig{}, false
+	return beamConfig{}, false
+}
+
+// fireChannelBeamTickLocked fires a converted (SchemaVersion>=2) channel
+// ability's compiled on_beam_tick trigger for exactly one tick — the
+// authored, per-tick DAMAGE step (a single deal_damage action against the
+// channel's one target, compileChannelBeamTickTrigger in ability_compile.go)
+// — and returns the total damage it actually applied
+// (ctx.lastAppliedDamage), clamped to >= 0. tickUnitChannelLocked reads this
+// return value as tickDamage, driving heal distribution and every Siphoner
+// perk hook off it exactly as it already does for a legacy-computed
+// tickDamage — the channel LIFECYCLE stays entirely in Go; only this one
+// number is authored.
+//
+// ctx.damageEffectivenessMultiplier is set to damageMult (the caller's
+// mods.DamageMult) so deal_damage folds the caster's Siphoner perk scaler
+// exactly ONCE, through the same ctx.effectiveDamageMultiplier() seam every
+// other deal_damage call uses — see RuntimeAbilityContext.lastAppliedDamage's
+// doc comment (ability_exec.go) and dealDamageConfig's Execute
+// (ability_program_registry.go) for the fold-once arithmetic
+// (round(DamagePerTick * mods.DamageMult), byte-identical to the legacy
+// inline computation this replaces since effectiveAbilityDamageLocked is
+// identity for siphon_life and FlatOffset is 0).
+//
+// Returns 0 (no damage) if def's Program has no compiled on_beam_tick
+// trigger at all — an authoring gap degrades to "no damage this tick",
+// mirroring what an absent legacy DamagePerTick would do.
+//
+// Caller holds s.mu write lock.
+func (s *GameState) fireChannelBeamTickLocked(caster, target *Unit, def AbilityDef, damageMult float64) int {
+	cfg, ok := findChannelBeamConfig(def.Program)
+	if !ok {
+		return 0
+	}
+	var actions []AbilityActionDef
+	for _, trig := range cfg.Triggers {
+		if trig.Type == TriggerOnBeamTick {
+			actions = trig.Actions
+			break
+		}
+	}
+	if len(actions) == 0 {
+		return 0
+	}
+
+	ctx := &RuntimeAbilityContext{
+		CasterID:                      caster.ID,
+		AbilityID:                     def.ID,
+		InitialTarget:                 target.ID,
+		CurrentEventUnitID:            target.ID,
+		program:                       def.Program,
+		abilityDef:                    &def,
+		Named:                         map[string]ContextValue{},
+		Trace:                         s.previewTrace,
+		now:                           s.previewClock,
+		damageEffectivenessMultiplier: damageMult,
+	}
+	path := "on_beam_tick"
+	for i := range actions {
+		if ctx.opsExhausted() {
+			break
+		}
+		s.executeActionLocked(ctx, &actions[i], path)
+	}
+	if ctx.lastAppliedDamage < 0 {
+		return 0
+	}
+	return ctx.lastAppliedDamage
 }
 
 // startChannelLocked performs the MECHANICAL channel-start step only: state
@@ -381,24 +454,35 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 			return
 		}
 
-		tickDamage := int(math.Round(float64(spec.DamagePerTick) * mods.DamageMult))
-		if tickDamage < 0 {
-			tickDamage = 0
-		}
+		// Per-tick DAMAGE: for a converted (SchemaVersion>=2) def, the amount
+		// is authored (on_beam_tick/deal_damage, see fireChannelBeamTickLocked
+		// and this file's "composable migration" doc comment); for a legacy
+		// def it stays the original inline computation, byte-for-byte
+		// unchanged. Either way tickDamage lands as the SAME single number
+		// the heal + perk hooks below read.
+		var tickDamage int
+		if def.SchemaVersion >= 2 && def.Program != nil {
+			tickDamage = s.fireChannelBeamTickLocked(unit, target, def, mods.DamageMult)
+		} else {
+			tickDamage = int(math.Round(float64(spec.DamagePerTick) * mods.DamageMult))
+			if tickDamage < 0 {
+				tickDamage = 0
+			}
 
-		// Apply damage to the target through the central pipeline so
-		// mitigation, the death pipeline, threat, and determinism all apply.
-		// Color of the resulting floating-up popup is driven automatically
-		// by applyUnitDamageWithSourceLocked → recordDamageTypeHintLocked
-		// off DamageSource.DamageType, so siphon_life ticks naturally render
-		// dark-purple without any per-callsite plumbing here.
-		if tickDamage > 0 {
-			s.applyUnitDamageWithSourceLocked(target, tickDamage, DamageSource{
-				AttackerUnitID:  unit.ID,
-				Kind:            "ability",
-				DamageType:      def.DamageType.OrPhysical(),
-				SourceAbilityID: def.ID,
-			})
+			// Apply damage to the target through the central pipeline so
+			// mitigation, the death pipeline, threat, and determinism all apply.
+			// Color of the resulting floating-up popup is driven automatically
+			// by applyUnitDamageWithSourceLocked → recordDamageTypeHintLocked
+			// off DamageSource.DamageType, so siphon_life ticks naturally render
+			// dark-purple without any per-callsite plumbing here.
+			if tickDamage > 0 {
+				s.applyUnitDamageWithSourceLocked(target, tickDamage, DamageSource{
+					AttackerUnitID:  unit.ID,
+					Kind:            "ability",
+					DamageType:      def.DamageType.OrPhysical(),
+					SourceAbilityID: def.ID,
+				})
+			}
 		}
 
 		// Compute heal amount from the SAME tickDamage (so Soul Leech's
@@ -486,7 +570,7 @@ func (s *GameState) channelRangeMultiplierForCasterLocked(caster *Unit, def Abil
 	if caster == nil {
 		return 1.0
 	}
-	if def.ID == "siphon_life" {
+	if def.ID == siphonLifeAbilityID {
 		return s.siphonLifeChannelModifiersForCasterLocked(caster).RangeMult
 	}
 	return 1.0
@@ -545,7 +629,7 @@ func (s *GameState) clearChannelStateLocked(unit *Unit) {
 	// is the precise "the channel ended because they died" signal — every
 	// other stop reason leaves the target alive (or removes the target via
 	// FoW, in which case getUnitByIDLocked returns nil and we skip).
-	if unit.ChannelAbilityID == "siphon_life" && unit.ChannelTargetID != 0 &&
+	if unit.ChannelAbilityID == siphonLifeAbilityID && unit.ChannelTargetID != 0 &&
 		containsString(unit.PerkIDs, "repurposed_life") {
 		if target := s.getUnitByIDLocked(unit.ChannelTargetID); target != nil && target.HP <= 0 {
 			if def := perkDefByID("repurposed_life"); def != nil {

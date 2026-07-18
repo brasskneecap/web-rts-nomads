@@ -10,14 +10,17 @@
     <AbilityPreviewCanvas
       v-model:current-tick="currentTick"
       v-model:playing="canvasPlaying"
-      :frames="result?.frames ?? []"
+      :frames="framesForCanvas"
       :trace="result?.trace ?? []"
       :cast-range="overlayCastRange"
       :aoe-radius="overlayAoeRadius"
-      :caster-x="lastCasterX"
-      :caster-y="lastCasterY"
-      :cast-x="lastCastX"
-      :cast-y="lastCastY"
+      :caster-x="canvasCasterX"
+      :caster-y="canvasCasterY"
+      :cast-x="canvasCastX"
+      :cast-y="canvasCastY"
+      :scene-units="sceneUnits"
+      @update:scene-unit="onUpdateSceneUnit"
+      @update:caster="onUpdateCaster"
     />
 
     <div class="ab-preview__scroll">
@@ -29,10 +32,19 @@
           :disabled="runDisabled"
           @click="onRun"
         >{{ running ? 'Running…' : 'Run Preview' }}</UiButton>
+        <UiButton
+          v-if="result"
+          size="sm"
+          variant="secondary"
+          data-test="preview-edit-scene-button"
+          :disabled="running"
+          @click="onEditScene"
+        >Edit Scene</UiButton>
         <span v-if="running" class="ab-preview__running-hint">Simulating on the server…</span>
+        <span v-else-if="result" class="ab-preview__running-hint">Showing a run — Edit Scene to move units again.</span>
       </div>
 
-      <PreviewSceneControls @update:model-value="onSceneUpdate" />
+      <PreviewSceneControls :charge-required="chargeRequired" @update:model-value="onSceneConfigUpdate" />
 
       <p v-if="runError" class="ab-preview__error" role="alert" data-test="preview-run-error">{{ runError }}</p>
 
@@ -104,27 +116,193 @@ import UiButton from '@/components/ui/UiButton.vue'
 import { saveRequestFromForm } from '@/game/abilities/abilityEditorForm'
 import type { AbilityProgram } from '@/game/abilities/program/abilityProgram'
 import { serializeProgram } from '@/game/abilities/program/abilityProgram'
-import type { PreviewRequest, PreviewResult } from '@/game/abilities/program/programPreview'
+import type { PreviewRequest, PreviewResult, PreviewSceneUnit } from '@/game/abilities/program/programPreview'
 import { runAbilityPreview } from '@/game/abilities/abilityEditorApi'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
 import { refFromPath } from './refFromPath'
 import { PREVIEW_FRAME_DT_SECONDS } from './previewPlayback'
-import PreviewSceneControls, { type PreviewScene } from './PreviewSceneControls.vue'
-import { PREVIEW_SCENE_ORIGIN } from './previewScene'
+import PreviewSceneControls, { type PreviewSceneConfig } from './PreviewSceneControls.vue'
+import {
+  DEFAULT_ALLY_HP,
+  DEFAULT_ALLY_MAX_HP,
+  DEFAULT_ENEMY_HP,
+  DEFAULT_ENEMY_MAX_HP,
+  PREVIEW_SCENE_ORIGIN,
+  defaultAllyPosition,
+  defaultEnemyPosition,
+} from './previewScene'
 import PreviewTimeline from './PreviewTimeline.vue'
 import PreviewEventLog from './PreviewEventLog.vue'
 import AbilityPreviewCanvas from './AbilityPreviewCanvas.vue'
 
 const builder = useAbilityBuilderContext()
 
-// scene starts undefined-safe: PreviewSceneControls emits its own default
-// scene synchronously during its own setup (a `watch(..., {immediate:true})`
-// on its internal state), so by the time onRun can actually be invoked (a
-// user click, always after mount) `scene.value` is populated. The `?? null`
-// guard in runDisabled/onRun covers the theoretical gap regardless.
-const scene = ref<PreviewScene | null>(null)
-
+// result: the most recent server run. Non-null ⇒ the canvas is in REPLAY mode
+// (frozen, non-draggable). Null ⇒ EDIT mode (units live + draggable). Declared
+// up here (before the scene watches below) so those watches can clear it to
+// drop back into edit mode when the scene is edited. Cleared by: a drag
+// (onUpdateSceneUnit/onUpdateCaster), a count change (the reconcile watch), and
+// the explicit Edit Scene button (onEditScene).
 const result = ref<PreviewResult | null>(null)
+
+// ── editable scene (Phase 6b: drag-to-place) ────────────────────────────
+// The panel — not PreviewSceneControls — now owns the actual placed
+// positions: `sceneUnits`/`casterPos` are mutated by DRAGGING on
+// AbilityPreviewCanvas (see onUpdateSceneUnit/onUpdateCaster below).
+// PreviewSceneControls only decides enemy/ally COUNTS + how the cast is
+// aimed + seed/duration (see its own module doc comment); this panel
+// reconciles `sceneUnits` against those counts, preserving whatever
+// positions are already there (see reconcileSceneUnitCounts).
+function buildDefaultSceneUnits(): PreviewSceneUnit[] {
+  return [
+    { team: 'enemy', ...defaultEnemyPosition(0), hp: DEFAULT_ENEMY_HP, maxHp: DEFAULT_ENEMY_MAX_HP },
+    { team: 'ally', ...defaultAllyPosition(0), hp: DEFAULT_ALLY_HP, maxHp: DEFAULT_ALLY_MAX_HP },
+  ]
+}
+
+const sceneUnits = ref<PreviewSceneUnit[]>(buildDefaultSceneUnits())
+const casterPos = ref({ x: PREVIEW_SCENE_ORIGIN.x, y: PREVIEW_SCENE_ORIGIN.y })
+
+// sceneConfig mirrors PreviewSceneControls' own defaults so the panel is
+// runnable immediately on mount, before the child's own `immediate: true`
+// watch has flushed its first emit — that emit still lands moments later
+// with the SAME values, so this is just avoiding a "no scene yet" gap
+// rather than a real default mismatch risk.
+const sceneConfig = ref<PreviewSceneConfig>({
+  enemyCount: 1,
+  allyCount: 1,
+  targetSelector: 'first_enemy',
+  seed: 1,
+  durationSeconds: 3,
+  casterCharge: 0,
+})
+
+function onSceneConfigUpdate(v: PreviewSceneConfig) {
+  sceneConfig.value = v
+}
+
+// chargeRequired: if the ability under preview is a charge-fire passive
+// (arcane_missiles — an on_charge_full trigger with a charge_fire_volley
+// action), surface its charge threshold so PreviewSceneControls can show a
+// "Charge" input prefilled to it. Null for every other ability, which hides the
+// input. Reading the threshold from the live program means it tracks edits to
+// the action's chargeRequired field, not a stale snapshot.
+const chargeRequired = computed<number | null>(() => {
+  for (const trigger of builder.program.value.triggers ?? []) {
+    if (trigger.type !== 'on_charge_full') continue
+    for (const action of trigger.actions ?? []) {
+      if (action.type !== 'charge_fire_volley') continue
+      const req = action.config?.chargeRequired
+      if (typeof req === 'number' && req > 0) return req
+    }
+  }
+  return null
+})
+
+// reconcileSceneUnitCounts adds/removes scene units to match enemyCount/
+// allyCount while PRESERVING every existing unit's position (and its place
+// within its own team's group) — only a genuinely NEW unit gets a fresh
+// default position; a removed unit is always the LAST one in its group.
+function reconcileSceneUnitCounts(enemyCount: number, allyCount: number) {
+  const enemies = sceneUnits.value.filter((u) => u.team === 'enemy')
+  const allies = sceneUnits.value.filter((u) => u.team !== 'enemy')
+
+  while (enemies.length < enemyCount) {
+    enemies.push({ team: 'enemy', ...defaultEnemyPosition(enemies.length), hp: DEFAULT_ENEMY_HP, maxHp: DEFAULT_ENEMY_MAX_HP })
+  }
+  enemies.length = Math.min(enemies.length, enemyCount)
+
+  while (allies.length < allyCount) {
+    allies.push({ team: 'ally', ...defaultAllyPosition(allies.length), hp: DEFAULT_ALLY_HP, maxHp: DEFAULT_ALLY_MAX_HP })
+  }
+  allies.length = Math.min(allies.length, allyCount)
+
+  sceneUnits.value = [...enemies, ...allies]
+}
+
+watch(
+  () => [sceneConfig.value.enemyCount, sceneConfig.value.allyCount] as const,
+  ([enemyCount, allyCount], old) => {
+    reconcileSceneUnitCounts(enemyCount, allyCount)
+    // A count change is a scene edit — like dragging, it returns the canvas to
+    // edit mode (clears any showing run) so the added/removed units appear
+    // immediately AND stay draggable, instead of being hidden behind a stale
+    // replay until the next Run. `old === undefined` on the immediate mount
+    // call (result is already null then), so this only fires on real changes.
+    if (old) result.value = null
+  },
+  { immediate: true },
+)
+
+// onUpdateSceneUnit/onUpdateCaster: AbilityPreviewCanvas's drag emits. A drag
+// always returns the canvas to edit mode (clearing `result`) even if a
+// result was showing — dragging IS "go back and try a different geometry",
+// so the stale replay/trace/summary from the last run must not linger
+// alongside newly-edited positions it no longer describes.
+function onUpdateSceneUnit(payload: { index: number; x: number; y: number }) {
+  const existing = sceneUnits.value[payload.index]
+  if (!existing) return
+  const next = sceneUnits.value.slice()
+  next[payload.index] = { ...existing, x: payload.x, y: payload.y }
+  sceneUnits.value = next
+  result.value = null
+}
+
+function onUpdateCaster(payload: { x: number; y: number }) {
+  casterPos.value = { x: payload.x, y: payload.y }
+  result.value = null
+}
+
+// onEditScene: leave a finished run's frozen replay and return to edit mode so
+// the caster + scene units become live and draggable again (their last-placed
+// positions are preserved — sceneUnits/casterPos are untouched). This is the
+// explicit escape hatch the drag/count-change auto-resets don't cover: after a
+// run you may want to reposition WITHOUT first nudging a unit or changing a
+// count. The button is only shown while a result is present (see template).
+function onEditScene() {
+  result.value = null
+  runError.value = ''
+  selectedIndex.value = undefined
+}
+
+// POINT_CAST_OFFSET_X: how far in front of the caster the "Point" target
+// selector's ground point sits, and where "First enemy"/"First ally" fall
+// back to when that team is empty. Relative to the LIVE caster position (not
+// a fixed world coordinate) so dragging the caster carries its point-cast
+// target along with it.
+const POINT_CAST_OFFSET_X = 150
+
+// derived: the PreviewRequest's target/castX/castY fields, computed from the
+// scene controls' targetSelector against the LIVE casterPos/sceneUnits — so
+// dragging a unit around immediately updates what a unit-target ability
+// would hit, and what a point-target ability's ground point is, without
+// waiting for Run.
+const derived = computed<{ target: number; castX: number; castY: number }>(() => {
+  const caster = casterPos.value
+  const pointCast = { x: caster.x + POINT_CAST_OFFSET_X, y: caster.y }
+  const units = sceneUnits.value
+  switch (sceneConfig.value.targetSelector) {
+    case 'first_enemy': {
+      const idx = units.findIndex((u) => u.team === 'enemy')
+      return idx >= 0
+        ? { target: idx, castX: units[idx].x, castY: units[idx].y }
+        : { target: -1, castX: pointCast.x, castY: pointCast.y }
+    }
+    case 'first_ally': {
+      const idx = units.findIndex((u) => u.team === 'ally')
+      return idx >= 0
+        ? { target: idx, castX: units[idx].x, castY: units[idx].y }
+        : { target: -1, castX: pointCast.x, castY: pointCast.y }
+    }
+    case 'self':
+      // The caster's own ground point follows the caster when dragged.
+      return { target: -1, castX: caster.x, castY: caster.y }
+    case 'point':
+    default:
+      return { target: -1, castX: pointCast.x, castY: pointCast.y }
+  }
+})
+
 const running = ref(false)
 const runError = ref('')
 const selectedIndex = ref<number | undefined>(undefined)
@@ -145,12 +323,29 @@ const canvasPlaying = ref(true)
 
 // lastCasterX/Y, lastCastX/Y: captured from the SAME PreviewRequest actually
 // sent to the server (same capture-at-run-time pattern as
-// lastRequestDuration) so the overlay rings never drift from what was
-// simulated, even if the user tweaks scene controls after the run completes.
+// lastRequestDuration) so the overlay rings — and the canvas's replay of a
+// COMPLETED run — never drift from what was simulated, even if the user
+// drags the caster/units around after the run completes (which now works:
+// dragging clears `result`, see onUpdateSceneUnit/onUpdateCaster above, so
+// these frozen values are only ever read while a result is actually showing).
 const lastCasterX = ref(0)
 const lastCasterY = ref(0)
 const lastCastX = ref(0)
 const lastCastY = ref(0)
+
+// framesForCanvas/canvasCasterX/Y/canvasCastX/Y: what AbilityPreviewCanvas
+// actually receives. While a result is showing (replay mode), these are the
+// FROZEN values captured at run time above — a real replay is 100%
+// server-authoritative and must never drift from what was actually
+// simulated. Before/without a result (edit mode — frames: []), these fall
+// through to the LIVE, currently-editable casterPos/derived values instead,
+// so dragging on the canvas and the cast-range/AoE overlay rings both track
+// the scene as it's being placed, not stale defaults.
+const framesForCanvas = computed(() => result.value?.frames ?? [])
+const canvasCasterX = computed(() => (framesForCanvas.value.length > 0 ? lastCasterX.value : casterPos.value.x))
+const canvasCasterY = computed(() => (framesForCanvas.value.length > 0 ? lastCasterY.value : casterPos.value.y))
+const canvasCastX = computed(() => (framesForCanvas.value.length > 0 ? lastCastX.value : derived.value.castX))
+const canvasCastY = computed(() => (framesForCanvas.value.length > 0 ? lastCastY.value : derived.value.castY))
 
 // overlayCastRange/overlayAoeRadius: read live off the form under preview
 // (castRange/radius are the ability def's own fields — see
@@ -222,14 +417,12 @@ function onSeekEvent(t: number) {
   currentTick.value = Math.min(frameCount - 1, Math.max(0, idx))
 }
 
-const runDisabled = computed(() => builder.busy.value || running.value || !scene.value)
-
-function onSceneUpdate(v: PreviewScene) {
-  scene.value = v
-}
+// No `!scene.value` gate anymore — sceneConfig/sceneUnits/casterPos are all
+// initialized with real defaults above, never null, so the button is only
+// ever gated on the builder/network busy states.
+const runDisabled = computed(() => builder.busy.value || running.value)
 
 async function onRun() {
-  if (!scene.value) return
   running.value = true
   runError.value = ''
   try {
@@ -241,15 +434,22 @@ async function onRun() {
       // useAbilityBuilder.ts (this object only ever travels to JSON.stringify).
       program: serializeProgram(builder.program.value) as unknown as AbilityProgram,
     }
-    // The caster spawns at the scene origin, not the world origin — the map's
-    // terrain starts at (0,0) and the scene is laid out around the caster, so
-    // (0,0) would put the caster on the map's corner and its allies off-map.
-    // PreviewSceneControls lays its units out around this same constant.
+    const d = derived.value
+    // casterX/Y come from the LIVE, user-draggable casterPos (Phase 6b) —
+    // defaults to PREVIEW_SCENE_ORIGIN but follows wherever the caster was
+    // dragged to. units/target/castX/Y likewise come from the live scene the
+    // user placed, not a snapshot taken earlier.
     const req: PreviewRequest = {
       ability,
-      casterX: PREVIEW_SCENE_ORIGIN.x,
-      casterY: PREVIEW_SCENE_ORIGIN.y,
-      ...scene.value,
+      casterX: casterPos.value.x,
+      casterY: casterPos.value.y,
+      units: sceneUnits.value,
+      target: d.target,
+      castX: d.castX,
+      castY: d.castY,
+      casterCharge: sceneConfig.value.casterCharge,
+      seed: sceneConfig.value.seed,
+      durationSeconds: sceneConfig.value.durationSeconds,
     }
     lastRequestDuration.value = req.durationSeconds > 0 ? req.durationSeconds : 3
     lastCasterX.value = req.casterX
@@ -290,6 +490,22 @@ function onSelectNode(path: string) {
 watch(result, () => {
   currentTick.value = 0
 })
+
+// Switching to a DIFFERENT ability must drop any run still on screen: a replay
+// belongs to the ability that produced it, so leaving (e.g.) Arcane Missiles'
+// orbs replaying while Fireball is now selected is stale and wrong. Clearing
+// `result` returns the canvas to edit mode for the newly-selected ability's
+// scene. Keyed on the ability id (not the program) so ongoing edits to the
+// SAME ability don't wipe a result mid-review — only an actual ability switch
+// does. No `immediate`, so this never fires on first mount.
+watch(
+  () => builder.form.value.id,
+  () => {
+    result.value = null
+    runError.value = ''
+    selectedIndex.value = undefined
+  },
+)
 
 const skippedCount = computed(() => result.value?.trace.filter((e) => e.type === 'action_skipped').length ?? 0)
 

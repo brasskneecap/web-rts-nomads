@@ -141,11 +141,13 @@ export function findAction(
 //
 // CONFIG_TRIGGER_ACTION_TYPES: the action types whose Go descriptor decodes a
 // `triggers` field out of its own config, meaning a nested trigger belongs in
-// `config.triggers` rather than `children`. Mirrors the Go side exactly:
+// `config.triggers` rather than `children`. Mirrors the Go side exactly (see
+// walkAction's switch in ability_program_validate.go):
 //   create_zone       -> createZoneConfig.Triggers      (on_zone_tick/enter/exit)
 //   apply_status      -> applyStatusConfig.Triggers     (on_status_tick/expire;
 //                        non-empty is ALSO the authored-vs-legacy discriminator)
 //   launch_projectile -> launchProjectileConfig.Triggers (on_projectile_impact)
+//   beam              -> beamConfig.Triggers             (on_beam_impact | on_beam_tick)
 // Reading is deliberately action-type-agnostic (configTriggersOf below) — only
 // the ADD path needs this list, to pick the right slot. Keep it in step with
 // the Go descriptors; a missing entry silently misfiles an authored trigger
@@ -155,6 +157,7 @@ const CONFIG_TRIGGER_ACTION_TYPES: ReadonlySet<string> = new Set([
   'create_zone',
   'apply_status',
   'launch_projectile',
+  'beam',
 ])
 
 // configTriggersOf reads action.config.triggers defensively: `config` is an

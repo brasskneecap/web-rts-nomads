@@ -53,6 +53,17 @@ describe('abilityEditorForm', () => {
     expect('generatedDescription' in out).toBe(false)
   })
 
+  it('parses `custom` off a catalog entry but never persists it back', () => {
+    const def: AuthoredAbilityDef = {
+      id: 'fireball',
+      custom: true,
+    } as AuthoredAbilityDef
+    const form = formFromDef(def)
+    expect(form.custom).toBe(true)
+    const out = saveRequestFromForm(form) as Record<string, unknown>
+    expect('custom' in out).toBe(false)
+  })
+
   it('inferFamily picks the family from non-zero fields', () => {
     expect(inferFamily({ id: 'a', channelType: 'beam' } as AuthoredAbilityDef)).toBe('channel')
     expect(inferFamily({ id: 'a', chargeRequired: 5 } as AuthoredAbilityDef)).toBe('charge')

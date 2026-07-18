@@ -320,9 +320,10 @@ func TestOnCastStart_ChannelCast_Fires(t *testing.T) {
 					Actions: []AbilityActionDef{
 						{
 							ID:     "channel",
-							Type:   ActionChannelBeam,
+							Type:   ActionBeam,
 							Target: &TargetQueryDef{Source: SrcInitialTarget},
-							Config: marshalConfig(channelBeamConfig{
+							Config: marshalConfig(beamConfig{
+								Channeled:           true,
 								ChannelType:         "test_beam",
 								TickIntervalSeconds: 1.0,
 								ManaCostPerTick:     0,

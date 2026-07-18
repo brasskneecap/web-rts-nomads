@@ -66,10 +66,19 @@ export async function saveEditorAbility(ability: AuthoredAbilityDef): Promise<vo
   if (!res.ok) throw new Error(`Failed to save ability: ${res.status}`)
 }
 
-export async function deleteEditorAbility(id: string): Promise<'deleted' | 'reset'> {
+/**
+ * What the destructive action did:
+ * - `deleted`  — an author-created ability was removed.
+ * - `reverted` — a shipped ability went back to the state before the last save.
+ * - `reset`    — a shipped ability went back to the catalog default (no undo step
+ *                was left, e.g. after a server restart or a second reset in a row).
+ */
+export type EditorAbilityRemoveStatus = 'deleted' | 'reverted' | 'reset'
+
+export async function deleteEditorAbility(id: string): Promise<EditorAbilityRemoveStatus> {
   const res = await fetch(`${API_BASE}/abilities/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`Failed to delete ability: ${res.status}`)
-  const body = (await res.json()) as { status: 'deleted' | 'reset' }
+  const body = (await res.json()) as { status: EditorAbilityRemoveStatus }
   return body.status
 }
 

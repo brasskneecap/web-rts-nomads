@@ -142,14 +142,14 @@ func TestCompileCatalogActionTypeShape(t *testing.T) {
 		"arcane_bolt":     {ActionLaunchProjectile},
 		"arcane_missiles": {ActionChargeFireVolley},
 		"arcane_orb":      {ActionLaunchProjectile},
-		"chain_lightning": {ActionLaunchProjectile},
+		"chain_lightning": {ActionBeam},
 		"fireball":        {ActionLaunchProjectile},
 		"greater_heal":    {ActionSelectTargets, ActionRestoreHealth, ActionPlayPresentation},
 		"heal":            {ActionSelectTargets, ActionRestoreHealth, ActionPlayPresentation},
 		"meteor":          {ActionPlayPresentation},
 		"raise_skeleton":  {ActionSummonUnit},
 		"shatter":         {ActionSelectTargets, ActionDealDamage, ActionApplyStatus, ActionPlayPresentation},
-		"siphon_life":     {ActionChannelBeam},
+		"siphon_life":     {ActionBeam},
 	}
 
 	byID := map[string]AbilityDef{}
@@ -243,13 +243,20 @@ func TestCompileMeteorActions_ImpactTriggerUsesAuthoredDelay(t *testing.T) {
 // ability_zone.go from an earlier phase) — all four now have Execute.
 //
 // UPDATED (Phase 6c): launch_projectile now has a registered ActionDescriptor
-// too (ability_exec_projectile.go), so arcane_bolt, chain_lightning, and
-// fireball — each of which compiles to a single launch_projectile action
+// too (ability_exec_projectile.go), so arcane_bolt and fireball — each of
+// which compiles to a single launch_projectile action
 // (compileProjectileActions) — are now fully runnable as well. The catalog
 // JSONs themselves are NOT migrated by this phase (they stay schemaVersion 0
 // / legacy at runtime; catalogProgram compiles them fresh via
 // compileLegacyAbility purely for this structural classification, same as
 // every other still-legacy ability).
+//
+// UPDATED (chain_lightning authored bounce-chain migration): chain_lightning
+// no longer shares arcane_bolt/fireball's launch_projectile shape at all — it
+// compiles to a ladder of nested launch_beam actions
+// (compileChainLightningActions, ability_compile.go), runnable via
+// launch_beam's own registered ActionDescriptor (ability_exec_beam.go).
+// chain_lightning IS migrated to schemaVersion:2 in the live catalog.
 //
 // UPDATED (arcane_orb composable migration): arcane_orb's moving pull+DoT
 // vortex is now a launch_projectile action (TravelMode "direction" +

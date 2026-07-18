@@ -52,11 +52,17 @@ func runToProjectileImpact(s *GameState, maxTicks int) {
 
 // runToBeamImpact advances s (lock held) until every in-flight Beam
 // (chain_lightning's deferred-damage bounce chain) has landed, or maxTicks is
-// exhausted.
-func runToBeamImpact(s *GameState, maxTicks int) {
-	for i := 0; i < maxTicks && len(s.Beams) > 0; i++ {
+// exhausted. Returns the number of ticks actually consumed — the authored
+// chain unfolds SEQUENTIALLY (each hop's beam impact fires on a LATER tick
+// than the one that spawned it, unlike legacy's single-call bounce loop), so
+// callers that want to prove the chain fully resolved need both the tick
+// count (for visibility) and a len(s.Beams)==0 check after the loop.
+func runToBeamImpact(s *GameState, maxTicks int) int {
+	i := 0
+	for ; i < maxTicks && len(s.Beams) > 0; i++ {
 		s.tickBeamsLocked(0.05)
 	}
+	return i
 }
 
 // ── arcane_bolt (single-target projectile, no splash, no chain) ────────────
@@ -267,14 +273,32 @@ func TestAbilityCompileGolden_ChainLightning(t *testing.T) {
 		if len(sLegacy.Projectiles) != 0 {
 			t.Fatalf("%s: legacy chain_lightning spawned a Projectile — it must resolve as Beams only", label)
 		}
-		runToBeamImpact(sLegacy, 40)
+		legacyTicks := runToBeamImpact(sLegacy, 40)
+		if len(sLegacy.Beams) != 0 {
+			t.Fatalf("%s: legacy chain_lightning left %d beam(s) unresolved after %d ticks", label, len(sLegacy.Beams), legacyTicks)
+		}
 
 		targetsE := sExec.buildCastTargetSetLocked(casterE, execDef, primaryE)
 		sExec.resolveAbilityCastLocked(casterE, execDef, targetsE)
 		if len(sExec.Projectiles) != 0 {
 			t.Fatalf("%s: executor chain_lightning spawned a Projectile — it must resolve as Beams only", label)
 		}
-		runToBeamImpact(sExec, 40)
+		// The AUTHORED chain unfolds SEQUENTIALLY: each hop's on_beam_impact
+		// fires on a LATER tick than the one that spawned it (a fresh Beam per
+		// hop, deferred by beamProcDamageDelaySeconds — ability_exec_beam.go),
+		// unlike legacy's single fireAbilityChainLocked call which resolves
+		// the whole primary+bounce chain inline. Proving parity therefore
+		// requires ticking until every beam in the lineage has landed, not
+		// just the first one — execTicks > 1 is the direct evidence this
+		// actually spanned multiple ticks rather than resolving in one shot.
+		execTicks := runToBeamImpact(sExec, 40)
+		if len(sExec.Beams) != 0 {
+			t.Fatalf("%s: executor chain_lightning left %d beam(s) unresolved after %d ticks", label, len(sExec.Beams), execTicks)
+		}
+		if execTicks <= 1 {
+			t.Fatalf("%s: executor chain resolved in %d tick(s), want > 1 — the sequential-hop timing this test is supposed to exercise did not actually happen", label, execTicks)
+		}
+		t.Logf("%s: legacy resolved in %d tick(s) (single inline call); executor resolved in %d tick(s) (sequential per-hop beams)", label, legacyTicks, execTicks)
 
 		wantPrimary = prePL - primaryL.HP
 		want1 = pre1L - b1L.HP
@@ -289,17 +313,40 @@ func TestAbilityCompileGolden_ChainLightning(t *testing.T) {
 			t.Fatalf("%s: legacy fixture drifted: far enemy took damage; should be outside bounce range", label)
 		}
 
-		if got := prePE - primaryE.HP; got != wantPrimary {
-			t.Fatalf("%s: executor primary damage = %d, want %d (legacy)", label, got, wantPrimary)
+		gotPrimary := prePE - primaryE.HP
+		got1 := pre1E - b1E.HP
+		got2 := pre2E - b2E.HP
+		if gotPrimary != wantPrimary {
+			t.Fatalf("%s: executor primary damage = %d, want %d (legacy)", label, gotPrimary, wantPrimary)
 		}
-		if got := pre1E - b1E.HP; got != want1 {
-			t.Fatalf("%s: executor bounce-1 damage = %d, want %d (legacy)", label, got, want1)
+		if got1 != want1 {
+			t.Fatalf("%s: executor bounce-1 damage = %d, want %d (legacy)", label, got1, want1)
 		}
-		if got := pre2E - b2E.HP; got != want2 {
-			t.Fatalf("%s: executor bounce-2 damage = %d, want %d (legacy)", label, got, want2)
+		if got2 != want2 {
+			t.Fatalf("%s: executor bounce-2 damage = %d, want %d (legacy)", label, got2, want2)
 		}
 		if farE.HP != preFarE {
 			t.Fatalf("%s: executor far enemy HP = %d, want unchanged %d; should be outside bounce range", label, farE.HP, preFarE)
+		}
+
+		// HOP COUNT + VICTIM SET/ORDER: exactly 3 units took damage (primary,
+		// b1, b2 — the daisy-chained primary+2-bounce set), far took none, and
+		// each took a STRICTLY smaller amount than the one before it in both
+		// scenes. Combined with the per-victim equality checks above (which
+		// pin b1's delta to "hop 1's amount" and b2's to "hop 2's amount"
+		// specifically, not just "some amount"), this proves the two paths
+		// hit the SAME set of victims in the SAME order: had the executor's
+		// select_targets query picked b2 before b1 (a reversed hop order),
+		// b1's delta would equal legacy's b2 delta (and vice versa) and the
+		// checks above would already have failed.
+		legacyTotal := wantPrimary + want1 + want2
+		execTotal := gotPrimary + got1 + got2
+		if execTotal != legacyTotal {
+			t.Fatalf("%s: executor total chain damage = %d, want %d (legacy)", label, execTotal, legacyTotal)
+		}
+		wantHopCount := 3 // primary + 2 bounces, per legacyDef.ChainCount==2
+		if legacyDef.ChainCount+1 != wantHopCount {
+			t.Fatalf("%s: fixture drifted: ChainCount=%d implies %d hops, test hardcodes %d", label, legacyDef.ChainCount, legacyDef.ChainCount+1, wantHopCount)
 		}
 
 		assertScenesEquivalent(t, sLegacy, sExec, label)

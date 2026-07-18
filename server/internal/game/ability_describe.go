@@ -93,7 +93,7 @@ func describeLegacyAbility(a AbilityDef) string {
 // its full spec into a charge_fire_volley action's config — see the
 // ActionChargeFireVolley case below), and channel (siphon_life, whose
 // compileChannelBeamAction bakes its full spec into a channel_beam action's
-// config — see the ActionChannelBeam case below, and channelSpecFor's
+// config — see the channeled ActionBeam case below, and channelSpecFor's
 // identical recovery for the RUNTIME side).
 func describeAbilityProgram(a AbilityDef) string {
 	return describeLegacyAbility(abilityMechanicsShadow(a))
@@ -271,11 +271,36 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 				}
 				m.sawPrimaryDamage = true
 			}
+		case ActionBeam:
+			var cfg beamConfig
+			decodeActionConfig(act.Config, &cfg)
+			if cfg.Channeled {
+				// siphon_life's channel-start beam.
+				m.channelType = cfg.ChannelType
+				m.channelTickIntervalSeconds = cfg.TickIntervalSeconds
+				m.channelManaCostPerTick = cfg.ManaCostPerTick
+				m.channelDamagePerTick = cfg.DamagePerTick
+				m.channelHealingMultiplier = cfg.HealingMultiplier
+				m.channelAllyHealRadius = cfg.AllyHealRadius
+				break
+			}
+			// chain_lightning's authored bounce chain (momentary)
+			// (compileChainLightningActions, ability_compile.go): a ladder of
+			// nested beam actions, one per hop (0 = primary, 1..ChainCount =
+			// bounces). See recoverChainLightningBeam's doc comment.
+			if m.sawPrimaryDamage {
+				break
+			}
+			m.projectile = cfg.Variant
+			m.sawPrimaryDamage = true
+			m.recoverChainLightningBeam(cfg, 0)
 		case ActionLaunchProjectile:
-			// arcane_bolt / fireball / chain_lightning / arcane_orb's compiled
-			// shape (a single launch_projectile action with its own Target
-			// query, no preceding select_targets — see compileProjectileActions
-			// / compileTickingProjectileActions).
+			// arcane_bolt / fireball / arcane_orb's compiled shape (a single
+			// launch_projectile action with its own Target query, no preceding
+			// select_targets — see compileProjectileActions /
+			// compileTickingProjectileActions). chain_lightning used to share
+			// this shape too (the pre-redesign ChainCount>0 shim); it is now
+			// recovered via the ActionBeam case above instead.
 			var cfg launchProjectileConfig
 			decodeActionConfig(act.Config, &cfg)
 			if m.sawPrimaryDamage {
@@ -283,18 +308,6 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 			}
 			m.projectile = cfg.Projectile
 			m.projectileScale = cfg.ProjectileScale
-			if cfg.ChainCount > 0 {
-				// chain_lightning's kept shim: still bakes its magnitudes directly
-				// on this action's config (see launchProjectileConfig's doc
-				// comment) — recover them the same way as before the
-				// launch_projectile redesign.
-				m.damageAmount = cfg.Amount
-				m.chainCount = cfg.ChainCount
-				m.bounceDamageFalloff = cfg.BounceDamageFalloff
-				m.minorDamage = cfg.MinorDamage
-				m.sawPrimaryDamage = true
-				break
-			}
 			if cfg.TickInterval > 0 {
 				// arcane_orb's ticking-vortex shim: its magnitudes live SOLELY
 				// in the nested on_projectile_tick trigger (see
@@ -372,15 +385,6 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 				m.projectileScale = cfg.ProjectileScale
 				m.minorDamage = cfg.MinorDamage
 			}
-		case ActionChannelBeam:
-			var cfg channelBeamConfig
-			decodeActionConfig(act.Config, &cfg)
-			m.channelType = cfg.ChannelType
-			m.channelTickIntervalSeconds = cfg.TickIntervalSeconds
-			m.channelManaCostPerTick = cfg.ManaCostPerTick
-			m.channelDamagePerTick = cfg.DamagePerTick
-			m.channelHealingMultiplier = cfg.HealingMultiplier
-			m.channelAllyHealRadius = cfg.AllyHealRadius
 		case ActionCreateZone:
 			var cfg createZoneConfig
 			decodeActionConfig(act.Config, &cfg)
@@ -407,6 +411,50 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 		}
 		for _, child := range act.Children {
 			m.walkTrigger(child, inZone)
+		}
+	}
+}
+
+// recoverChainLightningBeam recurses through the nested launch_beam/
+// on_beam_impact ladder compileChainLightningActions (ability_compile.go)
+// builds — hop 0 is the primary hit, hop 1..ChainCount are bounces, each
+// level's on_beam_impact carrying a deal_damage(+store_targets+select_targets
+// +launch_beam) shape (the +store/+select/+launch trio only present when a
+// deeper hop exists). Recovers:
+//   - damageAmount: hop 0's deal_damage Amount. Every hop's Amount is the
+//     SAME raw def.DamageAmount (see dealDamageConfig.FlatOffset's doc
+//     comment for why the compiler bakes the per-hop reduction as an offset
+//     rather than a smaller Amount), so only hop 0's needs reading.
+//   - bounceDamageFalloff: hop 1's FlatOffset negated. FlatOffset at hop k is
+//     -(BounceDamageFalloff*k), so -FlatOffset at hop 1 IS
+//     BounceDamageFalloff directly.
+//   - chainCount: the deepest hop level the program actually compiled to
+//     (compileChainLightningHop stops early once a hop's damage would be
+//     non-positive, so this can be < the original def.ChainCount for an
+//     extreme-falloff ability, matching the compiled behavior rather than a
+//     possibly-stale intent).
+func (m *programMechanics) recoverChainLightningBeam(cfg beamConfig, hop int) {
+	for _, trig := range cfg.Triggers {
+		if trig.Type != TriggerOnBeamImpact {
+			continue
+		}
+		for _, act := range trig.Actions {
+			switch act.Type {
+			case ActionDealDamage:
+				var dc dealDamageConfig
+				decodeActionConfig(act.Config, &dc)
+				switch hop {
+				case 0:
+					m.damageAmount = dc.Amount
+				case 1:
+					m.bounceDamageFalloff = -dc.FlatOffset
+				}
+			case ActionBeam:
+				m.chainCount = hop + 1
+				var nested beamConfig
+				decodeActionConfig(act.Config, &nested)
+				m.recoverChainLightningBeam(nested, hop+1)
+			}
 		}
 	}
 }

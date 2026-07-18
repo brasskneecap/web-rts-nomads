@@ -6,6 +6,7 @@ import type { AbilityProgram } from '@/game/abilities/program/abilityProgram'
 import type { PreviewFrame, PreviewRequest, PreviewResult } from '@/game/abilities/program/programPreview'
 import type { MatchSnapshotMessage } from '@/game/network/protocol'
 import AbilityPreviewPanel from './AbilityPreviewPanel.vue'
+import AbilityPreviewCanvas from './AbilityPreviewCanvas.vue'
 import { AbilityBuilderKey } from './AbilityBuilderContext'
 import type { NodeRef } from './programTree'
 
@@ -24,6 +25,22 @@ function makeProgram(): AbilityProgram {
     entry: { type: 'unit', range: 300 },
     triggers: [
       { id: 't1', type: 'on_cast_complete', actions: [{ id: 'a1', type: 'deal_damage', config: { amount: 10 } }] },
+    ],
+  }
+}
+
+// A charge-fire passive shape (arcane_missiles): an on_charge_full trigger with
+// a charge_fire_volley action carrying chargeRequired — what the panel detects
+// to surface the Charge input.
+function makeChargeProgram(chargeRequired = 30): AbilityProgram {
+  return {
+    entry: { type: 'passive', range: 0 },
+    triggers: [
+      {
+        id: 'cf',
+        type: 'on_charge_full',
+        actions: [{ id: 'v', type: 'charge_fire_volley', config: { chargeRequired, missileCount: 3 } }],
+      },
     ],
   }
 }
@@ -92,14 +109,19 @@ afterEach(() => {
 })
 
 describe('AbilityPreviewPanel', () => {
-  it('mounts the canvas immediately, before any run, showing its idle placeholder', async () => {
+  it('mounts the canvas immediately, before any run, in an editable (drag-to-place) state', async () => {
     const builder = makeBuilderStub()
     const wrapper = await mountPanel(builder)
 
     const canvas = wrapper.find('[data-test="ability-preview-canvas"]')
     expect(canvas.exists()).toBe(true)
-    expect(wrapper.find('[data-test="preview-canvas-empty"]').exists()).toBe(true)
-    // Playback controls are inert with no frames.
+    // Phase 6b: with no result yet, the canvas is in EDIT mode, not idle —
+    // the panel seeds a default scene (1 enemy + 1 pre-damaged ally), so the
+    // drag-to-place layer is present and the "run a preview" placeholder is
+    // NOT shown (there IS a scene to look at/drag). Replay-only playback
+    // controls stay disabled — there's no captured frame sequence yet.
+    expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="preview-canvas-empty"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="preview-play-toggle"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
   })
@@ -152,20 +174,22 @@ describe('AbilityPreviewPanel', () => {
     expect(summary.text()).toContain('190')
   })
 
-  it('feeds populated frames to the (already-mounted) canvas once a result arrives, clearing its idle placeholder', async () => {
+  it('feeds populated frames to the (already-mounted) canvas once a result arrives, switching out of edit mode', async () => {
     runAbilityPreviewMock.mockResolvedValue(makeResult({ frames: makeFrames(5) }))
     const builder = makeBuilderStub()
     const wrapper = await mountPanel(builder)
 
-    // Canvas is present from the start, showing its idle placeholder.
+    // Canvas is present from the start, in edit mode (drag layer present).
     expect(wrapper.find('[data-test="ability-preview-canvas"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="preview-canvas-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
 
     await wrapper.find('[data-test="preview-run-button"]').trigger('click')
     await flushPromises()
 
-    // Same canvas instance now has real frames — placeholder gone, controls
-    // enabled, and the rest of the panel (timeline/log/summary) still works.
+    // Same canvas instance now has real frames — edit mode's drag layer is
+    // gone, controls enabled, and the rest of the panel (timeline/log/summary)
+    // still works.
+    expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="preview-canvas-empty"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="preview-play-toggle"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('[data-test="preview-scrub"]').attributes('max')).toBe('4')
@@ -295,5 +319,199 @@ describe('AbilityPreviewPanel', () => {
     const err = wrapper.find('[data-test="preview-run-error"]')
     expect(err.exists()).toBe(true)
     expect(err.text()).toContain('bad ability program')
+  })
+
+  // Phase 6b: drag-to-place. AbilityPreviewCanvas owns the actual hit-testing/
+  // pointer geometry (covered in AbilityPreviewCanvas.test.ts + previewOverlays.test.ts's
+  // screenToWorld inverse); here we only verify the PANEL correctly threads a
+  // drag's emitted position into the next Run request, and reconciles scene-unit
+  // COUNTS against whatever's already been dragged.
+  describe('drag-to-place (Phase 6b)', () => {
+    it('a scene-unit drag updates the position sent in the next Run request', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult())
+      const builder = makeBuilderStub()
+      const wrapper = await mountPanel(builder)
+
+      const canvas = wrapper.findComponent(AbilityPreviewCanvas)
+      await canvas.vm.$emit('update:scene-unit', { index: 0, x: 999, y: 888 })
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+
+      const req = runAbilityPreviewMock.mock.calls[0][0]
+      expect(req.units[0].x).toBe(999)
+      expect(req.units[0].y).toBe(888)
+    })
+
+    it('a caster drag updates casterX/Y sent in the next Run request', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult())
+      const builder = makeBuilderStub()
+      const wrapper = await mountPanel(builder)
+
+      const canvas = wrapper.findComponent(AbilityPreviewCanvas)
+      await canvas.vm.$emit('update:caster', { x: 111, y: 222 })
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+
+      const req = runAbilityPreviewMock.mock.calls[0][0]
+      expect(req.casterX).toBe(111)
+      expect(req.casterY).toBe(222)
+    })
+
+    it('dragging a unit after a run clears the shown result, returning the canvas to edit mode', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult({ frames: makeFrames(5) }))
+      const builder = makeBuilderStub()
+      const wrapper = await mountPanel(builder)
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(false)
+
+      const canvas = wrapper.findComponent(AbilityPreviewCanvas)
+      await canvas.vm.$emit('update:scene-unit', { index: 0, x: 50, y: 50 })
+      await flushPromises()
+
+      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
+    })
+
+    it('increasing enemy count appends a new enemy while preserving the dragged position of the existing one', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult())
+      const builder = makeBuilderStub()
+      const wrapper = await mountPanel(builder)
+
+      const canvas = wrapper.findComponent(AbilityPreviewCanvas)
+      await canvas.vm.$emit('update:scene-unit', { index: 0, x: 777, y: 666 })
+
+      await wrapper.find('[data-test="preview-enemy-count"]').setValue(2)
+      await flushPromises()
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+
+      const req = runAbilityPreviewMock.mock.calls[0][0]
+      const enemies = req.units.filter((u) => u.team === 'enemy')
+      expect(enemies).toHaveLength(2)
+      expect(enemies[0].x).toBe(777)
+      expect(enemies[0].y).toBe(666)
+    })
+
+    it('decreasing enemy count removes from the end, preserving earlier positions', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult())
+      const builder = makeBuilderStub()
+      const wrapper = await mountPanel(builder)
+
+      await wrapper.find('[data-test="preview-enemy-count"]').setValue(3)
+      await flushPromises()
+
+      const canvas = wrapper.findComponent(AbilityPreviewCanvas)
+      await canvas.vm.$emit('update:scene-unit', { index: 0, x: 321, y: 654 })
+
+      await wrapper.find('[data-test="preview-enemy-count"]').setValue(1)
+      await flushPromises()
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+
+      const req = runAbilityPreviewMock.mock.calls[0][0]
+      const enemies = req.units.filter((u) => u.team === 'enemy')
+      expect(enemies).toHaveLength(1)
+      expect(enemies[0].x).toBe(321)
+      expect(enemies[0].y).toBe(654)
+    })
+  })
+
+  // Charge-fire passives (arcane_missiles) can't be cast — they fire when the
+  // caster's Arcane Charge crosses a threshold. The panel surfaces a seeded
+  // Charge control for exactly these, prefilled to the ability's own threshold.
+  describe('charge-fire passive charge seeding', () => {
+    it('shows no Charge control for a non-charge ability', async () => {
+      const builder = makeBuilderStub() // heal-shaped program
+      const wrapper = await mountPanel(builder)
+      expect(wrapper.find('[data-test="preview-caster-charge"]').exists()).toBe(false)
+    })
+
+    it('surfaces a prefilled Charge control and sends it in the Run request for a charge program', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult())
+      const builder = makeBuilderStub()
+      builder.program.value = makeChargeProgram(30)
+      const wrapper = await mountPanel(builder)
+
+      const charge = wrapper.find('[data-test="preview-caster-charge"]')
+      expect(charge.exists()).toBe(true)
+      expect((charge.element as HTMLInputElement).value).toBe('30')
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+
+      const req = runAbilityPreviewMock.mock.calls[0][0]
+      expect(req.casterCharge).toBe(30)
+    })
+  })
+
+  // Escape hatches OUT of a finished run's frozen replay back into the
+  // draggable edit scene — so added units appear immediately and units stay
+  // movable without having to Run again.
+  describe('returning to edit mode after a run', () => {
+    it('changing enemy count after a run clears the replay and returns to edit mode', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult({ frames: makeFrames(5) }))
+      const builder = makeBuilderStub()
+      const wrapper = await mountPanel(builder)
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+      // In replay mode: timeline shown, drag layer gone.
+      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(false)
+
+      await wrapper.find('[data-test="preview-enemy-count"]').setValue(2)
+      await flushPromises()
+
+      // Back in edit mode: replay cleared, drag layer (and the new unit) live.
+      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
+    })
+
+    it('switching to a different ability drops the showing run (no stale replay)', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult({ frames: makeFrames(5) }))
+      const builder = makeBuilderStub()
+      const wrapper = await mountPanel(builder)
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(true)
+
+      // Selecting a different ability changes the builder form's id — the panel
+      // must clear the replay that belonged to the previous ability.
+      builder.form.value = { ...builder.form.value, id: 'meteor' }
+      await flushPromises()
+
+      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
+    })
+
+    it('the Edit Scene button appears only during a run and clears it back to edit mode', async () => {
+      runAbilityPreviewMock.mockResolvedValue(makeResult({ frames: makeFrames(5) }))
+      const builder = makeBuilderStub()
+      const wrapper = await mountPanel(builder)
+
+      // Not shown before any run.
+      expect(wrapper.find('[data-test="preview-edit-scene-button"]').exists()).toBe(false)
+
+      await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="preview-edit-scene-button"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(false)
+
+      await wrapper.find('[data-test="preview-edit-scene-button"]').trigger('click')
+      await flushPromises()
+
+      // Replay cleared, canvas draggable again, and the button hides itself.
+      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-edit-scene-button"]').exists()).toBe(false)
+    })
   })
 })

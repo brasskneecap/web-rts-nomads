@@ -28,6 +28,9 @@ export type TriggerType =
   | 'on_cast_complete'
   | 'on_animation_marker'
   | 'on_projectile_impact'
+  | 'on_projectile_tick'
+  | 'on_beam_impact'
+  | 'on_beam_tick'
   | 'on_zone_tick'
   | 'on_zone_enter'
   | 'on_zone_exit'
@@ -52,6 +55,8 @@ export type ActionType =
   | 'remove_status'
   | 'create_zone'
   | 'launch_projectile'
+  | 'beam'
+  | 'charge_fire_volley'
   | 'summon_unit'
   | 'move_unit'
   | 'apply_force'
@@ -163,6 +168,11 @@ export interface TargetQueryDef {
   // TargetQueryDef.ExcludeSource / ExcludeCurrentEvent.
   excludeSource?: boolean
   excludeCurrentEvent?: boolean
+  // excludeRef drops every unit whose ID is present in the named ctxUnitSet
+  // at excludeRef.key -- e.g. a chain that must not re-hit already-struck
+  // victims. No-op when the key is absent or not a unit-set. Mirrors Go's
+  // TargetQueryDef.ExcludeRef.
+  excludeRef?: ContextRef
   requireLineOfSight?: boolean
   aliveState?: string
 }

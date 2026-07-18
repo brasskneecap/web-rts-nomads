@@ -52,19 +52,27 @@ interface FetchMockOptions {
   abilities: AuthoredAbilityDef[]
   validateIssues: ValidationIssue[]
   convertResult?: { ability: AuthoredAbilityDef; warnings: string[]; runnable: boolean }
+  // deleteStatus/deleteAbilities: what DELETE /abilities/{id} reports, and the
+  // catalog list the FOLLOWING GET /catalog/abilities reload should return —
+  // lets a test simulate the server actually having reverted/reset/removed
+  // the entry, mirroring how the real backend's reload would look afterward.
+  deleteStatus?: 'deleted' | 'reverted' | 'reset'
+  deleteReloadAbilities?: AuthoredAbilityDef[]
 }
 
 // makeFetchMock stubs every /catalog + /abilities endpoint useAbilityBuilder
 // touches, keyed by URL suffix + method (mirrors the stubCatalogFetch pattern
-// in AbilityEditorPanel.test.ts). `saveCalls` records POST /abilities bodies
-// so save() can be asserted against without reaching into the module
-// internals.
+// in AbilityEditorPanel.test.ts). `saveCalls`/`deleteCalls` record request
+// bodies/ids so save()/remove() can be asserted against without reaching into
+// the module internals.
 function makeFetchMock(opts: FetchMockOptions) {
   const saveCalls: { ability: AuthoredAbilityDef }[] = []
+  const deleteCalls: string[] = []
+  let abilities = opts.abilities
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
     const method = init?.method ?? 'GET'
-    if (method === 'GET' && u.endsWith('/catalog/abilities')) return jsonResponse({ abilities: opts.abilities })
+    if (method === 'GET' && u.endsWith('/catalog/abilities')) return jsonResponse({ abilities })
     if (method === 'GET' && u.endsWith('/catalog/action-schema')) return jsonResponse({ actions: [], enums: {} })
     if (method === 'GET' && u.endsWith('/catalog/effects')) return jsonResponse({ effects: [] })
     if (method === 'GET' && u.endsWith('/catalog/projectiles')) return jsonResponse({ projectiles: [] })
@@ -81,13 +89,19 @@ function makeFetchMock(opts: FetchMockOptions) {
         runnable: opts.convertResult.runnable,
       })
     }
+    if (method === 'DELETE' && u.includes('/abilities/')) {
+      const id = decodeURIComponent(u.split('/abilities/')[1])
+      deleteCalls.push(id)
+      if (opts.deleteReloadAbilities) abilities = opts.deleteReloadAbilities
+      return jsonResponse({ id, status: opts.deleteStatus ?? 'deleted' })
+    }
     if (method === 'POST' && u.endsWith('/abilities')) {
       saveCalls.push(JSON.parse(String(init?.body)))
       return jsonResponse({})
     }
     return jsonResponse({})
   })
-  return { fn, saveCalls }
+  return { fn, saveCalls, deleteCalls }
 }
 
 afterEach(() => vi.restoreAllMocks())
@@ -266,6 +280,75 @@ describe('useAbilityBuilder save', () => {
     expect((sent.program as { triggers: { id: string }[] }).triggers[0].id).toBe('t1')
     expect(b.saveError.value).toBe('')
     expect(b.dirty.value).toBe(false)
+  })
+})
+
+describe('useAbilityBuilder remove', () => {
+  it('a `deleted` status closes the editor (nothing left to show)', async () => {
+    const { fn, deleteCalls } = makeFetchMock({
+      abilities: [composableAbility],
+      validateIssues: [],
+      deleteStatus: 'deleted',
+      deleteReloadAbilities: [],
+    })
+    vi.stubGlobal('fetch', fn)
+
+    const b = useAbilityBuilder()
+    await b.load()
+    b.selectAbility('fireball')
+    await flushPromises()
+
+    await b.remove()
+
+    expect(deleteCalls).toEqual(['fireball'])
+    expect(b.editing.value).toBe(false)
+    expect(b.statusNote.value).toBe('Ability deleted.')
+  })
+
+  it('a `reverted` status re-selects the ability instead of closing, with a distinct note', async () => {
+    // The "reloaded" catalog still carries the ability (the server restored
+    // it) — remove() must reload the restored def back into the editor.
+    const revertedAbility: AuthoredAbilityDef = { ...composableAbility, displayName: 'Fireball (reverted)' }
+    const { fn, deleteCalls } = makeFetchMock({
+      abilities: [composableAbility],
+      validateIssues: [],
+      deleteStatus: 'reverted',
+      deleteReloadAbilities: [revertedAbility],
+    })
+    vi.stubGlobal('fetch', fn)
+
+    const b = useAbilityBuilder()
+    await b.load()
+    b.selectAbility('fireball')
+    await flushPromises()
+
+    await b.remove()
+
+    expect(deleteCalls).toEqual(['fireball'])
+    expect(b.editing.value).toBe(true)
+    expect(b.form.value.displayName).toBe('Fireball (reverted)')
+    expect(b.statusNote.value).toBe('Reverted to the state before your last save.')
+  })
+
+  it('a `reset` status re-selects the ability with the catalog-default note', async () => {
+    const { fn, deleteCalls } = makeFetchMock({
+      abilities: [composableAbility],
+      validateIssues: [],
+      deleteStatus: 'reset',
+      deleteReloadAbilities: [composableAbility],
+    })
+    vi.stubGlobal('fetch', fn)
+
+    const b = useAbilityBuilder()
+    await b.load()
+    b.selectAbility('fireball')
+    await flushPromises()
+
+    await b.remove()
+
+    expect(deleteCalls).toEqual(['fireball'])
+    expect(b.editing.value).toBe(true)
+    expect(b.statusNote.value).toBe('Reset to the catalog default.')
   })
 })
 

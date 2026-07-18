@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   EditorValidationError,
   saveEditorAbility,
+  deleteEditorAbility,
   fetchProjectileIds,
   fetchActionSchema,
   validateAbilityProgram,
@@ -24,6 +25,19 @@ describe('abilityEditorApi', () => {
   it('saveEditorAbility throws EditorValidationError on 400 validation_failed', async () => {
     mockFetch(400, { error: 'validation_failed', message: 'bad category' })
     await expect(saveEditorAbility({ id: 'x' })).rejects.toBeInstanceOf(EditorValidationError)
+  })
+
+  // The server now reports a 3-way status ('deleted' | 'reverted' | 'reset')
+  // instead of the old 2-way — deleteEditorAbility must pass all three
+  // through untouched (see EditorAbilityRemoveStatus).
+  it('deleteEditorAbility returns the widened 3-way status untouched', async () => {
+    mockFetch(200, { id: 'fireball', status: 'reverted' })
+    await expect(deleteEditorAbility('fireball')).resolves.toBe('reverted')
+  })
+
+  it('deleteEditorAbility still resolves "deleted" and "reset"', async () => {
+    mockFetch(200, { id: 'fireball', status: 'deleted' })
+    await expect(deleteEditorAbility('fireball')).resolves.toBe('deleted')
   })
 
   it('fetchProjectileIds maps defs to ids', async () => {
@@ -117,6 +131,7 @@ describe('abilityEditorApi', () => {
       target: 0,
       castX: 120,
       castY: 0,
+      casterCharge: 0,
       durationSeconds: 3,
     }
     const result = await runAbilityPreview(req)
@@ -143,6 +158,7 @@ describe('abilityEditorApi', () => {
       target: 0,
       castX: 0,
       castY: 0,
+      casterCharge: 0,
       durationSeconds: 1,
     }
     await expect(runAbilityPreview(req)).rejects.toThrow(/bad ability program/)
