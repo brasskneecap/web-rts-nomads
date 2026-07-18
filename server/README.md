@@ -6,15 +6,23 @@ the server broadcasts state.
 
 ## Local development
 
-The browser dev loop runs the server bare with `air` (live-reload) on
-`:8080` and the Vue SPA on `:5173` via Vite. The SPA proxies game traffic
-(`/ws`, `/api`, `/catalog`, `/maps`, `/matches`, `/lobbies`, `/health`) to the
-server. CORS is allowed for `http://localhost:5173` by default and can be
-overridden with `CORS_ALLOWED_ORIGIN`.
+The browser dev loop runs the server with `air` (live-reload) on `:8137` and
+the Vue SPA on `:5173` via Vite. The SPA proxies game traffic (`/ws`, `/api`,
+`/catalog`, `/maps`, `/matches`, `/lobbies`, `/health`) to the server. CORS is
+allowed for `http://localhost:5173` by default and can be overridden with
+`CORS_ALLOWED_ORIGIN`.
+
+The dev port is `8137` (not Go's `:8080` default) because a Chromium/CEF
+remote-debugger — e.g. `steamwebhelper` — squats `:8080` and shadows the
+server, silently 404-ing the SPA's proxied API calls. `server/dev.bat` and
+`dev.ps1` set `WEBRTS_PORT=8137`; the Vite proxy target in
+`client/src/game-portal/vite.config.ts` matches. Running `air` bare (without
+`WEBRTS_PORT`) still binds `:8080` and will NOT match the proxy — use
+`dev.bat` / `start.bat`, or set `WEBRTS_PORT=8137` yourself.
 
 ```sh
-air                  # server on :8080
-npm run dev          # SPA on :5173, in client/src/game-portal/
+WEBRTS_PORT=8137 air   # server on :8137 (dev.bat / start.bat set this for you)
+npm run dev            # SPA on :5173, in client/src/game-portal/
 ```
 
 ## Build tags

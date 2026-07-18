@@ -4,7 +4,7 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import { execSync } from 'node:child_process'
 
-const GO_SERVER = 'http://localhost:8080'
+const GO_SERVER = 'http://localhost:8137'
 
 // §15 task 15.8: __APP_VERSION__ injection. Resolved at build time in this
 // priority order:
