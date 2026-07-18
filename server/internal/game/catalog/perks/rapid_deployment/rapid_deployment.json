@@ -1,0 +1,14 @@
+{
+  "id": "rapid_deployment",
+  "displayName": "Rapid Deployment",
+  "description": "Place traps 30% more often. Keep the battlefield saturated.",
+  "tooltipTemplate": "Trap placement interval cut to {cooldownMultiplier%} of base.",
+  "icon": "perk-rapid-deployment",
+  "unitType": "archer",
+  "path": "trapper",
+  "rank": "silver",
+  "config": {
+    "cooldownMultiplier": 0.7
+  },
+  "wired": false
+}

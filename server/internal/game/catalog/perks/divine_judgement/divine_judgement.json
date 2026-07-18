@@ -1,0 +1,20 @@
+{
+  "id": "divine_judgement",
+  "displayName": "Divine Judgement",
+  "description": "Healing detonates holy damage around the healed unit.",
+  "tooltipTemplate": "Every heal you cast deals Holy damage equal to the full heal amount to enemies within {radius} of the healed unit. Triggers even at full HP and on overheal.",
+  "icon": "perk-divine-judgement",
+  "unitType": "acolyte",
+  "path": "cleric",
+  "rank": "gold",
+  "config": {
+    "radius": 80
+  },
+  "effect": {
+    "name": "holy_explosion",
+    "target": "self",
+    "sizeScale": 1,
+    "durationSeconds": 0.6
+  },
+  "wired": false
+}

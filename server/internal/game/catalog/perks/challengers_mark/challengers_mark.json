@@ -1,0 +1,15 @@
+{
+  "id": "challengers_mark",
+  "displayName": "Challenger's Mark",
+  "description": "Vanguard's attacks mark the target, causing them to take bonus damage from all sources.",
+  "tooltipTemplate": "Attacks mark the target for {durationSeconds:1}s. Marked enemies take +{bonusMultiplier%} damage from all sources.",
+  "icon": "perk-challengers-mark",
+  "unitType": "soldier",
+  "path": "vanguard",
+  "rank": "silver",
+  "config": {
+    "bonusMultiplier": 0.15,
+    "durationSeconds": 4
+  },
+  "wired": false
+}

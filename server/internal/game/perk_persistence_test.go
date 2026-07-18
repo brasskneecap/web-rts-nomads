@@ -1,324 +1,233 @@
 package game
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"strings"
+	"reflect"
+	"sort"
 	"testing"
 )
 
-// clearPerkOverlayForTest resets the runtime perk overlay to empty and
-// rebuilds the registry back to the pure-embedded baseline. runtimePerkPools
-// and perkDefsByID are process-global, so every test that calls
-// SavePerkPool / SaveEditorPerkPool / DeletePerkPool / DeleteEditorPerkPool /
-// LoadPersistedPerksIntoOverlay MUST register this via t.Cleanup.
+// clearPerkOverlayForTest resets the runtime perk overlay to empty and rebuilds
+// the registry back to the pure-embedded baseline. runtimePerks and
+// perkDefsByID are process-global, so every test that calls SavePerkDef /
+// DeletePerkOverride / LoadPersistedPerksIntoOverlay MUST register this via
+// t.Cleanup.
 func clearPerkOverlayForTest(t *testing.T) {
 	t.Helper()
-	runtimePerkPoolsMu.Lock()
-	for k := range runtimePerkPools {
-		delete(runtimePerkPools, k)
+	runtimePerksMu.Lock()
+	for k := range runtimePerks {
+		delete(runtimePerks, k)
 	}
-	runtimePerkPoolsMu.Unlock()
+	runtimePerksMu.Unlock()
 	rebuildPerkRegistry()
 }
 
-// withIsolatedPerkCatalogDir points UNIT_CATALOG_DIR at a fresh t.TempDir()
-// so Save/Delete/Load in this test never touch the real source catalog, and
-// registers cleanup of the perk overlay. The embedded baseline
-// (embeddedPerkPools) is unaffected by this env var — captured once from the
-// real go:embed data at process init — so tests still see the real cleric
-// bronze perks alongside whatever this test saves into the isolated dir.
-func withIsolatedPerkCatalogDir(t *testing.T) string {
+// withIsolatedPerkCatalogDir points PERK_CATALOG_DIR at a fresh t.TempDir() so
+// Save/Delete/Load in this test never touch the real source catalog, and
+// registers cleanup of the process-global overlay. The embedded baseline
+// (embeddedPerkDefs) is unaffected by this env var — captured once from the
+// real go:embed data at process init.
+func withIsolatedPerkCatalogDir(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("UNIT_CATALOG_DIR", dir)
+	t.Setenv("PERK_CATALOG_DIR", t.TempDir())
 	t.Cleanup(func() { clearPerkOverlayForTest(t) })
-	return dir
 }
 
-// countPerkDefsAt returns how many defs in the current registry resolve to
-// the given (unitType,pathName,rank), read from the registry itself rather
-// than any hardcoded count.
-func countPerkDefsAt(unitType, pathName, rank string) int {
-	n := 0
-	for _, def := range snapshotPerkDefs() {
-		if def.UnitType == unitType && def.Path == pathName && def.Rank == rank {
-			n++
-		}
-	}
-	return n
-}
-
-func TestSaveEditorPerkPool_NewPoolUnderClericBronze_RoundTripsAndReverts(t *testing.T) {
+func TestSaveAndOverlayPerkDef(t *testing.T) {
 	withIsolatedPerkCatalogDir(t)
-
-	embeddedCount := len(embeddedPerkPools[perkPoolKey("acolyte", unitPathCleric, unitRankBronze)])
-	if embeddedCount == 0 {
-		t.Fatalf("setup: acolyte/cleric/bronze has no embedded perks — catalog changed?")
+	def := &PerkDef{ID: "test_perk", DisplayName: "Test Perk", Rank: unitRankBronze}
+	if err := SavePerkDef(def); err != nil {
+		t.Fatalf("SavePerkDef: %v", err)
 	}
-
-	entries := []perkEntryJSON{{ID: "test_perk", DisplayName: "Test Perk"}}
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankBronze, entries); err != nil {
-		t.Fatalf("SaveEditorPerkPool = %v, want nil", err)
+	got, ok := perkDefLookup("test_perk")
+	if !ok || got.DisplayName != "Test Perk" || got.Rank != unitRankBronze {
+		t.Fatalf("overlay def not resolved: ok=%v got=%+v", ok, got)
 	}
-
-	def, ok := perkDefLookup("test_perk")
-	if !ok {
-		t.Fatal("perkDefLookup(test_perk) ok=false, want true")
+	if PerkIsEmbedded("test_perk") {
+		t.Fatal("test_perk should not be embedded")
 	}
-	if def.UnitType != "acolyte" || def.Path != unitPathCleric || def.Rank != unitRankBronze {
-		t.Errorf("def = %+v, want UnitType=acolyte Path=cleric Rank=bronze", def)
-	}
-	// Whole-pool replace: only the overlay's one entry should be visible now.
-	if got := countPerkDefsAt("acolyte", unitPathCleric, unitRankBronze); got != 1 {
-		t.Errorf("countPerkDefsAt(acolyte,cleric,bronze) = %d, want 1 (overlay replaces embedded)", got)
-	}
-
-	existed, err := DeleteEditorPerkPool("acolyte", unitPathCleric, unitRankBronze)
-	if err != nil {
-		t.Fatalf("DeleteEditorPerkPool = %v, want nil", err)
-	}
-	if !existed {
-		t.Errorf("existed = false, want true")
+	existed, err := DeletePerkOverride("test_perk")
+	if err != nil || !existed {
+		t.Fatalf("delete existed=%v err=%v", existed, err)
 	}
 	if _, ok := perkDefLookup("test_perk"); ok {
-		t.Errorf("perkDefLookup(test_perk) ok=true after delete, want false")
-	}
-	if got := countPerkDefsAt("acolyte", unitPathCleric, unitRankBronze); got != embeddedCount {
-		t.Errorf("countPerkDefsAt after delete = %d, want %d (embedded baseline restored)", got, embeddedCount)
+		t.Fatal("def still resolvable after delete")
 	}
 }
 
-func TestSaveEditorPerkPool_OverlayReplacesEmbeddedPool_ThenDeleteReverts(t *testing.T) {
+func TestPerkDiskRoundTripAndRevert(t *testing.T) {
 	withIsolatedPerkCatalogDir(t)
-
-	embeddedCount := len(embeddedPerkPools[perkPoolKey("acolyte", unitPathCleric, unitRankBronze)])
-	if embeddedCount == 0 {
-		t.Fatalf("setup: acolyte/cleric/bronze has no embedded perks")
+	// disk round-trip: save, clear overlay, reload from disk.
+	if err := SavePerkDef(&PerkDef{ID: "disk_perk", DisplayName: "On Disk", Rank: unitRankSilver}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	runtimePerksMu.Lock()
+	delete(runtimePerks, "disk_perk")
+	runtimePerksMu.Unlock()
+	rebuildPerkRegistry()
+	if _, ok := perkDefLookup("disk_perk"); ok {
+		t.Fatal("expected miss after clearing overlay (disk_perk is not embedded)")
+	}
+	LoadPersistedPerksIntoOverlay()
+	if got, ok := perkDefLookup("disk_perk"); !ok || got.DisplayName != "On Disk" || got.Rank != unitRankSilver {
+		t.Fatalf("disk reload failed: ok=%v got=%+v", ok, got)
 	}
 
-	overlay := []perkEntryJSON{{ID: "overlay_only_perk"}}
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankBronze, overlay); err != nil {
-		t.Fatalf("SaveEditorPerkPool(overlay) = %v, want nil", err)
+	// embed-revert: override a real embedded perk, then delete reverts to it.
+	var embeddedID string
+	for _, d := range snapshotPerkDefs() {
+		if PerkIsEmbedded(d.ID) {
+			embeddedID = d.ID
+			break
+		}
 	}
-	if _, ok := perkDefLookup("overlay_only_perk"); !ok {
-		t.Fatal("perkDefLookup(overlay_only_perk) ok=false, want true")
+	if embeddedID == "" {
+		t.Skip("no embedded perks to test revert")
 	}
-	if got := countPerkDefsAt("acolyte", unitPathCleric, unitRankBronze); got != 1 {
-		t.Errorf("count after overlay = %d, want 1", got)
+	original := embeddedPerkDefs[embeddedID]
+	override := original
+	override.DisplayName = original.DisplayName + " (edited)"
+	if err := SavePerkDef(&override); err != nil {
+		t.Fatalf("override save: %v", err)
 	}
-
-	existed, err := DeleteEditorPerkPool("acolyte", unitPathCleric, unitRankBronze)
-	if err != nil {
-		t.Fatalf("DeleteEditorPerkPool = %v, want nil", err)
+	if got, _ := perkDefLookup(embeddedID); got.DisplayName != original.DisplayName+" (edited)" {
+		t.Fatal("overlay did not win over embed")
 	}
-	if !existed {
-		t.Errorf("existed = false, want true")
+	if _, err := DeletePerkOverride(embeddedID); err != nil {
+		t.Fatalf("revert delete: %v", err)
 	}
-	if _, ok := perkDefLookup("overlay_only_perk"); ok {
-		t.Errorf("overlay_only_perk still resolvable after delete")
+	if !PerkIsEmbedded(embeddedID) {
+		t.Fatal("embedded id lost embedded status")
 	}
-	if got := countPerkDefsAt("acolyte", unitPathCleric, unitRankBronze); got != embeddedCount {
-		t.Errorf("count after delete = %d, want %d (embedded restored)", got, embeddedCount)
+	if got, _ := perkDefLookup(embeddedID); got.DisplayName != original.DisplayName {
+		t.Fatalf("did not revert to embedded default: %+v", got)
 	}
 }
 
-func TestSaveEditorPerkPool_ResaveSameLocation_Succeeds(t *testing.T) {
+func TestSavePerkDefRejectsBadID(t *testing.T) {
 	withIsolatedPerkCatalogDir(t)
-
-	entries := []perkEntryJSON{{ID: "resave_perk", DisplayName: "Original"}}
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankBronze, entries); err != nil {
-		t.Fatalf("first save = %v, want nil", err)
+	if err := SavePerkDef(&PerkDef{ID: "Bad/../x"}); err == nil {
+		t.Fatal("expected id-pattern rejection")
 	}
-	edited := []perkEntryJSON{{ID: "resave_perk", DisplayName: "Edited"}}
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankBronze, edited); err != nil {
-		t.Fatalf("re-save at same location = %v, want nil", err)
-	}
-	def, ok := perkDefLookup("resave_perk")
-	if !ok || def.DisplayName != "Edited" {
-		t.Errorf("def = %+v (ok=%v), want DisplayName=Edited", def, ok)
+	// DeletePerkOverride is also gated: a bad id is a no-op, never an error.
+	existed, err := DeletePerkOverride("Bad/../x")
+	if err != nil || existed {
+		t.Fatalf("DeletePerkOverride(bad id) existed=%v err=%v, want false/nil", existed, err)
 	}
 }
 
-func TestSaveEditorPerkPool_DuplicateIDAcrossLocations_Rejected(t *testing.T) {
+func TestSavePerkDefRejectsBadRank(t *testing.T) {
 	withIsolatedPerkCatalogDir(t)
-
-	entries := []perkEntryJSON{{ID: "shared_perk_id"}}
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankBronze, entries); err != nil {
-		t.Fatalf("setup SaveEditorPerkPool = %v, want nil", err)
+	if err := SavePerkDef(&PerkDef{ID: "bad_rank_perk", Rank: "platinum"}); err == nil {
+		t.Fatal("expected rank rejection for a non bronze/silver/gold rank")
 	}
-
-	elsewhere := []perkEntryJSON{{ID: "shared_perk_id"}}
-	err := SaveEditorPerkPool("acolyte", unitPathSiphoner, unitRankBronze, elsewhere)
-	if err == nil {
-		t.Fatal("SaveEditorPerkPool(dup id at different location) = nil, want rejection")
-	}
-	if !IsEditorValidationError(err) {
-		t.Errorf("err = %v, want editorValidationError", err)
-	}
-	if !strings.Contains(err.Error(), "shared_perk_id") || !strings.Contains(err.Error(), "acolyte/cleric/bronze") {
-		t.Errorf("err = %q, want it to name the id and the other owner location", err.Error())
+	if _, ok := perkDefLookup("bad_rank_perk"); ok {
+		t.Fatal("bad-rank perk must not be registered after a rejected save")
 	}
 }
 
-func TestSaveEditorPerkPool_DuplicateIDWithinArray_Rejected(t *testing.T) {
-	withIsolatedPerkCatalogDir(t)
-
-	entries := []perkEntryJSON{{ID: "dup_in_array"}, {ID: "dup_in_array"}}
-	err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankBronze, entries)
-	if err == nil {
-		t.Fatal("SaveEditorPerkPool(dup within array) = nil, want rejection")
+// TestPerkSelectionEquivalence pins the id-addressed catalog against the known
+// shipped soldier/berserker perk pools. The expected id sets were read from the
+// pre-flip pool files (catalog/units/human/soldier/paths/berserker/perks/
+// {bronze,silver,gold}.json) and match the committed catalog/perks/<id>.json
+// unitType/path/rank fields. eligiblePerksForUnitAtRank is the exact filter the
+// rank-up assignment pipeline uses, so equal id sets here prove selection
+// behavior is unchanged by the flip.
+func TestPerkSelectionEquivalence(t *testing.T) {
+	unit := &Unit{UnitType: "soldier", ProgressionPath: "berserker"}
+	cases := []struct {
+		rank string
+		want []string
+	}{
+		{unitRankBronze, []string{"bloodlust", "cleaving_rage", "frenzy_core", "relentless", "savage_strikes"}},
+		{unitRankSilver, []string{"blood_sustain", "executioner", "momentum"}},
+		{unitRankGold, []string{"berserk_state", "blood_engine", "whirlwind_core"}},
 	}
-	if !IsEditorValidationError(err) {
-		t.Errorf("err = %v, want editorValidationError", err)
-	}
-	if !strings.Contains(err.Error(), "dup_in_array") {
-		t.Errorf("err = %q, want it to name the duplicated id", err.Error())
-	}
-}
-
-func TestSaveEditorPerkPool_EmptyPool_ValidNoPerksGranted(t *testing.T) {
-	withIsolatedPerkCatalogDir(t)
-
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankSilver, []perkEntryJSON{}); err != nil {
-		t.Fatalf("SaveEditorPerkPool(empty pool) = %v, want nil", err)
-	}
-	if got := countPerkDefsAt("acolyte", unitPathCleric, unitRankSilver); got != 0 {
-		t.Errorf("count = %d, want 0 for an explicitly-empty overlay pool", got)
-	}
-
-	// Exercising the actual rank-up filter must not panic and must return
-	// nothing eligible from this now-empty pool.
-	unit := &Unit{UnitType: "acolyte", ProgressionPath: unitPathCleric}
-	eligible := eligiblePerksForUnitAtRank(unit, unitRankSilver)
-	for _, def := range eligible {
-		if def.Path == unitPathCleric && def.Rank == unitRankSilver {
-			t.Errorf("eligiblePerksForUnitAtRank still returned %q from an emptied pool", def.ID)
+	for _, tc := range cases {
+		var got []string
+		for _, def := range eligiblePerksForUnitAtRank(unit, tc.rank) {
+			got = append(got, def.ID)
+		}
+		sort.Strings(got)
+		sort.Strings(tc.want)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("soldier/berserker %s: eligible ids = %v, want %v", tc.rank, got, tc.want)
 		}
 	}
 }
 
-func TestSaveEditorPerkPool_RejectsBadIdentifiers(t *testing.T) {
+// TestEligiblePerksUnionWithReferences pins Task 2's union step:
+// eligiblePerksForUnitAtRank must include a perk referenced via the path's
+// PerksByRank even when that perk's OWN eligibility fields would not match
+// the unit, must not duplicate a perk that matches BOTH the eligibility scan
+// AND the reference list, and must keep the ID-sorted output determinism
+// invariant that rngPerks.Intn relies on.
+func TestEligiblePerksUnionWithReferences(t *testing.T) {
 	withIsolatedPerkCatalogDir(t)
+	withIsolatedPathCatalogDir(t)
 
-	entries := []perkEntryJSON{{ID: "ok_id"}}
-	if err := SaveEditorPerkPool("../escape", unitPathCleric, unitRankBronze, entries); err == nil {
-		t.Error("SaveEditorPerkPool(bad unit type) = nil, want error")
-	} else if !IsEditorValidationError(err) {
-		t.Errorf("bad unit type err = %v, want editorValidationError", err)
+	// Eligibility does NOT match soldier/berserker/bronze (UnitType "nobody"),
+	// so this perk can only appear in the pool via the explicit reference.
+	if err := SavePerkDef(&PerkDef{ID: "ref_only_perk", DisplayName: "Ref Only", UnitType: "nobody", Rank: unitRankBronze}); err != nil {
+		t.Fatalf("SavePerkDef(ref_only_perk): %v", err)
 	}
-	if err := SaveEditorPerkPool("acolyte", "../escape", unitRankBronze, entries); err == nil {
-		t.Error("SaveEditorPerkPool(bad path id) = nil, want error")
+	// Eligibility DOES match soldier/berserker/bronze AND is also referenced
+	// explicitly — must appear exactly once (dedup via seen).
+	if err := SavePerkDef(&PerkDef{ID: "dual_match_perk", DisplayName: "Dual Match", UnitType: "soldier", Path: "berserker", Rank: unitRankBronze}); err != nil {
+		t.Fatalf("SavePerkDef(dual_match_perk): %v", err)
 	}
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, "platinum", entries); err == nil {
-		t.Error("SaveEditorPerkPool(bad rank) = nil, want error")
+
+	if err := SavePathDef("soldier", &pathCatalogFile{
+		Path:        "berserker",
+		PerksByRank: map[string][]string{unitRankBronze: {"ref_only_perk", "dual_match_perk"}},
+	}); err != nil {
+		t.Fatalf("SavePathDef(berserker): %v", err)
 	}
-	badEntries := []perkEntryJSON{{ID: "../escape"}}
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankBronze, badEntries); err == nil {
-		t.Error("SaveEditorPerkPool(bad entry id) = nil, want error")
+
+	unit := &Unit{UnitType: "soldier", ProgressionPath: "berserker"}
+	pool := eligiblePerksForUnitAtRank(unit, unitRankBronze)
+
+	counts := map[string]int{}
+	for _, def := range pool {
+		counts[def.ID]++
+	}
+	if counts["ref_only_perk"] != 1 {
+		t.Fatalf("ref_only_perk count = %d, want 1 (pool=%v)", counts["ref_only_perk"], perkIDs(pool))
+	}
+	if counts["dual_match_perk"] != 1 {
+		t.Fatalf("dual_match_perk count = %d, want 1 (pool=%v)", counts["dual_match_perk"], perkIDs(pool))
+	}
+	for i := 1; i < len(pool); i++ {
+		if pool[i-1].ID > pool[i].ID {
+			t.Fatalf("pool not ID-sorted: %v", perkIDs(pool))
+		}
 	}
 }
 
-// TestSaveEditorPerkPool_NonexistentPath_Rejected pins the editor-only
-// ordering guard (a perk pool must be authored against a path that already
-// exists on the unit): saving perks for a path id that was never created
-// via SaveEditorPath/SavePathDef must be rejected, not silently write an
-// orphaned .../paths/<pathName>/perks/<rank>.json that nothing references.
-// This check is deliberately NOT in validatePerkPoolEntries (which
-// LoadPersistedPerksIntoOverlay also calls, and which must stay tolerant of
-// a perks/ dir surviving on disk without its sibling path file).
-func TestSaveEditorPerkPool_NonexistentPath_Rejected(t *testing.T) {
-	withIsolatedPerkCatalogDir(t)
-
-	entries := []perkEntryJSON{{ID: "orphan_perk"}}
-	err := SaveEditorPerkPool("acolyte", "not_a_real_path_xyz", unitRankBronze, entries)
-	if err == nil {
-		t.Fatal("SaveEditorPerkPool(nonexistent path) = nil, want error")
+// TestEligiblePerksUnion_EmptyRefsIsNoOp asserts that with no path perk
+// references authored (the default/pre-Task-1 state), eligiblePerksForUnitAtRank
+// returns exactly the eligibility-matched set — the union step is a byte-
+// identical no-op when pathPerkRefsForRank returns nil.
+func TestEligiblePerksUnion_EmptyRefsIsNoOp(t *testing.T) {
+	unit := &Unit{UnitType: "soldier", ProgressionPath: "berserker"}
+	want := []string{"bloodlust", "cleaving_rage", "frenzy_core", "relentless", "savage_strikes"}
+	var got []string
+	for _, def := range eligiblePerksForUnitAtRank(unit, unitRankBronze) {
+		got = append(got, def.ID)
 	}
-	if !IsEditorValidationError(err) {
-		t.Errorf("err = %v, want editorValidationError", err)
-	}
-	if !strings.Contains(err.Error(), "not_a_real_path_xyz") || !strings.Contains(err.Error(), "acolyte") {
-		t.Errorf("err = %q, want it to name both the path and the unit", err.Error())
-	}
-	if _, ok := perkDefLookup("orphan_perk"); ok {
-		t.Errorf("orphan_perk resolvable after a rejected save — must be a no-op")
+	sort.Strings(got)
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("no-refs pool = %v, want %v", got, want)
 	}
 }
 
-func TestSaveEditorPerkPool_WritesFileToDisk_AndDeleteRemovesOnlyThatRankFile(t *testing.T) {
-	dir := withIsolatedPerkCatalogDir(t)
-	unitDef, ok := getUnitDef("acolyte")
-	if !ok {
-		t.Fatalf("setup: getUnitDef(acolyte) not found")
+// perkIDs is a small test helper for readable failure messages.
+func perkIDs(pool []*PerkDef) []string {
+	ids := make([]string, len(pool))
+	for i, def := range pool {
+		ids[i] = def.ID
 	}
-
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankGold, []perkEntryJSON{{ID: "disk_check_perk"}}); err != nil {
-		t.Fatalf("SaveEditorPerkPool = %v, want nil", err)
-	}
-	wantFile := filepath.Join(dir, unitDef.Faction, "acolyte", "paths", unitPathCleric, "perks", "gold.json")
-	if _, err := os.Stat(wantFile); err != nil {
-		t.Fatalf("expected file at %s, stat error: %v", wantFile, err)
-	}
-
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankSilver, []perkEntryJSON{{ID: "sibling_perk"}}); err != nil {
-		t.Fatalf("SaveEditorPerkPool(sibling) = %v, want nil", err)
-	}
-	siblingFile := filepath.Join(dir, unitDef.Faction, "acolyte", "paths", unitPathCleric, "perks", "silver.json")
-
-	if _, err := DeleteEditorPerkPool("acolyte", unitPathCleric, unitRankGold); err != nil {
-		t.Fatalf("DeleteEditorPerkPool = %v, want nil", err)
-	}
-	if _, err := os.Stat(wantFile); !os.IsNotExist(err) {
-		t.Errorf("expected %s removed, stat err = %v", wantFile, err)
-	}
-	if _, err := os.Stat(siblingFile); err != nil {
-		t.Errorf("sibling rank file %s should still exist, stat err = %v", siblingFile, err)
-	}
-}
-
-func TestLoadPersistedPerksIntoOverlay_PicksUpFileWrittenDirectlyToDisk(t *testing.T) {
-	dir := withIsolatedPerkCatalogDir(t)
-	unitDef, ok := getUnitDef("acolyte")
-	if !ok {
-		t.Fatalf("setup: getUnitDef(acolyte) not found")
-	}
-
-	outDir := filepath.Join(dir, unitDef.Faction, "acolyte", "paths", unitPathCleric, "perks")
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	raw, err := json.MarshalIndent([]perkEntryJSON{{ID: "loaded_perk"}}, "", "  ")
-	if err != nil {
-		t.Fatalf("MarshalIndent: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(outDir, "gold.json"), raw, 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	if _, ok := perkDefLookup("loaded_perk"); ok {
-		t.Fatalf("setup: loaded_perk already resolvable before Load")
-	}
-
-	LoadPersistedPerksIntoOverlay()
-
-	def, ok := perkDefLookup("loaded_perk")
-	if !ok {
-		t.Fatal("perkDefLookup(loaded_perk) ok=false after Load, want true")
-	}
-	if def.UnitType != "acolyte" || def.Path != unitPathCleric || def.Rank != unitRankGold {
-		t.Errorf("def = %+v, want UnitType=acolyte Path=cleric Rank=gold", def)
-	}
-}
-
-func TestPerkPoolIsEmbedded_KnownEmbeddedAndUnknown(t *testing.T) {
-	if !PerkPoolIsEmbedded("acolyte", unitPathCleric, unitRankBronze) {
-		t.Errorf("PerkPoolIsEmbedded(acolyte,cleric,bronze) = false, want true")
-	}
-	if PerkPoolIsEmbedded("acolyte", unitPathCleric, "not_a_real_rank") {
-		t.Errorf("PerkPoolIsEmbedded(bad rank) = true, want false")
-	}
+	return ids
 }
 
 func TestPerkDefAccessors_ConcurrentReadsDoNotRace(t *testing.T) {

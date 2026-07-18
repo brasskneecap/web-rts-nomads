@@ -1723,6 +1723,9 @@
       <ItemCatalogEditor v-if="activeScreen === 'items'" />
       <UnitTypeEditorPanel v-else-if="activeScreen === 'unit-types'" />
       <AbilityBuilderPanel v-else-if="activeScreen === 'abilities'" />
+      <EffectEditorPanel v-else-if="activeScreen === 'effects'" />
+      <ProjectileEditorPanel v-else-if="activeScreen === 'projectiles'" />
+      <PerkEditorPanel v-else-if="activeScreen === 'perks'" />
     </section>
   </div>
 </template>
@@ -1738,6 +1741,9 @@ import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue
 import ItemCatalogEditor from '@/components/ItemCatalogEditor.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
 import AbilityBuilderPanel from '@/components/ability-builder/AbilityBuilderPanel.vue'
+import EffectEditorPanel from '@/components/EffectEditorPanel.vue'
+import ProjectileEditorPanel from '@/components/ProjectileEditorPanel.vue'
+import PerkEditorPanel from '@/components/PerkEditorPanel.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
 import InGameHud from '@/components/InGameHud.vue'
 import { usePlaytest } from './usePlaytest'
@@ -1946,7 +1952,7 @@ const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | nu
 // full-height screens rather than opening modals: 'map' is the paint canvas +
 // controls, the others each own the whole area under the toolbar so the
 // catalog editors have room for their lists and forms.
-type EditorScreen = 'map' | 'items' | 'unit-types' | 'abilities'
+type EditorScreen = 'map' | 'items' | 'unit-types' | 'abilities' | 'effects' | 'projectiles' | 'perks'
 const activeScreen = ref<EditorScreen>('map')
 const router = useRouter()
 
@@ -1962,6 +1968,9 @@ function onToolbarSelect(id: string) {
     case 'items':
     case 'unit-types':
     case 'abilities':
+    case 'effects':
+    case 'projectiles':
+    case 'perks':
       activeScreen.value = id
       break
     case 'play':
@@ -1972,8 +1981,7 @@ function onToolbarSelect(id: string) {
       router.push('/')
       break
     default:
-      // perks / effects / projectiles / campaigns are disabled in the toolbar
-      // (coming soon) and never emit.
+      // campaigns is disabled in the toolbar (coming soon) and never emits.
       break
   }
 }

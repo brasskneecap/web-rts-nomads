@@ -1,0 +1,18 @@
+{
+  "id": "amplify_damage",
+  "displayName": "Amplify Damage",
+  "description": "Periodically afflicts enemies around the Siphoner's target so they take amplified damage from all sources.",
+  "tooltipTemplate": "Every {cooldownSeconds:1}s the Siphoner amplifies enemies within {radius:0} of its current foe. Afflicted enemies take {damageTakenMultiplier+%} damage from all sources for {durationSeconds:1}s.",
+  "icon": "perk-amplify-damage",
+  "unitType": "acolyte",
+  "path": "siphoner",
+  "rank": "silver",
+  "config": {
+    "castRange": 240,
+    "cooldownSeconds": 14,
+    "damageTakenMultiplier": 0.25,
+    "durationSeconds": 6,
+    "radius": 90
+  },
+  "wired": false
+}

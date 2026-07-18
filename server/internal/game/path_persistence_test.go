@@ -393,3 +393,72 @@ func TestListPathBounds_IncludesPathsWithOnlyAttackOrigin(t *testing.T) {
 		t.Fatalf("origin_only_test_path (bounds-less, attackOrigin-only) missing from ListPathBounds()")
 	}
 }
+
+// TestPathPerksByRankRoundTripAndValidate covers PathDef.PerksByRank end to
+// end: validatePathFile accepts a well-formed reference and rejects both an
+// unknown rank key and an unknown perk id, and a saved path's refs are
+// readable back via pathPerkRefsForRank (the reader Task 2's
+// eligiblePerksForUnitAtRank will call during rank-up).
+func TestPathPerksByRankRoundTripAndValidate(t *testing.T) {
+	withIsolatedPathCatalogDir(t)
+
+	perkID := ListPerkDefs()[0].ID
+
+	file := validClericShapedPathFile("zealot")
+	file.PerksByRank = map[string][]string{unitRankBronze: {perkID}}
+	if err := validatePathFile(file, "zealot"); err != nil {
+		t.Fatalf("valid file rejected: %v", err)
+	}
+	if err := SavePathDef("acolyte", file); err != nil {
+		t.Fatalf("SavePathDef: %v", err)
+	}
+
+	got := pathPerkRefsForRank("zealot", unitRankBronze)
+	if len(got) != 1 || got[0] != perkID {
+		t.Fatalf("pathPerkRefsForRank(zealot, bronze) = %v, want [%s]", got, perkID)
+	}
+	// Ranks not authored in PerksByRank stay nil (auto-match only).
+	if got := pathPerkRefsForRank("zealot", unitRankSilver); got != nil {
+		t.Fatalf("pathPerkRefsForRank(zealot, silver) = %v, want nil", got)
+	}
+
+	// bad rank key
+	badRank := validClericShapedPathFile("zealot")
+	badRank.PerksByRank = map[string][]string{"platinum": {perkID}}
+	if err := validatePathFile(badRank, "zealot"); err == nil {
+		t.Fatal("expected unknown-rank rejection")
+	}
+
+	// unknown perk id
+	badPerk := validClericShapedPathFile("zealot")
+	badPerk.PerksByRank = map[string][]string{unitRankBronze: {"no_such_perk_xyz"}}
+	if err := validatePathFile(badPerk, "zealot"); err == nil {
+		t.Fatal("expected unknown-perk rejection")
+	}
+}
+
+// TestPathPerksByRank_SaveClonesMap pins the same "SavePathDef stores a
+// clone, not the caller's map" contract the existing
+// TestSavePathDef_MutatingCallersFileAfterSave_DoesNotCorruptOverlay test
+// pins for the scalar fields — PerksByRank is a map, so a shallow struct
+// copy alone would leave the overlay entry aliased to the caller's map.
+func TestPathPerksByRank_SaveClonesMap(t *testing.T) {
+	withIsolatedPathCatalogDir(t)
+
+	perkID := ListPerkDefs()[0].ID
+	file := validClericShapedPathFile("zealot")
+	file.PerksByRank = map[string][]string{unitRankBronze: {perkID}}
+	if err := SavePathDef("acolyte", file); err != nil {
+		t.Fatalf("SavePathDef: %v", err)
+	}
+
+	// Mutate the caller's own map after the save returned, then force
+	// another rebuild so any aliasing becomes observable.
+	file.PerksByRank[unitRankBronze][0] = "corrupted"
+	rebuildDerivedPathMaps()
+
+	got := pathPerkRefsForRank("zealot", unitRankBronze)
+	if len(got) != 1 || got[0] != perkID {
+		t.Errorf("pathPerkRefsForRank(zealot, bronze) = %v — overlay was mutated by the caller's post-save edit; SavePathDef must deep-clone PerksByRank", got)
+	}
+}

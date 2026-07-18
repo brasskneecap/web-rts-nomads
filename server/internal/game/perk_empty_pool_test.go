@@ -7,25 +7,24 @@ import (
 )
 
 // TestAssignUnitPerkLocked_EmptyPerkPool_NoPanicNoGrant pins the Intn(0)
-// guard at perks.go:942 (assignUnitPerkLocked: `if len(pool)==0 { return }`)
-// and the equivalent guard in maybeAssignExtraPerkLocked (perks.go:975-977).
-// An editor-created path can save a rank's perk pool as an empty array
-// (SaveEditorPerkPool allows this — see perk_persistence_test.go's
-// TestSaveEditorPerkPool_EmptyPool_ValidNoPerksGranted). A unit promoted
-// into that (unit,path,rank) combination must not crash the server on its
-// first rank-up: rand.Intn(0) panics, so if either guard above were ever
-// removed by a future refactor, this test must catch it.
+// guard at perks.go (assignUnitPerkLocked: `if len(pool)==0 { return }`) and
+// the equivalent guard in maybeAssignExtraPerkLocked. A unit whose
+// (UnitType, ProgressionPath, Rank) matches no perk in the catalog yields an
+// empty pool; rand.Intn(0) panics, so if either guard were ever removed by a
+// future refactor, this test must catch it.
+//
+// Post standalone-perks flip there is no editor operation that empties an
+// embedded unit/path/rank pool (perks are individual, id-addressed defs). We
+// instead drive the guard with a synthetic ProgressionPath that no shipped
+// perk targets, which is exactly the "no eligible perks" state the guard
+// exists for.
 func TestAssignUnitPerkLocked_EmptyPerkPool_NoPanicNoGrant(t *testing.T) {
-	withIsolatedPerkCatalogDir(t)
+	const emptyPath = "no_perks_test_path"
 
-	// Overlay acolyte/cleric/bronze with an explicitly empty pool — the
-	// embedded cleric bronze pool has 4 perks (sanctuary, battle_prayer,
-	// bolstering_prayer, mana_conduit); the overlay wholly replaces it.
-	if err := SaveEditorPerkPool("acolyte", unitPathCleric, unitRankBronze, []perkEntryJSON{}); err != nil {
-		t.Fatalf("setup: SaveEditorPerkPool(empty pool) = %v, want nil", err)
-	}
-	if got := countPerkDefsAt("acolyte", unitPathCleric, unitRankBronze); got != 0 {
-		t.Fatalf("setup: acolyte/cleric/bronze pool has %d perks, want 0 (overlay should have replaced it)", got)
+	// Sanity: no catalog perk targets this synthetic path, so the pool is
+	// genuinely empty for a unit on it.
+	if got := countPerkDefsAt("acolyte", emptyPath, unitRankBronze); got != 0 {
+		t.Fatalf("setup: %d perks target acolyte/%s/bronze, want 0", got, emptyPath)
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
@@ -38,7 +37,7 @@ func TestAssignUnitPerkLocked_EmptyPerkPool_NoPanicNoGrant(t *testing.T) {
 	if unit == nil {
 		t.Fatal("spawnPlayerUnitLocked returned nil")
 	}
-	unit.ProgressionPath = unitPathCleric
+	unit.ProgressionPath = emptyPath
 	unit.Rank = unitRankBronze
 
 	func() {
@@ -55,10 +54,10 @@ func TestAssignUnitPerkLocked_EmptyPerkPool_NoPanicNoGrant(t *testing.T) {
 	}
 
 	// maybeAssignExtraPerkLocked only reaches its own len(pool)==0 guard when
-	// the owner has an ExtraPerkSlots entry for this unit type/rank — set
-	// that up directly (bypassing the advancement-purchase flow, which is
-	// exercised elsewhere) so this test actually reaches the pool re-query
-	// rather than short-circuiting on the "no extra slot" branch first.
+	// the owner has an ExtraPerkSlots entry for this unit type/rank — set that
+	// up directly (bypassing the advancement-purchase flow, which is exercised
+	// elsewhere) so this test actually reaches the pool re-query rather than
+	// short-circuiting on the "no extra slot" branch first.
 	s.Players["p1"].ExtraPerkSlots = map[string]map[string]bool{
 		"acolyte": {unitRankBronze: true},
 	}
@@ -75,4 +74,16 @@ func TestAssignUnitPerkLocked_EmptyPerkPool_NoPanicNoGrant(t *testing.T) {
 	if len(unit.PerkIDs) != 0 {
 		t.Errorf("PerkIDs = %v after maybeAssignExtraPerkLocked on an empty pool, want still empty", unit.PerkIDs)
 	}
+}
+
+// countPerkDefsAt returns how many defs in the current registry resolve to the
+// given (unitType, pathName, rank), read from the registry itself.
+func countPerkDefsAt(unitType, pathName, rank string) int {
+	n := 0
+	for _, def := range snapshotPerkDefs() {
+		if def.UnitType == unitType && def.Path == pathName && def.Rank == rank {
+			n++
+		}
+	}
+	return n
 }

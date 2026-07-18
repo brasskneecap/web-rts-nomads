@@ -18,18 +18,19 @@ Write-Host "Step 1/5 — rebuild Steam-feature binary"
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
 Write-Host ""
-Write-Host "Step 2/5 — verify binary fingerprint"
+Write-Host "Step 2/5 — verify binary is Steam-linked"
 if (-not (Test-Path $Exe)) { throw "binary missing at $Exe" }
 $bytes = [System.IO.File]::ReadAllBytes($Exe)
 $text = [System.Text.Encoding]::ASCII.GetString($bytes)
-$variant = [regex]::Match($text, 'NOMADS_BUILD_VARIANT::[A-Z_0-9]+').Value
+# A Steam build imports steam_api64.dll; a non-Steam build has zero references.
+# (This replaces an older NOMADS_BUILD_VARIANT::STEAM_BUILD_V2 marker string that
+# was removed from the Rust source — the raw import is the reliable signal.)
 $steamRefs = ([regex]::Matches($text, 'steam_api64')).Count
 Write-Host "  mtime:        $((Get-Item $Exe).LastWriteTime)"
 Write-Host "  size:         $((Get-Item $Exe).Length) bytes"
-Write-Host "  variant:      $variant"
 Write-Host "  steam_api64:  $steamRefs references"
-if ($variant -ne 'NOMADS_BUILD_VARIANT::STEAM_BUILD_V2') {
-    throw "binary is NOT a Steam build (variant: $variant). Aborting before launch."
+if ($steamRefs -lt 1) {
+    throw "binary is NOT a Steam build (no steam_api64 references). Aborting before launch."
 }
 
 Write-Host ""

@@ -1,0 +1,14 @@
+{
+  "id": "extended_setup",
+  "displayName": "Extended Setup",
+  "description": "Your traps persist 50% longer, covering more of the battlefield for longer.",
+  "tooltipTemplate": "All traps last {durationMultiplier+%} longer.",
+  "icon": "perk-extended-setup",
+  "unitType": "archer",
+  "path": "trapper",
+  "rank": "silver",
+  "config": {
+    "durationMultiplier": 1.5
+  },
+  "wired": false
+}

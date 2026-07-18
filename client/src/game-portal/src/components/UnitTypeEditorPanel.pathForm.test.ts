@@ -30,12 +30,6 @@ function stubCatalogFetch(overrides: Record<string, unknown> = {}) {
     '/catalog/abilities': { abilities: [] },
     '/catalog/damage-types': { damageTypes: [] },
     '/catalog/buildings': { buildings: [] },
-    '/catalog/perks': {
-      perks: [
-        { id: 'piercing_shot', displayName: 'Piercing Shot', wired: true, unitType: 'archer', path: 'marksman', rank: 'bronze' },
-        { id: 'ghost_arrow', displayName: 'Ghost Arrow', wired: false, unitType: 'archer', path: 'marksman', rank: 'silver' },
-      ],
-    },
     ...overrides,
   }
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -63,7 +57,7 @@ async function selectMarksman(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('UnitTypeEditorPanel path form — selecting an existing path', () => {
-  it('shows the locked action-bar id, the per-rank vision override, a resolved rank-grid cell, and perk pool badges', async () => {
+  it('shows the locked action-bar id, the per-rank vision override, and a resolved rank-grid cell', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
@@ -83,18 +77,11 @@ describe('UnitTypeEditorPanel path form — selecting an existing path', () => {
     const rankText = wrapper.text()
     expect(rankText).toContain('18')
     expect(rankText).toContain('27')
-
-    // Perk pools: both a wired and an inert perk render with honest badges.
-    const perkText = wrapper.text()
-    expect(perkText).toContain('piercing_shot')
-    expect(perkText).toContain('Wired')
-    expect(perkText).toContain('ghost_arrow')
-    expect(perkText).toContain('Inert')
   })
 })
 
 describe('UnitTypeEditorPanel path form — creating a new path', () => {
-  it('shows an editable id, an empty rank grid, and empty perk pools', async () => {
+  it('shows an editable id and an empty rank grid', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
@@ -114,11 +101,64 @@ describe('UnitTypeEditorPanel path form — creating a new path', () => {
     expect(rankText).toContain('silver')
     expect(rankText).toContain('gold')
     expect(rankText).not.toContain('27')
+  })
+})
 
-    // Empty perk pools: the empty-pool hint, no perk ids from the catalog.
-    const perkText = wrapper.text()
-    expect(perkText.toLowerCase()).toContain('empty pool')
-    expect(perkText).not.toContain('piercing_shot')
+describe('UnitTypeEditorPanel path form — Perk References section', () => {
+  it('lists currently-referenced perks (with an inert hint), excludes them from the add picker, and add/remove round-trips into perksByRank', async () => {
+    stubCatalogFetch({
+      '/catalog/paths': {
+        paths: [
+          {
+            unit: 'archer',
+            path: 'marksman',
+            def: {
+              path: 'marksman',
+              description: 'A ranged specialist path.',
+              ranks: { bronze: { damageMultiplier: 1.5, visionRange: 7 }, silver: {}, gold: {} },
+              perksByRank: { bronze: ['perk_wired', 'perk_inert'] },
+            },
+          },
+        ],
+      },
+      '/catalog/perks': {
+        perks: [
+          { id: 'perk_wired', displayName: 'Wired Perk', wired: true },
+          { id: 'perk_inert', displayName: 'Inert Perk', wired: false },
+          { id: 'perk_new', displayName: 'New Perk', wired: true },
+        ],
+      },
+    })
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    // Pre-authored refs render with their catalog displayName; the unwired
+    // one carries the inert hint.
+    const text = wrapper.text()
+    expect(text).toContain('Wired Perk')
+    expect(text).toContain('Inert Perk')
+    expect(text).toContain('inert')
+
+    // The bronze add picker excludes already-referenced ids and offers the
+    // not-yet-referenced catalog perk.
+    const bronzeAdd = wrapper.find('select[aria-label="Add perk to bronze"]')
+    expect(bronzeAdd.exists()).toBe(true)
+    expect(bronzeAdd.text()).not.toContain('Wired Perk')
+    expect(bronzeAdd.text()).not.toContain('Inert Perk')
+    expect(bronzeAdd.text()).toContain('New Perk')
+
+    // Selecting it writes into pathForm.perksByRank.bronze — reflected as a
+    // new list row with a remove button.
+    await bronzeAdd.setValue('perk_new')
+    await flushPromises()
+    expect(wrapper.text()).toContain('New Perk')
+    expect(wrapper.findAll('button[title="Remove perk_new"]').length).toBe(1)
+
+    // Removing it drops it back out of perksByRank.bronze.
+    await wrapper.find('button[title="Remove perk_new"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('button[title="Remove perk_new"]').length).toBe(0)
   })
 })
 

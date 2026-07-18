@@ -2,11 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EditorValidationError } from './unitEditorApi'
 import {
   deletePath,
-  deletePerks,
   fetchPaths,
-  fetchPerkCatalog,
   savePath,
-  savePerks,
 } from './pathEditorApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -83,55 +80,5 @@ describe('deletePath', () => {
     const message = 'path "gold" is still referenced by pathChances on: archer. Remove those rows first.'
     mockFetchOnce({ error: 'validation_failed', message }, 400)
     await expect(deletePath('gold')).rejects.toThrow(EditorValidationError)
-  })
-})
-
-describe('savePerks', () => {
-  it('POSTs /perks with the full {unit, path, rank, perks} body', async () => {
-    const req = {
-      unit: 'archer', path: 'gold', rank: 'bronze',
-      perks: [{ id: 'piercing_shot', displayName: 'Piercing Shot', wired: true }],
-    }
-    const fetchMock = mockFetchOnce({ unit: 'archer', path: 'gold', rank: 'bronze', status: 'saved' }, 201)
-    await savePerks(req)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toContain('/perks')
-    expect(init?.method).toBe('POST')
-    expect(JSON.parse(init?.body as string)).toEqual(req)
-  })
-
-  it('throws EditorValidationError on a duplicate perk id', async () => {
-    const message = 'perk id "piercing_shot" is already used'
-    mockFetchOnce({ error: 'validation_failed', message }, 400)
-    const req = { unit: 'archer', path: 'gold', rank: 'bronze', perks: [{ id: 'piercing_shot', wired: false }] }
-    await expect(savePerks(req)).rejects.toThrow(EditorValidationError)
-  })
-})
-
-describe('deletePerks', () => {
-  it('DELETEs the 3-segment /perks/{unit}/{path}/{rank} URL, encoding each segment', async () => {
-    const fetchMock = mockFetchOnce({ unit: 'archer', path: 'gold', rank: 'bronze', status: 'deleted' })
-    const result = await deletePerks('archer', 'gold', 'bronze')
-    expect(result.status).toBe('deleted')
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toContain('/perks/archer/gold/bronze')
-    expect(init?.method).toBe('DELETE')
-  })
-})
-
-describe('fetchPerkCatalog', () => {
-  it('GETs /catalog/perks, unwraps the envelope, and surfaces `wired`', async () => {
-    const perks = [
-      { id: 'piercing_shot', displayName: 'Piercing Shot', wired: true, unitType: 'archer', path: 'gold', rank: 'bronze' },
-      { id: 'ghost_arrow', displayName: 'Ghost Arrow', wired: false, unitType: 'archer', path: 'silver', rank: 'silver' },
-    ]
-    const fetchMock = mockFetchOnce({ perks })
-    const result = await fetchPerkCatalog()
-    expect(result).toEqual(perks)
-    expect(result[0].wired).toBe(true)
-    expect(result[1].wired).toBe(false)
-    const [url] = fetchMock.mock.calls[0]
-    expect(url).toContain('/catalog/perks')
   })
 })

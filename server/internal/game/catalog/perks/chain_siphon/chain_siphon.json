@@ -1,0 +1,17 @@
+{
+  "id": "chain_siphon",
+  "displayName": "Chain Siphon",
+  "description": "Siphon Life chains to additional nearby enemies for reduced damage and healing.",
+  "tooltipTemplate": "Siphon Life arcs to up to {additionalTargetCount:0} additional enemies within {chainRange:0}. Secondary beams deal {secondaryDamageMultiplier%} damage and produce {secondaryHealingMultiplier%} healing.",
+  "icon": "perk-chain-siphon",
+  "unitType": "acolyte",
+  "path": "siphoner",
+  "rank": "silver",
+  "config": {
+    "additionalTargetCount": 1,
+    "chainRange": 140,
+    "secondaryDamageMultiplier": 0.5,
+    "secondaryHealingMultiplier": 0.5
+  },
+  "wired": false
+}

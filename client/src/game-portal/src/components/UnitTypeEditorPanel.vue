@@ -622,18 +622,44 @@
               </div>
             </SectionCard>
 
-            <!-- Perk pools -->
-            <SectionCard v-show="activePathTab === pathSectionTab('perks')" title="Perk Pools" :index="pathSectionIndex('perks')" class="unit-editor__wide">
-              <PerkPoolEditor
-                :unit="pathForm.parentUnit ?? ''"
-                :path="pathForm.path ?? ''"
-                :pools="pathPools"
-                :catalog="perkCatalog"
-                @update:pools="onPathPoolsUpdate"
-              />
+            <!-- Perk References: per-rank explicit grants of standalone perk
+                 defs (union'd server-side with a path's own perk pools). -->
+            <SectionCard v-show="activePathTab === pathSectionTab('perks')" title="Perk References" :index="pathSectionIndex('perks')" class="unit-editor__combat-perks">
+              <div class="unit-editor__perk-ranks">
+                <div v-for="rank in PERK_RANK_ORDER" :key="rank" class="unit-editor__perk-rank">
+                  <h4 class="unit-editor__perk-rank-label">{{ rank }}</h4>
+                  <ul class="unit-editor__perk-list">
+                    <li v-for="perkId in perksForRank(rank)" :key="perkId" class="unit-editor__perk-row">
+                      <span class="unit-editor__perk-name">{{ perkLabel(perkId) }}</span>
+                      <span v-if="isPerkInert(perkId)" class="unit-hint">(inert — not wired)</span>
+                      <button
+                        type="button"
+                        class="unit-editor__row-del"
+                        :title="`Remove ${perkId}`"
+                        @click="removePerkFromRank(rank, perkId)"
+                      >✕</button>
+                    </li>
+                    <li v-if="perksForRank(rank).length === 0" class="unit-hint">No perks referenced.</li>
+                  </ul>
+                  <select
+                    class="unit-editor__perk-add"
+                    :aria-label="`Add perk to ${rank}`"
+                    value=""
+                    @change="onPerkAddChange(rank, $event)"
+                  >
+                    <option value="">Add perk…</option>
+                    <option v-for="opt in availablePerkOptionsForRank(rank)" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+                  </select>
+                </div>
+              </div>
             </SectionCard>
 
-            <SectionCard v-if="selectedPath === null" title="Membership" :index="8">
+            <SectionCard
+              v-if="selectedPath === null"
+              v-show="activePathTab === pathSectionTab('membership')"
+              title="Membership"
+              :index="pathSectionIndex('membership')"
+            >
               <label class="ed-check" for="pe-add-chances">
                 <input id="pe-add-chances" v-model="addPathToPathChances" type="checkbox" />
                 Also add to {{ pathForm.parentUnit }}'s promotion paths (weight 1)
@@ -677,13 +703,11 @@ import {
 } from '@/game/units/unitEditorApi'
 import { createBlankPathForm, pathFormFromDef, saveRequestFromPathForm, type PathEditorForm, type PathRankStats } from '@/game/units/pathEditorForm'
 import {
-  fetchPaths, fetchPerkCatalog,
+  fetchPaths,
   savePath as savePathApi, deletePath as deletePathApi,
-  savePerks as savePerksApi,
-  type EditorPathEntry, type PerkEntry,
+  type EditorPathEntry,
 } from '@/game/units/pathEditorApi'
 import PathRankGrid from '@/components/PathRankGrid.vue'
-import PerkPoolEditor from '@/components/PerkPoolEditor.vue'
 import {
   fetchFactions, saveFaction, deleteFaction, fetchArchetypes,
   fetchProjectileIds, fetchDamageTypes, fetchBuildingIds,
@@ -691,6 +715,8 @@ import {
 } from '@/game/units/editorCatalogApi'
 import { fetchAuthoredAbilityDefs } from '@/game/abilities/abilityEditorApi'
 import type { AuthoredAbilityDef } from '@/game/abilities/abilityEditorForm'
+import { fetchAuthoredPerkDefs } from '@/game/perks/perkEditorApi'
+import type { AuthoredPerkDef } from '@/game/perks/perkEditorForm'
 import { pickChannelAbility } from '@/game/units/channelPreview'
 import {
   ingestExportFolder, packedSheetToObjectUrls, blobToBase64,
@@ -747,6 +773,15 @@ const abilityDefsById = computed(() => {
 })
 const damageTypes = ref<string[]>([])
 const buildingIds = ref<string[]>([])
+// Standalone perk catalog (world-editor Perks screen) — backs the Perk
+// References picker on a path's Combat tab. Keyed for O(1) label/wired
+// lookup, same idiom as abilityDefs/abilityDefsById above.
+const perkDefs = ref<AuthoredPerkDef[]>([])
+const perkDefsById = computed(() => {
+  const map = new Map<string, AuthoredPerkDef>()
+  for (const d of perkDefs.value) map.set(d.id, d)
+  return map
+})
 
 const factionFilter = ref<string>('')   // seeds a new unit's faction
 const newFactionId = ref('')
@@ -777,28 +812,62 @@ const selectedPath = ref<string | null>(null)
 const selectedPathParent = ref<string | null>(null)
 const pathForm = ref<PathEditorForm | null>(null)
 
-// Full /catalog/perks (PerkPoolEditor needs it for wired lookups + "add
-// existing" suggestions) and the currently selected/new path's per-rank pools.
-const perkCatalog = ref<PerkEntry[]>([])
-const pathPools = ref<Record<string, PerkEntry[]>>({ bronze: [], silver: [], gold: [] })
-
-function poolsForPath(parentUnit: string, pathId: string): Record<string, PerkEntry[]> {
-  const pools: Record<string, PerkEntry[]> = { bronze: [], silver: [], gold: [] }
-  for (const entry of perkCatalog.value) {
-    if (entry.unitType !== parentUnit || entry.path !== pathId) continue
-    const rank = entry.rank ?? ''
-    if (!pools[rank]) pools[rank] = []
-    pools[rank].push(entry)
-  }
-  return pools
-}
-
 function onPathRanksUpdate(next: Record<string, PathRankStats>) {
   if (pathForm.value) pathForm.value.ranks = next
 }
 
-function onPathPoolsUpdate(next: Record<string, PerkEntry[]>) {
-  pathPools.value = next
+// Perk References: per-rank list of standalone perk ids explicitly granted by
+// this path. Fixed row order regardless of which rank keys are actually
+// present on perksByRank, mirroring PathRankGrid's RANK_ORDER idiom.
+const PERK_RANK_ORDER = ['bronze', 'silver', 'gold'] as const
+
+function perksForRank(rank: string): string[] {
+  return pathForm.value?.perksByRank?.[rank] ?? []
+}
+
+function perkLabel(id: string): string {
+  return perkDefsById.value.get(id)?.displayName || id
+}
+
+// Mirrors PerkEditorPanel's `!p.wired` convention (undefined counts as
+// inert, same as an explicit false) rather than a strict `=== false` check.
+function isPerkInert(id: string): boolean {
+  return !perkDefsById.value.get(id)?.wired
+}
+
+// Catalog perks not already referenced at this rank, sorted alphabetically —
+// mirrors abilityOptions' {id, label} + localeCompare idiom.
+function availablePerkOptionsForRank(rank: string): FilterableOption[] {
+  const taken = new Set(perksForRank(rank))
+  return perkDefs.value
+    .filter((d) => !taken.has(d.id))
+    .map((d) => ({ id: d.id, label: d.displayName || d.id }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+}
+
+function addPerkToRank(rank: string, id: string) {
+  if (!pathForm.value || !id) return
+  const byRank = { ...(pathForm.value.perksByRank ?? {}) }
+  const current = byRank[rank] ?? []
+  if (current.includes(id)) return
+  byRank[rank] = [...current, id]
+  pathForm.value.perksByRank = byRank
+}
+
+function removePerkFromRank(rank: string, id: string) {
+  if (!pathForm.value?.perksByRank) return
+  const byRank = { ...pathForm.value.perksByRank }
+  byRank[rank] = (byRank[rank] ?? []).filter((p) => p !== id)
+  pathForm.value.perksByRank = byRank
+}
+
+// The add <select> is not v-modeled to a persistent ref — reset it to the
+// placeholder after every pick so the same option can be re-added post-remove
+// without a stale selected value lingering.
+function onPerkAddChange(rank: string, event: Event) {
+  const select = event.target as HTMLSelectElement
+  addPerkToRank(rank, select.value)
+  select.value = ''
 }
 
 // The rank grid resolves multiplier cells against the PARENT unit's base
@@ -896,7 +965,7 @@ function removeRequiresBuildingAt(idx: number) {
   form.value.requiresBuildings = next
 }
 
-// The path id is the primary key once saved (owns art dir + perk pools), so it
+// The path id is the primary key once saved (owns art dir), so it
 // locks the same way a unit's `type` does — editable only while a brand-new,
 // not-yet-saved path (selectedPath === null).
 function onPathIdInput(raw: string) {
@@ -917,7 +986,6 @@ function selectPath(entry: EditorPathEntry) {
   activePathTab.value = PATH_TABS[0].id
   pathChannelLoopStart.value = pathForm.value.channelLoop?.start
   pathChannelLoopEnd.value = pathForm.value.channelLoop?.end
-  pathPools.value = poolsForPath(entry.unit, entry.path)
   preview.value?.refresh()
 }
 
@@ -950,7 +1018,6 @@ function confirmNewPath() {
   activePathTab.value = PATH_TABS[0].id
   pathChannelLoopStart.value = undefined
   pathChannelLoopEnd.value = undefined
-  pathPools.value = { bronze: [], silver: [], gold: [] }
   addPathToPathChances.value = true
   preview.value?.refresh()
 }
@@ -1081,12 +1148,16 @@ function sectionIndex(key: string): number {
 }
 
 // The promotion-path editor now lives INSIDE the unit's Promotion Paths tab
-// (no separate page). It has its own inner tab strip over the same 8 sections,
+// (no separate page). It has its own inner tab strip over the same sections,
 // grouped and numbered exactly like the unit tabs above.
+//
+// The former 'perks' tab (Perk Pools authoring) was retired — perks are now
+// standalone defs edited in the world-editor Perks screen — and its only
+// other content, the new-path-only Membership checkbox, was folded into the
+// Identity tab so it stays reachable without a dedicated (now-empty) tab.
 const PATH_TABS: { id: string; label: string; sections: string[] }[] = [
-  { id: 'identity', label: 'Identity', sections: ['identity', 'preview'] },
-  { id: 'combat', label: 'Combat', sections: ['combat', 'abilities', 'ranks'] },
-  { id: 'perks', label: 'Perks', sections: ['perks', 'membership'] },
+  { id: 'identity', label: 'Identity', sections: ['identity', 'preview', 'membership'] },
+  { id: 'combat', label: 'Combat', sections: ['combat', 'abilities', 'ranks', 'perks'] },
 ]
 const activePathTab = ref<string>(PATH_TABS[0].id)
 function pathSectionTab(key: string): string {
@@ -1138,9 +1209,10 @@ const archetypeWarning = computed(() => {
 })
 
 async function reloadCatalogs() {
-  const [f, a, p, ab, dt, b] = await Promise.all([
+  const [f, a, p, ab, dt, b, pk] = await Promise.all([
     fetchFactions(), fetchArchetypes(), fetchProjectileIds(),
     fetchAuthoredAbilityDefs(), fetchDamageTypes(), fetchBuildingIds(),
+    fetchAuthoredPerkDefs(),
   ])
   factions.value = f
   archetypes.value = a
@@ -1148,6 +1220,7 @@ async function reloadCatalogs() {
   abilityDefs.value = ab
   damageTypes.value = dt
   buildingIds.value = b
+  perkDefs.value = pk
 }
 
 async function createFaction() {
@@ -1535,10 +1608,9 @@ async function discardPendingArt() {
 
 async function reload() {
   try {
-    const [u, p, pc] = await Promise.all([fetchAuthoredUnitDefs(), fetchPaths(), fetchPerkCatalog()])
+    const [u, p] = await Promise.all([fetchAuthoredUnitDefs(), fetchPaths()])
     units.value = u
     paths.value = p
-    perkCatalog.value = pc
     loadError.value = ''
     factionError.value = ''
   } catch (e) {
@@ -1675,13 +1747,10 @@ async function removeUnit() {
   }
 }
 
-const PATH_RANKS = ['bronze', 'silver', 'gold'] as const
-
-// savePath persists the path file, then its three rank perk pools, then — for a
-// brand-new path with the checkbox checked — adds it to the parent unit's
-// pathChances. ORDER IS LOAD-BEARING: (1) path file first (nothing may
-// reference a path that doesn't exist), (2) perk pools, (3) pathChances last
-// and only for a new path.
+// savePath persists the path file, then — for a brand-new path with the
+// checkbox checked — adds it to the parent unit's pathChances. ORDER IS
+// LOAD-BEARING: (1) path file first (nothing may reference a path that
+// doesn't exist), (2) pathChances last and only for a new path.
 async function savePath() {
   if (!pathForm.value) return
   saveError.value = ''
@@ -1694,10 +1763,6 @@ async function savePath() {
     const pathId = req.path.path ?? ''
 
     await savePathApi(req)
-
-    for (const rank of PATH_RANKS) {
-      await savePerksApi({ unit: req.unit, path: pathId, rank, perks: pathPools.value[rank] ?? [] })
-    }
 
     if (isNewPath && addPathToPathChances.value) {
       const parentDef = units.value.find((u) => u.type === req.unit)
@@ -1861,8 +1926,8 @@ onBeforeUnmount(() => {
   padding-right: 4px;
 }
 
-/* Preview, the rank grid and the perk pools are wide — they take two card
-   columns when there's room (Preview then sits to the right of Identity). */
+/* Preview and the rank grid are wide — they take two card columns when
+   there's room (Preview then sits to the right of Identity). */
 .unit-editor__wide {
   grid-column: span 2;
 }
@@ -1898,6 +1963,58 @@ onBeforeUnmount(() => {
   .unit-editor__combat-ranks {
     grid-column: 1 / -1;
     grid-row: auto;
+  }
+}
+
+/* Perk References: full-width row below Combat/Abilities/Rank Stats, one
+   column per rank. */
+.unit-editor__combat-perks {
+  grid-column: 1 / -1;
+}
+
+.unit-editor__perk-ranks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: var(--ed-gap);
+}
+
+.unit-editor__perk-rank-label {
+  margin: 0 0 6px;
+  text-transform: capitalize;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: var(--ed-text-dim);
+}
+
+.unit-editor__perk-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.unit-editor__perk-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.unit-editor__perk-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unit-editor__perk-add {
+  width: 100%;
+}
+
+@media (max-width: 700px) {
+  .unit-editor__perk-ranks {
+    grid-template-columns: 1fr;
   }
 }
 
