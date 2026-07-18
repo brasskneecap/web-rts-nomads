@@ -90,6 +90,24 @@ describe('PreviewSceneControls', () => {
     expect(config.casterCharge).toBe(90)
   })
 
+  it('collapses and expands the controls via the section-card toggle', async () => {
+    const wrapper = mount(PreviewSceneControls)
+    const toggle = wrapper.find('[data-test="section-card-toggle"]')
+    const bodyStyle = () => wrapper.find('.ed-card__body').attributes('style') ?? ''
+
+    // Expanded by default: toggle marked expanded, body not display:none.
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(bodyStyle()).not.toContain('display: none')
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(bodyStyle()).toContain('display: none')
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(bodyStyle()).not.toContain('display: none')
+  })
+
   it('resets casterCharge to 0 when switching from a charge ability to a non-charge one', async () => {
     const wrapper = mount(PreviewSceneControls, { props: { chargeRequired: 30 } })
     let emitted = wrapper.emitted('update:modelValue')!

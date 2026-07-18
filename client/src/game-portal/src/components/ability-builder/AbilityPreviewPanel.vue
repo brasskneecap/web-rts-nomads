@@ -1,5 +1,10 @@
 <template>
   <div class="ab-preview" data-test="ability-preview-panel">
+    <!-- Preview Scene sits ABOVE the canvas (collapsible) so scene setup reads
+         top-to-bottom into the canvas it configures, and can be folded away to
+         give the canvas/timeline more room. -->
+    <PreviewSceneControls :charge-required="chargeRequired" @update:model-value="onSceneConfigUpdate" />
+
     <!-- Canvas is ALWAYS mounted (Task 5) — the renderer is the top-most,
          always-visible element in the rail. It renders its own idle
          placeholder when `frames` is empty (no result yet, or a run that
@@ -21,34 +26,31 @@
       :scene-units="sceneUnits"
       @update:scene-unit="onUpdateSceneUnit"
       @update:caster="onUpdateCaster"
-    />
-
-    <div class="ab-preview__scroll">
-      <div class="ab-preview__run-row">
-        <UiButton
-          size="sm"
-          variant="active"
-          data-test="preview-run-button"
+    >
+      <!-- Run / Edit live in the canvas's playback toolbar (same icon-button
+           format as Play/Pause/Restart) via its leading slot. -->
+      <template #controls-lead>
+        <PreviewControlButton
+          icon="run"
+          :label="running ? 'Running…' : 'Run Preview'"
           :disabled="runDisabled"
+          data-test="preview-run-button"
           @click="onRun"
-        >{{ running ? 'Running…' : 'Run Preview' }}</UiButton>
-        <UiButton
-          v-if="result"
-          size="sm"
-          variant="secondary"
+        />
+        <PreviewControlButton
+          icon="edit"
+          label="Edit Scene"
+          :disabled="!result || running"
           data-test="preview-edit-scene-button"
-          :disabled="running"
           @click="onEditScene"
-        >Edit Scene</UiButton>
-        <span v-if="running" class="ab-preview__running-hint">Simulating on the server…</span>
-        <span v-else-if="result" class="ab-preview__running-hint">Showing a run — Edit Scene to move units again.</span>
-      </div>
+        />
+      </template>
+    </AbilityPreviewCanvas>
 
-      <PreviewSceneControls :charge-required="chargeRequired" @update:model-value="onSceneConfigUpdate" />
-
+    <div class="ab-preview__body">
       <p v-if="runError" class="ab-preview__error" role="alert" data-test="preview-run-error">{{ runError }}</p>
 
-      <template v-if="result">
+      <div v-if="result" class="ab-preview__result">
         <div
           v-if="!result.runnable || result.warnings.length || result.error"
           class="ab-preview__banner"
@@ -67,22 +69,46 @@
           <p v-if="result.error" class="ab-preview__banner-error" data-test="preview-result-error">{{ result.error }}</p>
         </div>
 
-        <PreviewTimeline
-          :events="result.trace"
-          :duration="lastRequestDuration"
-          :selected-index="selectedIndex"
-          :active-indices="activeEventIndices"
-          @select="selectedIndex = $event"
-        />
+        <!-- Timeline and Event Log are two VIEWS of the same run, tabbed so
+             only one claims vertical space at a time (they were stacking and
+             squeezing each other on shorter screens). v-show keeps both mounted
+             — the hidden one's display:none reclaims its layout space while its
+             filter/scroll state survives a tab switch. -->
+        <div class="ab-preview__view-tabs" role="tablist" aria-label="Run detail view">
+          <button
+            v-for="v in RESULT_VIEWS"
+            :key="v.id"
+            type="button"
+            role="tab"
+            class="ab-preview__view-tab"
+            :class="{ 'ab-preview__view-tab--active': resultView === v.id }"
+            :aria-selected="resultView === v.id"
+            :data-test="`preview-view-tab-${v.id}`"
+            @click="resultView = v.id"
+          >{{ v.label }}</button>
+        </div>
 
-        <PreviewEventLog
-          :events="result.trace"
-          :selected-index="selectedIndex"
-          :active-indices="activeEventIndices"
-          @select="selectedIndex = $event"
-          @select-node="onSelectNode"
-          @seek="onSeekEvent"
-        />
+        <div class="ab-preview__views">
+          <PreviewExecutionTimeline
+            v-show="resultView === 'timeline'"
+            :lanes="timeline.lanes"
+            :axis-duration="timeline.axisDuration"
+            :playhead-t="playheadT"
+            :selected-path="selectedNodePath"
+            @select="onTimelineSelect"
+            @seek="onSeekEvent"
+          />
+
+          <PreviewEventLog
+            v-show="resultView === 'log'"
+            :events="result.trace"
+            :selected-index="selectedIndex"
+            :active-indices="activeEventIndices"
+            @select="selectedIndex = $event"
+            @select-node="onSelectNode"
+            @seek="onSeekEvent"
+          />
+        </div>
 
         <div class="ab-preview__summary" data-test="preview-summary">
           <span class="ab-preview__summary-mana">Caster mana spent: {{ result.casterManaSpent }}</span>
@@ -98,7 +124,7 @@
             </li>
           </ul>
         </div>
-      </template>
+      </div>
     </div>
   </div>
 </template>
@@ -112,7 +138,7 @@
 // preview request is assembled fresh from a READ of form+program+scene each
 // run, never cached across edits.
 import { computed, ref, watch } from 'vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import PreviewControlButton from './PreviewControlButton.vue'
 import { saveRequestFromForm } from '@/game/abilities/abilityEditorForm'
 import type { AbilityProgram } from '@/game/abilities/program/abilityProgram'
 import { serializeProgram } from '@/game/abilities/program/abilityProgram'
@@ -120,6 +146,8 @@ import type { PreviewRequest, PreviewResult, PreviewSceneUnit } from '@/game/abi
 import { runAbilityPreview } from '@/game/abilities/abilityEditorApi'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
 import { refFromPath } from './refFromPath'
+import type { NodePath, NodeRef } from './programTree'
+import { buildExecutionTimeline } from './executionTimeline'
 import { PREVIEW_FRAME_DT_SECONDS } from './previewPlayback'
 import PreviewSceneControls, { type PreviewSceneConfig } from './PreviewSceneControls.vue'
 import {
@@ -131,7 +159,7 @@ import {
   defaultAllyPosition,
   defaultEnemyPosition,
 } from './previewScene'
-import PreviewTimeline from './PreviewTimeline.vue'
+import PreviewExecutionTimeline from './PreviewExecutionTimeline.vue'
 import PreviewEventLog from './PreviewEventLog.vue'
 import AbilityPreviewCanvas from './AbilityPreviewCanvas.vue'
 
@@ -402,6 +430,41 @@ const activeEventIndices = computed<number[]>(() => {
   return indices
 })
 
+// ── Execution timeline (Gantt) ──────────────────────────────────────────────
+// timeline: the lane model for PreviewExecutionTimeline, derived from the LIVE
+// program + the current run's trace (buildExecutionTimeline is pure). Empty
+// lanes when there's no result yet — the component simply renders nothing.
+const timeline = computed(() =>
+  buildExecutionTimeline(builder.program.value, result.value?.trace ?? [], lastRequestDuration.value),
+)
+
+// playheadT: the replay's current time in seconds, for the timeline's playhead.
+const playheadT = computed(() => currentTick.value * PREVIEW_FRAME_DT_SECONDS)
+
+// resultView: which of the two run detail views is showing. Tabbed rather than
+// stacked so they don't fight for vertical space on shorter screens. Defaults
+// to the timeline (the at-a-glance view); the log is the drill-down.
+type ResultView = 'timeline' | 'log'
+const RESULT_VIEWS: { id: ResultView; label: string }[] = [
+  { id: 'timeline', label: 'Execution Timeline' },
+  { id: 'log', label: 'Event Log' },
+]
+const resultView = ref<ResultView>('timeline')
+
+// selectedNodePath: the flow/inspector selection, so the timeline highlights the
+// same lane. Null unless a trigger/action is selected (the ability node has no lane).
+const selectedNodePath = computed<NodePath | null>(() => {
+  const s = builder.selected.value
+  return s.kind === 'trigger' || s.kind === 'action' ? s.path : null
+})
+
+// onTimelineSelect: clicking a lane focuses that node in the flow + inspector,
+// the same as clicking it in the flow view (the timeline's seek is handled
+// separately via @seek → onSeekEvent).
+function onTimelineSelect(ref: NodeRef) {
+  builder.select(ref)
+}
+
 // onSeekEvent: PreviewEventLog's `seek` emits the clicked event's raw sim
 // time; map it to a frame index (inverse of frameIndexAt's DT stepping) and
 // pause playback so the canvas holds still on the seeked frame. Clamped to
@@ -548,25 +611,74 @@ const unitSummaries = computed<UnitSummary[]>(() => {
   min-height: 0;
 }
 
-.ab-preview__scroll {
+/* The region under the canvas fills the remaining rail height. It no longer
+   scrolls as a whole — instead the active run view (timeline / event log) grows
+   to fill and scrolls internally, so the log/timeline use the freed space
+   rather than being capped and pushing a page scroll. */
+.ab-preview__body {
   display: flex;
   flex-direction: column;
   gap: 12px;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
 }
 
-.ab-preview__run-row {
+/* The run result is a flex column that fills the body: banner + view tabs sit
+   at fixed height, the views container grows, the summary pins to the bottom. */
+.ab-preview__result {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
-.ab-preview__running-hint {
-  font-size: 0.78rem;
+/* Holds the two v-show'd views; whichever is visible grows to fill and its own
+   internal rows scroll (see PreviewEventLog/PreviewExecutionTimeline). */
+.ab-preview__views {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ab-preview__views > :deep(*) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Segmented view switcher for Timeline vs Event Log — sits on a hairline that
+   reads as the top edge of the view below it, matching the editor's tab strips. */
+.ab-preview__view-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ab-preview__view-tab {
+  padding: 5px 12px;
+  font-family: var(--font-title);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--ed-text-dim);
-  font-style: italic;
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--ed-radius) var(--ed-radius) 0 0;
+  margin-bottom: -1px;
+}
+
+.ab-preview__view-tab:hover {
+  color: var(--ed-brass);
+}
+
+.ab-preview__view-tab--active {
+  color: var(--ed-brass);
+  border-color: var(--ed-line);
+  border-bottom-color: transparent;
+  background: rgba(212, 168, 71, 0.08);
 }
 
 .ab-preview__error {

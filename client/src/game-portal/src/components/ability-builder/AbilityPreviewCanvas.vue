@@ -22,21 +22,25 @@
     </div>
 
     <div class="ab-preview-canvas__controls" data-test="preview-canvas-controls">
-      <button
-        type="button"
-        class="ab-preview-canvas__btn"
+      <!-- Leading slot: the panel injects Run / Edit here so they sit in the
+           same toolbar as the playback controls, same icon-button format. -->
+      <slot name="controls-lead" />
+
+      <PreviewControlButton
+        :icon="playing && frames.length ? 'pause' : 'play'"
+        :label="playing && frames.length ? 'Pause' : 'Play'"
         :disabled="!frames.length"
         data-test="preview-play-toggle"
         @click="togglePlaying"
-      >{{ playing ? 'Pause' : 'Play' }}</button>
+      />
 
-      <button
-        type="button"
-        class="ab-preview-canvas__btn"
+      <PreviewControlButton
+        icon="restart"
+        label="Restart"
         :disabled="!frames.length"
         data-test="preview-restart"
         @click="onRestart"
-      >Restart</button>
+      />
 
       <input
         type="range"
@@ -162,6 +166,7 @@ import { damageNumbersForFrameIndex } from './previewDamageNumbers'
 import { overlayCircles, screenToWorld } from './PreviewOverlays'
 import { getUnitSpriteSet, isPointInUnitBody, UNIT_SPRITE_SCALE } from '@/game/rendering/unitSprites'
 import { getUnitBoundsFor } from '@/game/maps/unitDefs'
+import PreviewControlButton from './PreviewControlButton.vue'
 
 interface Props {
   frames: PreviewFrame[]

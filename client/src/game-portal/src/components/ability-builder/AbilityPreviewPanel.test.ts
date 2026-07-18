@@ -83,6 +83,9 @@ function makeBuilderStub() {
     form: shallowRef<AbilityEditorForm>(makeForm()),
     program: shallowRef<AbilityProgram>(makeProgram()),
     busy: ref(false),
+    // The execution-timeline highlight reads builder.selected; default to the
+    // ability node (no lane highlighted), matching the real builder's default.
+    selected: ref({ kind: 'ability' as const }),
     select: vi.fn(),
   }
 }
@@ -123,7 +126,7 @@ describe('AbilityPreviewPanel', () => {
     expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="preview-canvas-empty"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="preview-play-toggle"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(false)
   })
 
   it('renders the canvas ahead of the Run Preview button in the DOM (renderer is top-most)', async () => {
@@ -165,13 +168,38 @@ describe('AbilityPreviewPanel', () => {
     await wrapper.find('[data-test="preview-run-button"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="preview-event-log"]').exists()).toBe(true)
     const summary = wrapper.find('[data-test="preview-summary"]')
     expect(summary.exists()).toBe(true)
     expect(summary.text()).toContain('15') // caster mana spent
     expect(summary.text()).toContain('200')
     expect(summary.text()).toContain('190')
+  })
+
+  it('tabs between the timeline and event log so only one is shown at a time', async () => {
+    runAbilityPreviewMock.mockResolvedValue(makeResult())
+    const builder = makeBuilderStub()
+    const wrapper = await mountPanel(builder)
+
+    await wrapper.find('[data-test="preview-run-button"]').trigger('click')
+    await flushPromises()
+
+    const timeline = () => wrapper.find('[data-test="preview-execution-timeline"]')
+    const log = () => wrapper.find('[data-test="preview-event-log"]')
+    const style = (el: ReturnType<typeof timeline>) => el.attributes('style') ?? ''
+
+    // Defaults to the timeline; the log is present (v-show) but hidden.
+    expect(style(timeline())).not.toContain('display: none')
+    expect(style(log())).toContain('display: none')
+
+    await wrapper.find('[data-test="preview-view-tab-log"]').trigger('click')
+    expect(style(timeline())).toContain('display: none')
+    expect(style(log())).not.toContain('display: none')
+
+    await wrapper.find('[data-test="preview-view-tab-timeline"]').trigger('click')
+    expect(style(timeline())).not.toContain('display: none')
+    expect(style(log())).toContain('display: none')
   })
 
   it('feeds populated frames to the (already-mounted) canvas once a result arrives, switching out of edit mode', async () => {
@@ -193,7 +221,7 @@ describe('AbilityPreviewPanel', () => {
     expect(wrapper.find('[data-test="preview-canvas-empty"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="preview-play-toggle"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('[data-test="preview-scrub"]').attributes('max')).toBe('4')
-    expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(true)
   })
 
   it('shows the warnings banner when runnable is false', async () => {
@@ -268,8 +296,8 @@ describe('AbilityPreviewPanel', () => {
 
     // Math.round(0.35 / 0.05) = 7.
     expect(scrub().value).toBe('7')
-    // Playback paused — the canvas's play/pause toggle reads "Play".
-    expect(wrapper.find('[data-test="preview-play-toggle"]').text()).toBe('Play')
+    // Playback paused — the icon toggle's accessible label reads "Play".
+    expect(wrapper.find('[data-test="preview-play-toggle"]').attributes('aria-label')).toBe('Play')
 
     // The existing click-to-inspect jump still fires alongside the seek.
     const expectedRef: NodeRef = {
@@ -366,14 +394,14 @@ describe('AbilityPreviewPanel', () => {
 
       await wrapper.find('[data-test="preview-run-button"]').trigger('click')
       await flushPromises()
-      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(true)
       expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(false)
 
       const canvas = wrapper.findComponent(AbilityPreviewCanvas)
       await canvas.vm.$emit('update:scene-unit', { index: 0, x: 50, y: 50 })
       await flushPromises()
 
-      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(false)
       expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
     })
 
@@ -463,14 +491,14 @@ describe('AbilityPreviewPanel', () => {
       await wrapper.find('[data-test="preview-run-button"]').trigger('click')
       await flushPromises()
       // In replay mode: timeline shown, drag layer gone.
-      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(true)
       expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(false)
 
       await wrapper.find('[data-test="preview-enemy-count"]').setValue(2)
       await flushPromises()
 
       // Back in edit mode: replay cleared, drag layer (and the new unit) live.
-      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(false)
       expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
     })
 
@@ -481,37 +509,40 @@ describe('AbilityPreviewPanel', () => {
 
       await wrapper.find('[data-test="preview-run-button"]').trigger('click')
       await flushPromises()
-      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(true)
 
       // Selecting a different ability changes the builder form's id — the panel
       // must clear the replay that belonged to the previous ability.
       builder.form.value = { ...builder.form.value, id: 'meteor' }
       await flushPromises()
 
-      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(false)
       expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
     })
 
-    it('the Edit Scene button appears only during a run and clears it back to edit mode', async () => {
+    it('the Edit Scene button is disabled until a run, then clears it back to edit mode', async () => {
       runAbilityPreviewMock.mockResolvedValue(makeResult({ frames: makeFrames(5) }))
       const builder = makeBuilderStub()
       const wrapper = await mountPanel(builder)
 
-      // Not shown before any run.
-      expect(wrapper.find('[data-test="preview-edit-scene-button"]').exists()).toBe(false)
+      // Always present in the toolbar, but disabled before any run.
+      const editBtn = () => wrapper.find('[data-test="preview-edit-scene-button"]')
+      expect(editBtn().exists()).toBe(true)
+      expect(editBtn().attributes('disabled')).toBeDefined()
 
       await wrapper.find('[data-test="preview-run-button"]').trigger('click')
       await flushPromises()
-      expect(wrapper.find('[data-test="preview-edit-scene-button"]').exists()).toBe(true)
+      // Enabled once a run is showing.
+      expect(editBtn().attributes('disabled')).toBeUndefined()
       expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(false)
 
-      await wrapper.find('[data-test="preview-edit-scene-button"]').trigger('click')
+      await editBtn().trigger('click')
       await flushPromises()
 
-      // Replay cleared, canvas draggable again, and the button hides itself.
-      expect(wrapper.find('[data-test="preview-timeline"]').exists()).toBe(false)
+      // Replay cleared, canvas draggable again, and Edit is disabled once more.
+      expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(false)
       expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="preview-edit-scene-button"]').exists()).toBe(false)
+      expect(editBtn().attributes('disabled')).toBeDefined()
     })
   })
 })

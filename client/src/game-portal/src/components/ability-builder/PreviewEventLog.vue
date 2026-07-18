@@ -15,56 +15,79 @@
       >{{ tab.label }}</button>
     </div>
 
-    <p v-if="filtered.length === 0" class="pv-log__empty">No events in this filter.</p>
+    <!-- The log reads as a table: a fixed column-header row over aligned,
+         scrolling rows. Time / Event / Details share one grid template so every
+         row lines up under its header. -->
+    <div class="pv-log__table">
+      <div class="pv-log__cols" aria-hidden="true">
+        <span>Time</span>
+        <span>Event</span>
+        <span>Details</span>
+      </div>
 
-    <ul v-else class="pv-log__rows">
-      <li
-        v-for="row in filtered"
-        :key="row.index"
-        class="pv-log__row"
-        :class="{
-          'pv-log__row--selected': row.index === selectedIndex,
-          'pv-log__row--skipped': row.event.type === 'action_skipped',
-          'pv-log__row--danger': traceEventColor(row.event.type) === 'danger',
-          'pv-log__row--active': activeIndexSet.has(row.index),
-        }"
-        data-test="preview-log-row"
-      >
-        <button
-          type="button"
-          class="pv-log__row-body"
-          :disabled="!row.event.path"
-          @click="onRowClick(row)"
+      <p v-if="filtered.length === 0" class="pv-log__empty">No events in this filter.</p>
+
+      <ul v-else class="pv-log__rows">
+        <li
+          v-for="row in filtered"
+          :key="row.index"
+          class="pv-log__row"
+          :class="{
+            'pv-log__row--selected': row.index === selectedIndex,
+            'pv-log__row--skipped': row.event.type === 'action_skipped',
+            'pv-log__row--danger': traceEventColor(row.event.type) === 'danger',
+            'pv-log__row--active': activeIndexSet.has(row.index),
+          }"
+          data-test="preview-log-row"
         >
-          <span class="pv-log__time">{{ row.event.t.toFixed(2) }}s</span>
-          <span class="pv-log__type">{{ humanizeTraceType(row.event.type) }}</span>
-          <span v-if="row.summary" class="pv-log__summary">{{ row.summary }}</span>
-          <span v-if="row.event.type === 'action_skipped'" class="pv-log__deferred" data-test="preview-log-deferred">
-            deferred
-          </span>
-        </button>
-      </li>
-    </ul>
+          <button
+            type="button"
+            class="pv-log__row-body"
+            :disabled="!row.event.path"
+            @click="onRowClick(row)"
+          >
+            <span class="pv-log__time">{{ row.event.t.toFixed(2) }}s</span>
+            <span class="pv-log__event">
+              <span class="pv-log__dot" :class="`pv-log__dot--${row.color}`" aria-hidden="true" />
+              <span class="pv-log__type">{{ humanizeTraceType(row.event.type) }}</span>
+            </span>
+            <span class="pv-log__details">
+              <span v-if="row.summary" class="pv-log__summary">{{ row.summary }}</span>
+              <span
+                v-if="row.event.type === 'action_skipped'"
+                class="pv-log__deferred"
+                data-test="preview-log-deferred"
+              >deferred</span>
+            </span>
+          </button>
+        </li>
+      </ul>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-// PreviewEventLog: the full execution trace, in order, as a filterable list.
-// Rows with a `path` (an action-level event) are clickable — clicking emits
-// `select(index)` (highlight this row), `selectNode(path)` (the panel
-// resolves path -> NodeRef via refFromPath and focuses it in the
-// flow/inspector), AND `seek(t)` (Task 8: the panel maps this event's sim
-// time to a frame index and scrubs the replay canvas to it, pausing
-// playback). Rows without a path (most trigger/flow-level events) render as
-// plain, unclickable rows — none of the three emits fire for them.
+// PreviewEventLog: the full execution trace, in order, as a filterable TABLE
+// (Time · Event · Details). Rows with a `path` (an action-level event) are
+// clickable — clicking emits `select(index)` (highlight this row),
+// `selectNode(path)` (the panel resolves path -> NodeRef via refFromPath and
+// focuses it in the flow/inspector), AND `seek(t)` (the panel maps this event's
+// sim time to a frame index and scrubs the replay canvas to it, pausing
+// playback). Rows without a path render as plain, unclickable rows.
 //
-// `activeIndices` (Task 8) is a SEPARATE, additive highlight driven by the
-// canvas's playhead (events whose `t` falls in the currently-displayed
-// frame's time window) — it never touches `selectedIndex`/the click-to-
-// inspect selection above.
+// `activeIndices` is a SEPARATE, additive highlight driven by the canvas's
+// playhead (events whose `t` falls in the currently-displayed frame's time
+// window) — it never touches `selectedIndex`/the click-to-inspect selection.
 import { computed, ref } from 'vue'
 import type { AbilityExecutionTraceEvent } from '@/game/abilities/program/programPreview'
-import { humanizeTraceType, summarizeTraceEvent, traceEventCategory, traceEventColor, type TraceCategory } from './traceEventDisplay'
+import {
+  humanizeTraceType,
+  summarizeTraceEvent,
+  traceEventCategory,
+  traceEventColor,
+  type TraceCategory,
+  type TraceColor,
+} from './traceEventDisplay'
 
 const props = defineProps<{
   events: AbilityExecutionTraceEvent[]
@@ -99,14 +122,20 @@ interface Row {
   index: number
   event: AbilityExecutionTraceEvent
   summary: string
+  color: TraceColor
 }
 
-// rows: the FULL trace, in execution order, decorated with its original
-// index (needed so `select`/`selectedIndex` stay anchored to the untouched
-// trace even while a tab filter is narrowing what's rendered) and its
-// best-effort summary.
+// rows: the FULL trace, in execution order, decorated with its original index
+// (needed so `select`/`selectedIndex` stay anchored to the untouched trace even
+// while a tab filter narrows what's rendered), its best-effort summary, and its
+// category color (the leading dot).
 const rows = computed<Row[]>(() =>
-  props.events.map((event, index) => ({ index, event, summary: summarizeTraceEvent(event) })),
+  props.events.map((event, index) => ({
+    index,
+    event,
+    summary: summarizeTraceEvent(event),
+    color: traceEventColor(event.type),
+  })),
 )
 
 const filtered = computed<Row[]>(() => {
@@ -130,6 +159,7 @@ function onRowClick(row: Row) {
 }
 
 .pv-log__tabs {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -158,37 +188,65 @@ function onRowClick(row: Row) {
   border-color: var(--ed-brass);
 }
 
+/* The table shell: a bordered panel so the rows read as a log, not loose text.
+   Shared column template drives both the header and every row. */
+.pv-log__table {
+  --pv-log-cols: 48px minmax(116px, 1.3fr) minmax(0, 2fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+  background: rgba(8, 14, 24, 0.4);
+  overflow: hidden;
+}
+
+.pv-log__cols {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: var(--pv-log-cols);
+  gap: 10px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--ed-line);
+  background: rgba(15, 23, 42, 0.35);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ed-text-dim);
+}
+
 .pv-log__empty {
   margin: 0;
+  padding: 10px;
   font-size: 0.78rem;
   color: var(--ed-text-dim);
 }
 
 .pv-log__rows {
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 260px;
   overflow-y: auto;
 }
 
 .pv-log__row {
-  border-radius: var(--ed-radius);
-  border: 1px solid transparent;
+  border-bottom: 1px solid rgba(120, 130, 150, 0.1);
+}
+
+.pv-log__row:last-child {
+  border-bottom: none;
 }
 
 .pv-log__row--selected {
-  border-color: var(--ed-brass);
-  background: rgba(212, 168, 71, 0.1);
+  background: rgba(212, 168, 71, 0.12);
 }
 
-/* pv-log__row--active: the canvas-playhead highlight (Task 8) — deliberately
-   a different visual channel (left edge accent) than --selected's full
-   border/fill so the two can combine on the same row without one masking
-   the other. */
+/* The canvas-playhead highlight — a left-edge accent, a different visual
+   channel than --selected's fill so the two can combine on one row. */
 .pv-log__row--active {
   box-shadow: inset 3px 0 0 var(--ed-ok);
 }
@@ -204,39 +262,61 @@ function onRowClick(row: Row) {
 }
 
 .pv-log__row-body {
+  display: grid;
+  grid-template-columns: var(--pv-log-cols);
+  gap: 10px;
+  align-items: center;
   width: 100%;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 8px;
+  padding: 5px 10px;
   background: none;
   border: 0;
   text-align: left;
   font-family: var(--font-body);
 }
 
-.pv-log__row-body:disabled {
-  opacity: 0.85;
+.pv-log__row-body:hover:not(:disabled) {
+  background: rgba(120, 130, 150, 0.08);
 }
 
 .pv-log__time {
-  flex: 0 0 auto;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--ed-brass-dim);
   font-variant-numeric: tabular-nums;
 }
 
-.pv-log__type {
+.pv-log__event {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.pv-log__dot {
   flex: 0 0 auto;
-  font-size: 0.78rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.pv-log__type {
+  font-size: 0.76rem;
   font-weight: 600;
   color: var(--ed-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv-log__details {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .pv-log__summary {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   color: var(--ed-text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -247,7 +327,7 @@ function onRowClick(row: Row) {
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 1px 7px;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -255,4 +335,13 @@ function onRowClick(row: Row) {
   background: rgba(224, 178, 88, 0.14);
   border: 1px solid rgba(224, 178, 88, 0.4);
 }
+
+/* Category dot colors — the established trace palette (shared with the timeline). */
+.pv-log__dot--neutral { background: #a9b4c4; }
+.pv-log__dot--blue { background: #6ea8e0; }
+.pv-log__dot--red { background: var(--ed-danger); }
+.pv-log__dot--green { background: var(--ed-ok); }
+.pv-log__dot--amber { background: #e0b258; }
+.pv-log__dot--muted { background: rgba(233, 219, 184, 0.4); }
+.pv-log__dot--danger { background: var(--ed-danger); }
 </style>

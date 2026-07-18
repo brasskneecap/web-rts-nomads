@@ -1,5 +1,5 @@
 <template>
-  <SectionCard title="Preview Scene" data-test="preview-scene-controls">
+  <SectionCard title="Preview Scene" collapsible data-test="preview-scene-controls">
     <div class="pv-scene__row">
       <EditorField label="Enemies" for-id="pv-enemy-count" inline class="pv-scene__field">
         <input
