@@ -1059,7 +1059,7 @@ func TestSharedSuffering_EchoesToEveryEnemyInRange(t *testing.T) {
 	start2 := clean2.HP
 
 	primaryDamage := 20
-	s.applySharedSufferingLocked(siphoner, primary, primaryDamage)
+	s.applySharedSufferingLocked(siphoner, primary, primaryDamage, "")
 
 	expectedEcho := int(math.Round(float64(primaryDamage) * sharePct))
 	if got := start1 - clean1.HP; got != expectedEcho {
@@ -1082,7 +1082,7 @@ func TestSharedSuffering_OutOfRangeEnemyNotEchoed(t *testing.T) {
 	far := spawnEnemyAt(s, primary.X+radius*2, primary.Y)
 	start := far.HP
 
-	s.applySharedSufferingLocked(siphoner, primary, 30)
+	s.applySharedSufferingLocked(siphoner, primary, 30, "")
 	if far.HP != start {
 		t.Errorf("out-of-range enemy took echo damage: %d -> %d", start, far.HP)
 	}
@@ -1108,7 +1108,7 @@ func TestSharedSuffering_EmitsMinorDamagePopupPerEcho(t *testing.T) {
 	// echo target gets a "shadow" minor entry that the client can peel into
 	// a side-falling popup.
 	beforeQueue := len(s.minorDamageEventsThisTick)
-	s.applySharedSufferingLocked(siphoner, primary, primaryDamage)
+	s.applySharedSufferingLocked(siphoner, primary, primaryDamage, "")
 	added := s.minorDamageEventsThisTick[beforeQueue:]
 
 	gotIDs := make(map[int]int) // unitID → count of shadow entries
@@ -1138,7 +1138,7 @@ func TestSharedSuffering_NoOpWithoutPerk(t *testing.T) {
 	start := bystander.HP
 
 	// No perk — call must be a clean no-op.
-	s.applySharedSufferingLocked(siphoner, primary, 30)
+	s.applySharedSufferingLocked(siphoner, primary, 30, "")
 	if bystander.HP != start {
 		t.Errorf("echo fired despite no perk; HP %d -> %d", start, bystander.HP)
 	}

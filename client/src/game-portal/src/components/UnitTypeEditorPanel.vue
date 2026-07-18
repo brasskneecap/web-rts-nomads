@@ -1,5 +1,5 @@
 <template>
-  <EditorShell class="unit-editor">
+  <EditorShell class="unit-editor" theme="forge">
     <!-- ── Sidebar: units grouped by faction + faction management ────────── -->
     <template #sidebar>
       <div class="unit-sidebar">

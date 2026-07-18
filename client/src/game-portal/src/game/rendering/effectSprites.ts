@@ -121,6 +121,12 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
 // Names we have already warned about so the console doesn't spam on every frame.
 const warnedMissing = new Set<string>()
 
+// listEffectNames returns every registered effect name (sprite-sheet folder),
+// sorted — for the ability-editor icon picker's Effect gallery.
+export function listEffectNames(): string[] {
+  return [...registry.keys()].sort()
+}
+
 export function getEffectSprite(name: string): EffectSpriteSet | undefined {
   const lower = name.toLowerCase()
   const entry = registry.get(lower)

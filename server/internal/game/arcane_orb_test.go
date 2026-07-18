@@ -5,6 +5,14 @@ import (
 	"testing"
 )
 
+// arcaneOrbDef returns the live catalog "arcane_orb" def with its mechanic
+// magnitudes (Radius, PullStrength, DamagePerSecond, Projectile,
+// ProjectileScale) RECOVERED from the compiled Program — arcane_orb is
+// schemaVersion:2 as of the composable-abilities migration, so those fields
+// are cleared on the raw def (Program is the sole authority) and must be
+// read via abilityMechanicsShadow, same as fireballDef/shatterDef. CastRange/
+// TargetsPoint are cast-setup fields that survive conversion untouched, so
+// they read correctly either way.
 func arcaneOrbDef(t *testing.T) AbilityDef {
 	t.Helper()
 	def, ok := getAbilityDef("arcane_orb")
@@ -14,7 +22,7 @@ func arcaneOrbDef(t *testing.T) AbilityDef {
 	if !def.TargetsPoint {
 		t.Fatal("arcane_orb should be point-targeted (targetsPoint)")
 	}
-	return def
+	return abilityMechanicsShadow(def)
 }
 
 func setupOrbCaster(t *testing.T, s *GameState, x, y float64) *Unit {

@@ -41,6 +41,9 @@ function stateWith(unit: Unit): GameState {
 const PASSIVE: AbilitySnapshot = {
   id: 'arcane_missiles',
   displayName: 'Arcane Missiles',
+  // The server now provides the tooltip prose (generated from the ability's
+  // config or an author override); the client appends the live charge readout.
+  description: 'Passive. Spending mana builds Arcane Charge; at 30 charge it fires 3 missiles.',
   passive: true,
   chargeCurrent: 12,
   chargeRequired: 30,
@@ -73,7 +76,9 @@ describe('Arch Mage spell slots', () => {
     expect(passive).toBeTruthy()
     expect(passive!.disabled).toBe(true)
     expect(passive!.chargeText).toBe('12/30')
+    // The tooltip carries the server description prose plus the live charge line.
     expect(passive!.tooltipBody).toContain('Arcane Charge')
+    expect(passive!.tooltipBody).toContain('Charge: 12/30')
   })
 
   it('falls back to a locked perk cell for a rank with no learned slot', () => {

@@ -1,6 +1,10 @@
 package game
 
-import "math"
+import (
+	"math"
+
+	"webrts/server/pkg/protocol"
+)
 
 // Ability cast lifecycle.
 //
@@ -82,8 +86,16 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	}
 	// Channeled abilities use a separate lifecycle. Route them here so that
 	// the WS handler and auto-cast code paths need no change — they all call
-	// beginAbilityCastLocked and this branch handles the dispatch transparently.
-	if def.ChannelType != "" {
+	// beginAbilityCastLocked and this branch handles the dispatch
+	// transparently. Keyed on def.IsChannelAbility() (not a raw
+	// ChannelType != "" check) so a converted (SchemaVersion>=2) channel
+	// ability is still recognized — see that method's doc comment. This
+	// branch MUST stay here, before any one-shot-cast plumbing below (mana
+	// check, GCD arm, cooldown arm) — see ability_channel.go's file doc
+	// comment ("THE ORDERING DECISION") for why routing a channel-start
+	// through cast RESOLUTION instead would double-run
+	// beginAbilityChannelLocked's own gating.
+	if def.IsChannelAbility() {
 		return s.beginAbilityChannelLocked(caster, abilityID, target)
 	}
 	// Passive abilities (arcane_missiles) are never manually or auto-cast —
@@ -147,6 +159,12 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	}
 	armAbilityGlobalCooldownLocked(caster)
 
+	// Fire on_cast_start (composable-only; no-op for a legacy ability) now
+	// that every gate has passed and cooldown/GCD are armed — see
+	// fireCastStartTriggerLocked's doc comment for the exact ordering
+	// rationale and the unpaired-on-interrupt hazard it accepts.
+	s.fireCastStartTriggerLocked(caster, def, target, protocol.Vec2{})
+
 	// Zero / negative cast time ⇒ instant ability (no lock, resolve now).
 	if eff.CastTime <= 0 {
 		targets := s.buildCastTargetSetLocked(caster, def, target)
@@ -203,6 +221,9 @@ func (s *GameState) beginAbilityCastAtPointLocked(caster *Unit, abilityID string
 		caster.AbilityCooldowns[abilityID] = cd
 	}
 	armAbilityGlobalCooldownLocked(caster)
+	// Fire on_cast_start (composable-only) now that every gate has passed and
+	// cooldown/GCD are armed — see fireCastStartTriggerLocked's doc comment.
+	s.fireCastStartTriggerLocked(caster, def, nil, protocol.Vec2{X: x, Y: y})
 	// Timed point cast: lock the caster and store the target point; resolution
 	// happens in tickUnitCastLocked when the timer elapses. Zero cast time keeps
 	// the prior behavior (resolve now). Mana is spent on completion, so an
@@ -233,6 +254,14 @@ func (s *GameState) resolveAbilityCastAtPointLocked(caster *Unit, def AbilityDef
 	if caster == nil {
 		return
 	}
+	// Composable (schemaVersion>=2) abilities route through the executor
+	// instead of the legacy branches below. No shipped catalog ability sets
+	// SchemaVersion>=2 (Phase 5), so this is a no-op for every ability live
+	// today — only authored composable abilities reach it.
+	if def.SchemaVersion >= 2 && def.Program != nil {
+		s.resolveAbilityProgramCastLocked(caster, def, eff, nil, protocol.Vec2{X: x, Y: y})
+		return
+	}
 	if !s.spendUnitManaLocked(caster, eff.ManaCost) {
 		caster.LastCastFailure = castFailNotEnoughMana
 		return
@@ -240,7 +269,7 @@ func (s *GameState) resolveAbilityCastAtPointLocked(caster *Unit, def AbilityDef
 	// Traveling orb: launch a slow straight-line vortex from the caster toward
 	// the clicked point, up to the ability's full cast-range distance.
 	if eff.PullStrength > 0 && def.Projectile != "" {
-		s.spawnArcaneOrbLocked(caster, x, y, def, eff, def.CastRange.Resolve(caster))
+		s.spawnArcaneOrbLocked(caster, x, y, def, eff, def.CastRange.Resolve(caster), arcaneOrbDamageIntervalSeconds, nil, nil)
 	}
 
 	// Delayed-impact ground hazard (Meteor and future sky-drop spells). A point
@@ -279,6 +308,62 @@ func (s *GameState) resolveAbilityCastAtPointLocked(caster *Unit, def AbilityDef
 		// whether any enemy was caught, so a whiffed ground cast still reads.
 		s.playEffectAtPointLocked(def.EffectAtPoint, cx, cy, def.EffectScale)
 	}
+}
+
+// resolveAbilityProgramCastLocked resolves a completed cast for a composable
+// (SchemaVersion>=2, Program != nil) ability by running its on_cast_complete
+// triggers through the executor (runProgramTriggersLocked), instead of the
+// legacy heal/damage/pull/etc. branches. Mana is spent exactly once here,
+// mirroring both legacy resolvers (resolveAbilityCastLocked /
+// resolveAbilityCastAtPointLocked) — a false return from spendUnitManaLocked
+// (shouldn't happen post-init-check) fails the cast gracefully with no effect,
+// same as the legacy path.
+//
+// eff is the effective (modifier-folded) spell to resolve with — callers
+// pass the SAME eff they already resolved for their own mana/gating checks
+// (beginAbilityCastAtPointLocked / tickUnitCastLocked / resolveAbilityCastLocked
+// via s.effectiveSpellLocked) or a deliberately customized one (unstable_magic's
+// free, reduced-effectiveness proc — perks_arch_mage.go). This function MUST
+// NOT re-derive its own eff: doing so would silently discard a customized
+// ManaCost (a "free proc" would charge full mana) and
+// DamageEffectivenessMultiplier (a reduced-effectiveness proc would deal full
+// damage) — see the composable-abilities-executor-parity investigation.
+//
+// primary is the unit-target cast's primary/anchor target (nil for a
+// point cast); point is the point-cast's world target (zero Vec2 for a
+// unit-target cast). ImpactPosition mirrors CastPoint so a program that
+// reads impact_position for an instant point-AoE resolves at the cast
+// location — marker-delayed impact is deferred, so an instant point cast's
+// cast_point and impact_position are always the same point.
+//
+// abilityDef is set on the context so deal_damage scales the caster's
+// spell-modifiers for this ability's school/tags, at parity with the legacy
+// path's effectiveSpellLocked-derived damage. eff.DamageEffectivenessMultiplier
+// is copied onto the context so deal_damage also honours any caller-applied
+// reduced/boosted effectiveness on top of that modifier fold.
+//
+// Caller holds s.mu.
+func (s *GameState) resolveAbilityProgramCastLocked(caster *Unit, def AbilityDef, eff EffectiveSpell, primary *Unit, point protocol.Vec2) {
+	if !s.spendUnitManaLocked(caster, eff.ManaCost) {
+		caster.LastCastFailure = castFailNotEnoughMana
+		return
+	}
+	ctx := &RuntimeAbilityContext{
+		CasterID:                      caster.ID,
+		AbilityID:                     def.ID,
+		program:                       def.Program,
+		abilityDef:                    &def,
+		Named:                         map[string]ContextValue{},
+		CastPoint:                     point,
+		ImpactPosition:                point,
+		Trace:                         s.previewTrace,
+		now:                           s.previewClock,
+		damageEffectivenessMultiplier: eff.effectivenessMultiplier(),
+	}
+	if primary != nil {
+		ctx.InitialTarget = primary.ID
+	}
+	s.runProgramTriggersLocked(ctx, def.Program.Triggers, TriggerOnCastComplete)
 }
 
 // playEffectAtPointLocked queues a registered effect at a WORLD position
@@ -387,6 +472,83 @@ func (s *GameState) resolveAbilityAoeAtPointLocked(caster *Unit, def AbilityDef,
 	}
 }
 
+// fireCastStartTriggerLocked fires a composable ability's on_cast_start
+// triggers, if it has any. Called once from each of the three cast-begin
+// entry points — beginAbilityCastLocked (unit-target), beginAbilityCastAtPointLocked
+// (point), and beginAbilityChannelLocked (channel) — right after cooldown and
+// the global cooldown are armed, and (unit-target / channel paths) after the
+// mana-availability check has already passed. No-op for a legacy
+// (SchemaVersion<2 or Program nil) ability: on_cast_start can only be
+// authored on a composable Program, so a legacy cast is completely
+// unaffected by this call (same guard resolveAbilityProgramCastLocked and
+// every other trigger-dispatch call site already uses).
+//
+// ── PLACEMENT: why here, not earlier or later ──────────────────────────────
+// "Started" is defined as "every gate has passed and the cast is
+// committed" — ownership, busy, target legality, range, and mana have ALL
+// already been checked (mana CHECKED here, not yet SPENT — see the hazard
+// note below), and cooldown/GCD have already been armed. Placing the hook
+// any earlier (before the mana check) would fire on_cast_start for a cast
+// that's about to be rejected for insufficient mana, which is not "started"
+// by any reasonable definition. Placing it any later (e.g. after
+// buildCastTargetSetLocked/resolveAbilityCastLocked for an instant-cast)
+// would make instant-cast ordering ambiguous relative to on_cast_complete.
+//
+// This placement is AFTER eff is resolved (unit-target / channel paths) but
+// the context deliberately does NOT carry eff.DamageEffectivenessMultiplier
+// or ImpactPosition — those describe the RESOLVED effect, which does not
+// exist yet at start time. The context mirrors a strict subset of
+// resolveAbilityProgramCastLocked's shape: CasterID, AbilityID, program,
+// abilityDef, InitialTarget, and (point path only) CastPoint.
+//
+// ── THE UNPAIRED-ON-INTERRUPT HAZARD ───────────────────────────────────────
+// A cast that begins (non-zero cast time) can be abandoned before it
+// resolves three ways (tickUnitCastLocked): unknown ability, caster died, or
+// target lost/out of range. In every one of those, on_cast_complete NEVER
+// fires — so if this cast already fired on_cast_start, that trigger's
+// effects (a self-buff, a summoned unit, a spawned zone, ...) are NOT
+// undone. There is no on_cast_interrupted counterpart.
+//
+// DECISION: fire anyway, and document the hazard loudly (this comment) —
+// do not build a new "undo" trigger, and do not withhold on_cast_start to
+// dodge the problem. This matches the EXISTING design philosophy in this
+// file: the per-ability cooldown and the GCD are both armed at cast START
+// and are NEVER refunded on an interrupted cast ("An interrupted cast keeps
+// the cooldown — consistent with how every other RTS handles it", see
+// beginAbilityCastLocked above). on_cast_start joins mana-checked/cooldown-
+// armed/GCD-armed in the same "committed at start, not reversed on
+// interrupt" bucket — it is not a new category of risk, it is the SAME
+// category applied to one more piece of state. An ability author who wires
+// a persistent effect onto on_cast_start needs to know a cast can be
+// interrupted after it fires; that is a content-authoring concern (the
+// editor/description layer's job to surface), not a reason to withhold the
+// trigger from the runtime.
+//
+// primary is the resolved/validated target for the unit-target and channel
+// paths (nil for the point path); castPoint is the point-cast's world
+// target (zero Vec2 otherwise).
+//
+// Caller holds s.mu.
+func (s *GameState) fireCastStartTriggerLocked(caster *Unit, def AbilityDef, primary *Unit, castPoint protocol.Vec2) {
+	if def.SchemaVersion < 2 || def.Program == nil {
+		return
+	}
+	ctx := &RuntimeAbilityContext{
+		CasterID:   caster.ID,
+		AbilityID:  def.ID,
+		program:    def.Program,
+		abilityDef: &def,
+		Named:      map[string]ContextValue{},
+		CastPoint:  castPoint,
+		Trace:      s.previewTrace,
+		now:        s.previewClock,
+	}
+	if primary != nil {
+		ctx.InitialTarget = primary.ID
+	}
+	s.runProgramTriggersLocked(ctx, def.Program.Triggers, TriggerOnCastStart)
+}
+
 // failCastLocked records the failure reason on the unit (for async/UI
 // surfacing) and returns the (false, reason) tuple.
 func (s *GameState) failCastLocked(caster *Unit, reason string) (bool, string) {
@@ -463,6 +625,13 @@ func (s *GameState) tickUnitCastLocked(unit *Unit, dt float64) {
 // with no valid targets (edge case: all targets died between cast-start and
 // resolution).
 //
+// This is the "derive-my-own-eff" entry point used by the normal cast timeline
+// (tickUnitCastLocked), where no caller customizes the EffectiveSpell. A
+// caller that DOES need to hand in a customized eff (unstable_magic's free,
+// reduced-effectiveness proc — perks_arch_mage.go) must call
+// resolveAbilityCastWithEffLocked directly instead of duplicating the
+// schema-version branch below; see that function's doc comment.
+//
 // Caller holds s.mu. Caller is responsible for clearing the cast state.
 func (s *GameState) resolveAbilityCastLocked(caster *Unit, def AbilityDef, targets []*Unit) {
 	if caster == nil || len(targets) == 0 {
@@ -473,9 +642,54 @@ func (s *GameState) resolveAbilityCastLocked(caster *Unit, def AbilityDef, targe
 	// spell as it fires). Mana spend and every per-target magnitude read from
 	// this EffectiveSpell, never the raw def.
 	eff := s.effectiveSpellLocked(caster, def)
+	s.resolveAbilityCastWithEffLocked(caster, def, eff, targets)
+}
+
+// resolveAbilityCastWithEffLocked is the shared unit-targeted cast-resolution
+// seam: it branches on SchemaVersion exactly like resolveAbilityCastAtPointLocked
+// does for point casts, and — critically — resolves EVERY target using the
+// caller-supplied eff rather than re-deriving one from scratch. That makes it
+// the correct entry point for any caller that needs a customized
+// EffectiveSpell (unstable_magic's free/reduced-effectiveness proc —
+// perks_arch_mage.go's fireUnstableMagicLocked) as well as for
+// resolveAbilityCastLocked's own normal-cast path (which derives its own eff
+// and forwards it here unchanged).
+//
+// Before this function existed, fireUnstableMagicLocked's unit-targeted
+// branch called resolveAbilityCastOnTargetLocked directly — the inner
+// LEGACY-only per-target applier, below the schema-version check. That
+// silently ran a v2 (schemaVersion>=2, Program != nil) proc target through the
+// legacy branch, which reads def.DamageAmount — a field ConvertLegacyAbility
+// clears to 0 on migration, so the proc dealt no damage. Routing through this
+// seam instead means the proc gets the same SchemaVersion>=2 branch every
+// other unit-targeted cast gets.
+//
+// targets[0] is treated as the primary/anchor target for the composable
+// branch (matching resolveAbilityCastLocked's existing contract) — safe for
+// both callers: buildCastTargetSetLocked always force-includes the primary
+// target first, and the proc always hands in a single-element slice.
+//
+// An empty or nil targets slice is a no-op: mana is never spent for a cast
+// with no valid targets.
+//
+// Caller holds s.mu.
+func (s *GameState) resolveAbilityCastWithEffLocked(caster *Unit, def AbilityDef, eff EffectiveSpell, targets []*Unit) {
+	if caster == nil || len(targets) == 0 {
+		return
+	}
+	// Composable (schemaVersion>=2) abilities route through the executor
+	// instead of the legacy per-target loop below. No shipped catalog
+	// ability sets SchemaVersion>=2 (Phase 5), so this is a no-op for every
+	// ability live today — only authored composable abilities reach it.
+	if def.SchemaVersion >= 2 && def.Program != nil {
+		s.resolveAbilityProgramCastLocked(caster, def, eff, targets[0], protocol.Vec2{})
+		return
+	}
 	// Mana is paid here (on completion). spendUnitManaLocked is the single
 	// authoritative spend; a false return (shouldn't happen post-init-check)
-	// fails the cast gracefully with no effect.
+	// fails the cast gracefully with no effect. A zero eff.ManaCost (the
+	// unstable_magic free-proc case) is a guaranteed-true no-op — see
+	// spendUnitManaLocked's cost<=0 early return.
 	if !s.spendUnitManaLocked(caster, eff.ManaCost) {
 		caster.LastCastFailure = castFailNotEnoughMana
 		return
@@ -582,7 +796,13 @@ func (s *GameState) fireAbilityChainLocked(caster, target *Unit, def AbilityDef,
 	if emitter == "" {
 		emitter = "lightning_bolt"
 	}
-	s.executeProcEffectLocked(procSourceFromUnit(caster), target, ProcEffectParams{
+	// Stamp ability attribution onto the proc source so every hop's beam
+	// (primary + bounces) carries def.ID through to its DamageSource —
+	// closes the on_unit_death attribution gap for chain-killed victims (see
+	// ProcSource.SourceAbilityID's doc comment, proc_effects.go).
+	src := procSourceFromUnit(caster)
+	src.SourceAbilityID = def.ID
+	s.executeProcEffectLocked(src, target, ProcEffectParams{
 		Damage:              eff.Damage,
 		DamageType:          def.DamageType.OrPhysical(),
 		ProjectileID:        emitter,

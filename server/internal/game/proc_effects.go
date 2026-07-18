@@ -68,6 +68,27 @@ type ProcSource struct {
 	OwnerPlayerID string
 	OriginX       float64
 	OriginY       float64
+	// SourceAbilityID names the composable ability this proc fire is
+	// delivering, if any — "" means "not from an ability" (equipment on-hit
+	// procs, item procs, perk-triggered procs; see procSourceFromUnit, whose
+	// zero value keeps every existing ProcSource{} call site behaving exactly
+	// as before). Widened the same way DamageSource.SourceAbilityID was (see
+	// its doc comment, damage_pipeline.go) so this compiles/behaves unchanged
+	// everywhere except the one call site that sets it.
+	//
+	// Threaded through to the Beam this fires (fireProcBeamLocked ->
+	// spawnMomentaryDamageBeamLocked -> Beam.SourceAbilityID) so
+	// applyBeamPendingDamageLocked's DamageSource carries attribution all the
+	// way to a chain-bounce kill — closing the gap noted at
+	// DamageSource.SourceAbilityID's "KNOWN GAP" comment: chain_lightning's
+	// bounce hops previously carried no ability attribution because they
+	// route through this equipment-proc beam mechanism.
+	//
+	// Set at: fireAbilityChainLocked (ability_cast.go), the sole ability call
+	// site of executeProcEffectLocked, from def.ID. Left empty at every
+	// equipment/item/perk proc call site (procSourceFromUnit and both
+	// state_combat.go on-hit call sites) — those have no ability id to carry.
+	SourceAbilityID string
 }
 
 // procSourceFromUnit is the common-case constructor: the effect fires from

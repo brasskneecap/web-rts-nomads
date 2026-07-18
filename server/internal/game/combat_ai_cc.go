@@ -154,6 +154,49 @@ func (s *GameState) applyProcBurnLocked(targetID int, dps, duration float64, att
 	)
 }
 
+// applyAbilityBurnLocked ignites targetID with a fire DoT sourced from an
+// apply_status(burn) action (ability_exec_actions.go) — the LEGACY "burn" CC
+// primitive apply_status still routes to unconditionally, unchanged. It
+// reuses the exact same burn-stack seam applyProcBurnLocked uses
+// (UnitPerkState.BurnStacks, ticked by tickTrapperSilverDebuffsLocked), but
+// keys the stack per ABILITY INSTANCE ("abilityburn:<abilityID>:<casterID>")
+// rather than applyProcBurnLocked's per-ATTACKER-ONLY key
+// ("weaponburn:<attackerID>").
+//
+// This is a deliberate, surgical bug fix: before this function existed,
+// apply_status's "burn" case called applyProcBurnLocked directly, so two
+// DIFFERENT abilities cast by the SAME caster collided on one
+// "weaponburn:<casterID>" stack and refreshed each other instead of burning
+// independently (there was no way to tell them apart — the key carried no
+// ability identity at all). applyProcBurnLocked ITSELF is untouched and still
+// used, unmodified, by the equipment on-hit proc paths (projectile.go's
+// landProjectileLocked, beam.go's momentary-beam land) — per-attacker keying
+// is CORRECT there: one wielder, one weapon, one stack, and two different
+// procs from the same weapon should refresh rather than stack.
+//
+// No-op on zero/non-positive values or a dead/invisible/missing target,
+// mirroring applyProcBurnLocked's own guard.
+//
+// Must be called under s.mu write lock.
+func (s *GameState) applyAbilityBurnLocked(targetID int, dps, duration float64, casterID int, abilityID string) {
+	if dps <= 0 || duration <= 0 {
+		return
+	}
+	target := s.getUnitByIDLocked(targetID)
+	if target == nil || target.HP <= 0 || !target.Visible {
+		return
+	}
+	target.PerkState.applyBurnStack(
+		"abilityburn:"+abilityID+":"+strconv.Itoa(casterID),
+		"", // ungrouped: shares the global per-victim cap with other non-trap burns
+		casterID,
+		dps,
+		duration,
+		0, 0, // no Reactive Flames rider on an authored-ability burn
+		burnSourceWeapon, // credited to the caster unit, same attribution shape as a weapon proc
+	)
+}
+
 // slowFactorLocked returns the effective speed fraction for unit from ALL active
 // slow categories, composed multiplicatively (physical × cold). Returns 1.0
 // when nothing is active. Applied to both movement step (state.go Update()) and

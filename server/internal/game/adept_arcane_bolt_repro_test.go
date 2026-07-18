@@ -48,6 +48,12 @@ func TestAdept_AutocastsArcaneBolt_RealSpawn(t *testing.T) {
 		s.mu.Unlock()
 		t.Fatal("arcane_bolt def not found")
 	}
+	// arcane_bolt is schemaVersion:2 as of the composable-abilities migration:
+	// DamageAmount is cleared on the raw def (the compiled launch_projectile
+	// action's Config.Amount is the sole authority now). Recovered here purely
+	// for the diagnostic message below — the actual pass/fail assertion is the
+	// enemy.HP comparison, which needs no recovery.
+	arcaneDef = abilityMechanicsShadow(arcaneDef)
 
 	// Enemy well within the adept's cast range (match_attack_range = 220).
 	enemy := spawnProjTestUnit(t, s, enemyPlayerID, 450, 400)

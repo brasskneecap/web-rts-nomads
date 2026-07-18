@@ -148,6 +148,30 @@ type EffectiveSpell struct {
 	Duration        float64
 	ChainCount      int
 	PullStrength    float64
+	// DamageEffectivenessMultiplier scales a COMPOSABLE (program-driven)
+	// deal_damage action's resolved amount on TOP of the standard
+	// SpellModifier fold, for a caller that resolves a spell at reduced (or
+	// boosted) effectiveness via a caller-built EffectiveSpell rather than a
+	// normal cast — e.g. unstable_magic's free proc (perks_arch_mage.go),
+	// which calls scaleEffectiveSpellDamage to set this field. The Go zero
+	// value (every ordinary cast) means "no extra scaling"; read it via
+	// effectivenessMultiplier(), never the raw field, so the zero-value case
+	// is never accidentally treated as "scale to zero". Legacy resolution
+	// never reads this field — it reads .Damage/.DamagePerSecond directly,
+	// which scaleEffectiveSpellDamage already scales in place — so this is
+	// inert for every path except resolveAbilityProgramCastLocked honouring a
+	// caller-supplied eff (see RuntimeAbilityContext.damageEffectivenessMultiplier).
+	DamageEffectivenessMultiplier float64
+}
+
+// effectivenessMultiplier returns e.DamageEffectivenessMultiplier, treating
+// the Go zero value (an ordinary, non-scaled EffectiveSpell) as 1.0 (no extra
+// scaling). See the field's doc comment for why this indirection exists.
+func (e EffectiveSpell) effectivenessMultiplier() float64 {
+	if e.DamageEffectivenessMultiplier == 0 {
+		return 1.0
+	}
+	return e.DamageEffectivenessMultiplier
 }
 
 // EffectiveCooldown mirrors AbilityDef.EffectiveCooldown on the resolved
@@ -160,6 +184,42 @@ func (e EffectiveSpell) EffectiveCooldown() float64 {
 	return e.Cooldown
 }
 
+// applySpellModField folds the adds/muls for one field over base, considering
+// only modifiers in mods that apply to def (per SpellModifier.appliesTo): all
+// `add` operations are summed first, then all `multiply` operations are
+// applied as a product, and the result is floored at 0. Pure and
+// deterministic; order-independent (sum and product are each
+// order-independent). Shared by resolveEffectiveSpell (legacy per-field
+// resolution) and effectiveAbilityDamageLocked (the executor's deal_damage
+// scaling seam) so a composable action's amount scales identically to a
+// legacy spell's field — this is the single fold implementation, not two
+// copies that could drift.
+func applySpellModField(mods []SpellModifier, def AbilityDef, field SpellModField, base float64) float64 {
+	add := 0.0
+	mul := 1.0
+	hasMul := false
+	for _, m := range mods {
+		if m.Field != field || !m.appliesTo(def) {
+			continue
+		}
+		switch m.Operation {
+		case SpellModMultiply:
+			mul *= m.Value
+			hasMul = true
+		default: // SpellModAdd or "" (default additive)
+			add += m.Value
+		}
+	}
+	v := base + add
+	if hasMul {
+		v *= mul
+	}
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
 // resolveEffectiveSpell folds mods over def and returns the effective values.
 // Pure and deterministic: no lock, no RNG, no clock; result is independent of
 // the order of mods. The base def is not mutated. Modifiers that do not apply
@@ -168,33 +228,8 @@ func (e EffectiveSpell) EffectiveCooldown() float64 {
 // Resolved values are floored at 0 (a negative mana cost / damage / radius is
 // meaningless) and int-valued fields are rounded.
 func resolveEffectiveSpell(def AbilityDef, mods []SpellModifier) EffectiveSpell {
-	// Per-field accumulators: sum of adds, product of multiplies.
-	adds := map[SpellModField]float64{}
-	muls := map[SpellModField]float64{}
-	for _, m := range mods {
-		if !m.appliesTo(def) {
-			continue
-		}
-		switch m.Operation {
-		case SpellModMultiply:
-			cur, ok := muls[m.Field]
-			if !ok {
-				cur = 1
-			}
-			muls[m.Field] = cur * m.Value
-		default: // SpellModAdd or "" (default additive)
-			adds[m.Field] += m.Value
-		}
-	}
 	apply := func(field SpellModField, base float64) float64 {
-		v := base + adds[field]
-		if mul, ok := muls[field]; ok {
-			v *= mul
-		}
-		if v < 0 {
-			return 0
-		}
-		return v
+		return applySpellModField(mods, def, field, base)
 	}
 	return EffectiveSpell{
 		ManaCost: int(math.Round(apply(SpellModFieldManaCost, float64(def.ManaCost)))),
@@ -251,4 +286,17 @@ func (s *GameState) perkSpellModifiersLocked(caster *Unit, def AbilityDef) []Spe
 // Caller holds s.mu.
 func (s *GameState) effectiveSpellLocked(caster *Unit, def AbilityDef) EffectiveSpell {
 	return resolveEffectiveSpell(def, s.collectSpellModifiersLocked(caster, def))
+}
+
+// effectiveAbilityDamageLocked scales a composable ability action's base
+// damage amount by caster's active spell-modifiers for def's school/tags,
+// at PARITY with effectiveSpellLocked's Damage field: it folds the exact
+// same modifier set through the exact same applySpellModField helper, so a
+// deal_damage action scales identically to a legacy spell's DamageAmount.
+// base is the action's configured amount (e.g. dealDamageConfig.Amount), not
+// necessarily def.DamageAmount, so the executor's per-action authoring stays
+// independent of the legacy def's own DamageAmount field. Caller holds s.mu.
+func (s *GameState) effectiveAbilityDamageLocked(caster *Unit, def AbilityDef, base int) int {
+	mods := s.collectSpellModifiersLocked(caster, def)
+	return int(math.Round(applySpellModField(mods, def, SpellModFieldDamage, float64(base))))
 }

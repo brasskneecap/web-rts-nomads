@@ -2,21 +2,73 @@
   "id": "heal",
   "displayName": "Heal",
   "type": "spell",
-  "category": "heal",
-  "targetCount": 1,
-  "manaCost": 5,
-  "healAmount": 10,
-  "castRange": "match_attack_range",
-  "castTime": 1.0,
-  "cooldown": 0,
-  "damageType": "holy",
   "canTargetSelf": true,
   "canTargetAllies": true,
-  "canTargetEnemies": false,
-  "casterAnimation": "Casting",
-  "effectOnTarget": "healing_glow",
-  "icon": "TODO/abilities/heal.png",
+  "castRange": "match_attack_range",
+  "castTime": 1,
+  "manaCost": 5,
+  "damageType": "holy",
+  "category": "heal",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "lowest_hp_percentage_ally_in_range",
-  "defaultAutoCast": true
+  "defaultAutoCast": true,
+  "icon": "projectile:holy_bolt",
+  "casterAnimation": "Casting",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "self",
+        "ally"
+      ],
+      "range": "match_attack_range"
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "sel",
+            "type": "select_targets",
+            "target": {
+              "source": "initial_target"
+            },
+            "outputs": {
+              "targets": "healTargets"
+            }
+          },
+          {
+            "id": "heal",
+            "type": "restore_health",
+            "input": {
+              "targets": {
+                "key": "healTargets"
+              }
+            },
+            "config": {
+              "amount": 10,
+              "school": "holy"
+            }
+          },
+          {
+            "id": "vfx",
+            "type": "play_presentation",
+            "input": {
+              "attach": {
+                "key": "healTargets"
+              }
+            },
+            "config": {
+              "asset": "healing_glow",
+              "oncePerTarget": true
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

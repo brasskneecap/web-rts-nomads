@@ -2,25 +2,99 @@
   "id": "arcane_orb",
   "displayName": "Arcane Orb",
   "type": "spell",
-  "category": "offensive",
-  "manaCost": 20,
-  "damagePerSecond": 16,
-  "radius": 130,
-  "pullStrength": 160,
-  "projectile": "arcane_orb",
-  "projectileSpeed": 150,
+  "targetsPoint": true,
   "castRange": 400,
-  "castTime": 0,
+  "manaCost": 20,
   "cooldown": 8,
   "damageType": "arcane",
-  "tags": ["cc", "aoe"],
-  "targetsPoint": true,
-  "canTargetSelf": false,
-  "canTargetAllies": false,
-  "canTargetEnemies": false,
-  "casterAnimation": "Attacking",
-  "icon": "TODO/abilities/arcane_orb.png",
+  "tags": [
+    "cc",
+    "aoe"
+  ],
+  "category": "offensive",
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
-  "defaultAutoCast": true
+  "defaultAutoCast": true,
+  "icon": "TODO/abilities/arcane_orb.png",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "ground_point",
+      "range": 400
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "orb",
+            "type": "launch_projectile",
+            "config": {
+              "projectile": "arcane_orb",
+              "travelMode": "direction",
+              "distance": 400,
+              "projectileScale": 2.5,
+              "projectileSpeed": 150,
+              "tickInterval": 0.25,
+              "triggers": [
+                {
+                  "id": "tick",
+                  "type": "on_projectile_tick",
+                  "actions": [
+                    {
+                      "id": "sel",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "origin": "projectile_position",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radius": 130
+                      },
+                      "outputs": {
+                        "targets": "vortexHits"
+                      }
+                    },
+                    {
+                      "id": "dmg",
+                      "type": "deal_damage",
+                      "input": {
+                        "targets": {
+                          "key": "vortexHits"
+                        }
+                      },
+                      "config": {
+                        "amount": 4,
+                        "type": "arcane"
+                      },
+                      "timing": {
+                        "tickInterval": 0.25
+                      }
+                    },
+                    {
+                      "id": "force",
+                      "type": "apply_force",
+                      "input": {
+                        "targets": {
+                          "key": "vortexHits"
+                        }
+                      },
+                      "config": {
+                        "strength": 160,
+                        "duration": 0.2,
+                        "origin": "projectile_position"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

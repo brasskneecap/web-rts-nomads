@@ -1722,7 +1722,7 @@
     <section v-if="activeScreen !== 'map'" class="we-screen">
       <ItemCatalogEditor v-if="activeScreen === 'items'" />
       <UnitTypeEditorPanel v-else-if="activeScreen === 'unit-types'" />
-      <AbilityEditorPanel v-else-if="activeScreen === 'abilities'" />
+      <AbilityBuilderPanel v-else-if="activeScreen === 'abilities'" />
       <EffectEditorPanel v-else-if="activeScreen === 'effects'" />
       <ProjectileEditorPanel v-else-if="activeScreen === 'projectiles'" />
       <PerkEditorPanel v-else-if="activeScreen === 'perks'" />
@@ -1740,7 +1740,7 @@ import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGua
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
 import ItemCatalogEditor from '@/components/ItemCatalogEditor.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
-import AbilityEditorPanel from '@/components/AbilityEditorPanel.vue'
+import AbilityBuilderPanel from '@/components/ability-builder/AbilityBuilderPanel.vue'
 import EffectEditorPanel from '@/components/EffectEditorPanel.vue'
 import ProjectileEditorPanel from '@/components/ProjectileEditorPanel.vue'
 import PerkEditorPanel from '@/components/PerkEditorPanel.vue'

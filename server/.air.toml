@@ -6,7 +6,12 @@ tmp_dir = "tmp"
   bin = "tmp\\api.exe"
   include_ext = ["go", "json"]
   include_dir = ["cmd", "internal", "pkg"]
-  exclude_dir = ["tmp"]
+  # Exclude the catalog data tree: the editor persists saved abilities/items/
+  # maps/etc. into internal/game/catalog, and the running server reads those
+  # from disk (and the editor applies saves live in-memory) — no recompile is
+  # needed. Without this, every editor Save trips a Go rebuild, which on Windows
+  # fails to restart because the running server still holds tmp/api.exe + :8080.
+  exclude_dir = ["tmp", "internal/game/catalog"]
   delay = 500
 
 [log]

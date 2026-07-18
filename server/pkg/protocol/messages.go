@@ -500,6 +500,12 @@ type PerkCooldownSnapshot struct {
 type AbilitySnapshot struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName,omitempty"`
+	// Description is the player-facing tooltip prose for this ability: the
+	// author's override when set, otherwise text generated from the ability's
+	// configured fields (server-side, the single source of truth — see
+	// AbilityDef.EffectiveDescription). The action bar renders it directly so
+	// the tooltip text is never hardcoded client-side.
+	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
 	ManaCost    int    `json:"manaCost,omitempty"`
 	// TargetCount is the number of targets this ability can affect per cast.

@@ -1,5 +1,5 @@
 <template>
-  <EditorShell class="item-editor">
+  <EditorShell class="item-editor" theme="forge">
     <template #sidebar>
       <EditorSidebar
         title="Items"

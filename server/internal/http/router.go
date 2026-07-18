@@ -33,10 +33,73 @@ func registerPathCatalogRoutes(mux *http.ServeMux) {
 // projectiles, effects, auto-cast selectors, ability categories, damage
 // types). Split out from NewRouter so it can be exercised directly against a
 // bare *http.ServeMux in tests without constructing a full Hub/profile.Manager.
+// abilityCatalogEntry is the wire shape of one ability in GET /catalog/abilities:
+// the authored AbilityDef (fields promoted inline) plus generatedDescription,
+// the generator's output for the current fields. The editor reads
+// generatedDescription for its default / "reset to generated" affordance but
+// never persists it (the AbilityDef decode on save has no such field).
+type abilityCatalogEntry struct {
+	game.AbilityDef
+	GeneratedDescription string `json:"generatedDescription"`
+	// CompiledProgram is the composable view of a LEGACY ability (one with no
+	// authored Program) so the editor can display its flow without the author
+	// converting it. nil when the ability already has an authored Program
+	// (game.AbilityDef.Program already carries that flow via the embedded
+	// field's "program" json tag). Display-only; never saved back.
+	CompiledProgram *game.AbilityProgram `json:"compiledProgram"`
+	// Runnable reports whether the composable runtime can fully execute this
+	// ability's program (authored or compiled) today. The editor labels
+	// non-runnable abilities so authors know the composable view is
+	// incomplete, not broken.
+	Runnable bool `json:"runnable"`
+	// Custom reports whether this id is author-created (true) or ships in the
+	// embedded catalog (false, whether or not it currently has an override
+	// saved over it). This is what lets the client label its destructive
+	// button "Delete" vs "Reset" BEFORE the click, matching the items editor
+	// (ItemDef.Custom, items.go). It lives on this response-only wrapper
+	// rather than on game.AbilityDef itself: unlike ItemDef (whose disk write
+	// path goes through an itemDefDisk shadow type specifically so runtime-
+	// only provenance never reaches the saved file), SaveAbilityDef
+	// json.MarshalIndents the AbilityDef directly — adding Custom to
+	// AbilityDef would mean either introducing that same shadow-type
+	// indirection for abilities or trusting every write path to zero it by
+	// hand first. Keeping it here instead means AbilityDef never carries a
+	// runtime-only field at all, so there is nothing to strip.
+	Custom bool `json:"custom"`
+}
+
 func registerAbilityCatalogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/catalog/abilities", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"abilities": game.ListAbilityDefs()})
+		// Each entry is the authored def plus its generatedDescription — the
+		// prose the Go generator would produce from the current fields. The
+		// editor shows this as the default / "reset to generated" target so it
+		// never re-implements the generator (single source of truth stays in
+		// Go). generatedDescription is display-only; the editor strips it before
+		// saving and the AbilityDef decode ignores it.
+		defs := game.ListAbilityDefs()
+		entries := make([]abilityCatalogEntry, len(defs))
+		for i, d := range defs {
+			// Legacy abilities (no authored Program) get a compiled
+			// composable view for display; authored (v2) abilities already
+			// carry their flow in AbilityDef.Program, so CompiledProgram
+			// stays nil for them. Runnable is evaluated against whichever
+			// program applies.
+			prog := d.Program
+			var compiled *game.AbilityProgram
+			if prog == nil {
+				compiled = game.CompileLegacyAbilityForEditor(d)
+				prog = compiled
+			}
+			entries[i] = abilityCatalogEntry{
+				AbilityDef:           d,
+				GeneratedDescription: d.GeneratedDescription(),
+				CompiledProgram:      compiled,
+				Runnable:             game.AbilityProgramRunnable(prog),
+				Custom:               !game.AbilityIsEmbedded(d.ID),
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"abilities": entries})
 	})
 
 	mux.HandleFunc("/catalog/abilities/", func(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +141,11 @@ func registerAbilityCatalogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/catalog/damage-types", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"damageTypes": game.DamageTypes()})
+	})
+
+	mux.HandleFunc("/catalog/action-schema", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"actions": game.ActionSchemas(), "enums": game.ProgramEnums()})
 	})
 }
 

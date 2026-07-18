@@ -2,22 +2,66 @@
   "id": "siphon_life",
   "displayName": "Siphon Life",
   "type": "spell",
-  "channelType": "beam",
   "canTargetEnemies": true,
   "castRange": 220,
-  "castTime": 0,
-  "manaCost": 0,
-  "cooldown": 0,
   "damageType": "shadow",
-  "damageAmount": 0,
-  "icon": "TODO/abilities/siphon_life.png",
-  "casterAnimation": "Casting",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "lowest_hp_percentage_enemy_in_range",
-  "defaultAutoCast": false,
-  "tickIntervalSeconds": 0.25,
-  "manaCostPerTick": 1,
-  "damagePerTick": 6,
-  "healingMultiplier": 1.0,
-  "allyHealRadius": 220
+  "icon": "beam:siphon_life",
+  "casterAnimation": "Casting",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 220
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "channel",
+            "type": "beam",
+            "target": {
+              "source": "initial_target"
+            },
+            "config": {
+              "channeled": true,
+              "channelType": "beam",
+              "tickIntervalSeconds": 0.25,
+              "manaCostPerTick": 1,
+              "damagePerTick": 6,
+              "healingMultiplier": 1,
+              "allyHealRadius": 220,
+              "triggers": [
+                {
+                  "id": "beam_tick",
+                  "type": "on_beam_tick",
+                  "actions": [
+                    {
+                      "id": "dmg",
+                      "type": "deal_damage",
+                      "target": {
+                        "source": "initial_target"
+                      },
+                      "config": {
+                        "amount": 6,
+                        "type": "shadow"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

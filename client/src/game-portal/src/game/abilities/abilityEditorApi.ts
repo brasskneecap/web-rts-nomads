@@ -1,4 +1,7 @@
 import type { AuthoredAbilityDef } from './abilityEditorForm'
+import { parseActionSchemaResponse, type ActionSchemaBundle } from './program/programSchema'
+import type { ValidationIssue } from './program/programValidation'
+import { parsePreviewResult, type PreviewRequest, type PreviewResult } from './program/programPreview'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -63,10 +66,19 @@ export async function saveEditorAbility(ability: AuthoredAbilityDef): Promise<vo
   if (!res.ok) throw new Error(`Failed to save ability: ${res.status}`)
 }
 
-export async function deleteEditorAbility(id: string): Promise<'deleted' | 'reset'> {
+/**
+ * What the destructive action did:
+ * - `deleted`  — an author-created ability was removed.
+ * - `reverted` — a shipped ability went back to the state before the last save.
+ * - `reset`    — a shipped ability went back to the catalog default (no undo step
+ *                was left, e.g. after a server restart or a second reset in a row).
+ */
+export type EditorAbilityRemoveStatus = 'deleted' | 'reverted' | 'reset'
+
+export async function deleteEditorAbility(id: string): Promise<EditorAbilityRemoveStatus> {
   const res = await fetch(`${API_BASE}/abilities/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`Failed to delete ability: ${res.status}`)
-  const body = (await res.json()) as { status: 'deleted' | 'reset' }
+  const body = (await res.json()) as { status: EditorAbilityRemoveStatus }
   return body.status
 }
 
@@ -86,4 +98,57 @@ export async function uploadAbilityIcon(id: string, file: Blob): Promise<void> {
 
 export function abilityIconUrl(id: string): string {
   return `${API_BASE}/catalog/abilities/${encodeURIComponent(id)}/image`
+}
+
+// fetchActionSchema loads the composable action schema catalog (field
+// definitions per action type + shared enums) that drives the Phase 5b
+// editor's dynamic form rendering.
+export async function fetchActionSchema(): Promise<ActionSchemaBundle> {
+  const raw = await getJson<unknown>('/catalog/action-schema')
+  return parseActionSchemaResponse(raw)
+}
+
+// validateAbilityProgram asks the server (the authoritative validator) to
+// structurally validate an in-progress authored ability without saving it,
+// returning the full issue list (errors + warnings) for inline display.
+export async function validateAbilityProgram(ability: AuthoredAbilityDef): Promise<ValidationIssue[]> {
+  const res = await fetch(`${API_BASE}/abilities/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ability }),
+  })
+  if (!res.ok) throw new Error(`Failed to validate ability: ${res.status}`)
+  const body = (await res.json()) as { issues?: ValidationIssue[] }
+  return body.issues ?? []
+}
+
+// convertAbility asks the server to compile a legacy ability's mechanic
+// fields into an equivalent composable AbilityProgram, returning the
+// converted def alongside any lossy-conversion warnings and whether the
+// result is currently runnable by the action registry.
+export async function convertAbility(
+  id: string,
+): Promise<{ ability: AuthoredAbilityDef; warnings: string[]; runnable: boolean }> {
+  const res = await fetch(`${API_BASE}/abilities/${encodeURIComponent(id)}/convert`, { method: 'POST' })
+  if (res.status === 404) throw new Error(`Ability not found: ${id}`)
+  if (!res.ok) throw new Error(`Failed to convert ability: ${res.status}`)
+  const body = (await res.json()) as { ability: AuthoredAbilityDef; warnings?: string[]; runnable?: boolean }
+  return { ability: body.ability, warnings: body.warnings ?? [], runnable: !!body.runnable }
+}
+
+// runAbilityPreview asks the server to execute an authored ability against a
+// synthetic scene (the authoritative simulation, not a client-side
+// re-implementation) and returns the resulting execution trace + unit HP
+// deltas for the Phase 6a preview panel.
+export async function runAbilityPreview(req: PreviewRequest): Promise<PreviewResult> {
+  const res = await fetch(`${API_BASE}/abilities/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? `Failed to preview ability: ${res.status}`)
+  }
+  return parsePreviewResult(await res.json())
 }

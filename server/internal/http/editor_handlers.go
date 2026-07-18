@@ -312,8 +312,113 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": req.Ability.ID, "status": "saved"})
 	})
 
+	// /abilities/validate is a dry-run: it decodes the same body shape as POST
+	// /abilities but never saves and never 400s on content — it always returns
+	// 200 with a (possibly empty) structured issues list so the editor can
+	// annotate cards without a save round-trip. Registered as its own EXACT
+	// pattern (not folded into the "/abilities/" catch-all below): net/http's
+	// ServeMux prefers the longer exact match "/abilities/validate" over the
+	// "/abilities/" subtree pattern, so this route wins for that one path and
+	// every other "/abilities/{id}..." request still falls through to the
+	// catch-all unaffected.
+	mux.HandleFunc("/abilities/validate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+			return
+		}
+		var req game.EditorAbilitySaveRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		writeJSON(w, map[string]any{"issues": game.EditorAbilityIssues(req.Ability)})
+	})
+
+	// /abilities/preview wraps the (Phase 6a, Task 2) deterministic preview
+	// harness, game.RunAbilityPreview: the editor posts a candidate ability
+	// def + a scene (caster position, scene units, cast target/point,
+	// simulated duration) and gets back the full execution trace plus a
+	// per-unit HP-before/after summary, without touching a live match.
+	// Registered as its own EXACT pattern (not folded into the
+	// "/abilities/" catch-all below), mirroring "/abilities/validate" just
+	// above: net/http's ServeMux prefers the longer exact match
+	// "/abilities/preview" over the "/abilities/" subtree pattern, so this
+	// route wins for that one path and every other "/abilities/{id}..."
+	// request still falls through to the catch-all unaffected (see
+	// TestPreviewEndpoint_DoesNotShadowExistingRoutes).
+	mux.HandleFunc("/abilities/preview", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+			return
+		}
+		// The request body carries a full AbilityDef (incl. its composable
+		// Program) — 512KB is generous headroom over any realistic ability.
+		// A MaxBytesReader trip is a distinct failure mode from a decode
+		// error (the body may be perfectly well-formed JSON, just too big),
+		// so it gets its own code rather than being folded into
+		// invalid_json — mirrors the /items/{id}/image and
+		// /abilities/{id}/image routes' own read_failed.
+		data, rerr := io.ReadAll(http.MaxBytesReader(w, r.Body, 512*1024))
+		if rerr != nil {
+			writeJSONError(w, http.StatusBadRequest, "body_too_large", rerr.Error())
+			return
+		}
+		var req game.PreviewRequest
+		if err := json.Unmarshal(data, &req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		// Sane defaults so a bare/near-empty request from the editor's first
+		// "Run" click still previews something instead of failing:
+		//  - DurationSeconds<=0 -> 2s of simulated time.
+		//  - No scene units supplied -> one enemy 40px from the caster, and
+		//    Target defaults to it. This covers an offensive ability's
+		//    default preview; a heal/buff author still needs to place an
+		//    ally scene unit explicitly (RunAbilityPreview's own target
+		//    fallback then does something reasonable with it — see its doc
+		//    comment). A point-target ability ignores Target and casts at
+		//    CastX/CastY instead — if the caller didn't specify one either
+		//    (both still zero), aim the cast at the SAME spot as the
+		//    injected enemy so a bare point-AoE preview actually hits it
+		//    rather than landing on the caster's own feet.
+		if req.DurationSeconds <= 0 {
+			req.DurationSeconds = 2.0
+		}
+		if len(req.Units) == 0 {
+			enemyX, enemyY := req.CasterX+40, req.CasterY
+			req.Units = []game.PreviewSceneUnit{{Team: "enemy", X: enemyX, Y: enemyY, HP: 200, MaxHP: 200}}
+			req.Target = 0
+			if req.CastX == 0 && req.CastY == 0 {
+				req.CastX, req.CastY = enemyX, enemyY
+			}
+		}
+		res, err := game.RunAbilityPreview(req)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "preview_failed", err.Error())
+			return
+		}
+		writeJSON(w, res)
+	})
+
 	mux.HandleFunc("/abilities/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/abilities/")
+		if rest, isConvert := strings.CutSuffix(id, "/convert"); isConvert {
+			if r.Method != http.MethodPost {
+				writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+				return
+			}
+			conv, warnings, err := game.ConvertLegacyAbility(rest)
+			if err != nil {
+				writeJSONError(w, http.StatusNotFound, "convert_failed", err.Error())
+				return
+			}
+			writeJSON(w, map[string]any{
+				"ability":  conv,
+				"warnings": warnings,
+				"runnable": game.AbilityProgramRunnable(conv.Program),
+			})
+			return
+		}
 		if rest, isImage := strings.CutSuffix(id, "/image"); isImage && r.Method == http.MethodPost {
 			data, rerr := io.ReadAll(http.MaxBytesReader(w, r.Body, 256*1024+1))
 			if rerr != nil {
@@ -337,7 +442,11 @@ func registerEditorRoutes(mux *http.ServeMux) {
 			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /abilities/{id}")
 			return
 		}
-		existed, err := game.DeleteEditorAbility(id)
+		// status is "deleted" (author-created ability removed), "reverted"
+		// (shipped ability taken back to the state before the last save) or
+		// "reset" (shipped ability taken back to the catalog default) —
+		// DeleteEditorAbility decides. Mirrors DELETE /items/{id}.
+		status, existed, err := game.DeleteEditorAbility(id)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
 			return
@@ -345,10 +454,6 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		if !existed {
 			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+id)
 			return
-		}
-		status := "deleted"
-		if game.AbilityIsEmbedded(id) {
-			status = "reset"
 		}
 		writeJSON(w, map[string]string{"id": id, "status": status})
 	})

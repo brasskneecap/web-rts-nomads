@@ -6,17 +6,21 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
-// healDef returns the catalog-authored Heal ability. Tests derive expected
-// HP / mana deltas from this rather than hardcoding numbers, so tuning
-// catalog/abilities/heal/heal.json never breaks a behavioral test — only a
-// genuine regression in the cast logic does.
+// healDef returns the catalog-authored Heal ability, with mechanic
+// magnitudes RECOVERED from the compiled Program (abilityMechanicsShadow) —
+// heal is schemaVersion:2 as of the composable-abilities migration, so the
+// raw catalog def's HealAmount is cleared to 0 and the shipped Program is
+// the sole authority for it. Tests derive expected HP / mana deltas from
+// this rather than hardcoding numbers, so tuning catalog/abilities/heal/heal.json
+// (or its compiled Program) never breaks a behavioral test — only a genuine
+// regression in the cast logic does.
 func healDef(t *testing.T) AbilityDef {
 	t.Helper()
 	def, ok := getAbilityDef("heal")
 	if !ok {
 		t.Fatal(`getAbilityDef("heal") = _, false; want the catalog-authored Heal`)
 	}
-	return def
+	return abilityMechanicsShadow(def)
 }
 
 // healSetup spawns an acolyte (p1) and a damaged friendly soldier within

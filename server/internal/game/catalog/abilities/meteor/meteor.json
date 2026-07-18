@@ -2,30 +2,161 @@
   "id": "meteor",
   "displayName": "Meteor",
   "type": "spell",
-  "category": "offensive",
+  "canTargetEnemies": true,
+  "targetsPoint": true,
+  "castRange": 400,
+  "castTime": 0.8,
   "manaCost": 40,
   "cooldown": 12,
-  "castTime": 0.8,
-  "castRange": 400,
   "damageType": "fire",
-  "targetsPoint": true,
-  "canTargetSelf": false,
-  "canTargetAllies": false,
-  "canTargetEnemies": true,
-  "damageAmount": 140,
-  "radius": 230,
-  "impactDelaySeconds": 0.6,
-  "burnDurationSeconds": 4.0,
-  "burnDamagePerTick": 12,
-  "burnTickIntervalSeconds": 0.5,
-  "burnRadius": 120,
-  "casterAnimation": "Attacking",
-  "effectAtPoint": "meteor",
-  "burnEffectAtPoint": "burning_crater",
-  "effectScale": 3.0,
-  "tags": ["aoe", "damage", "dot"],
+  "tags": [
+    "aoe",
+    "damage",
+    "dot"
+  ],
+  "category": "offensive",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
-  "icon": "TODO/abilities/meteor.png"
+  "icon": "effect:meteor@3",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "ground_point",
+      "relations": [
+        "enemy"
+      ],
+      "range": 400
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "meteor",
+            "type": "play_presentation",
+            "config": {
+              "asset": "meteor",
+              "position": {
+                "key": "castPoint"
+              },
+              "scale": 3,
+              "presentationId": "p_meteor"
+            }
+          }
+        ]
+      }
+    ],
+    "presentations": [
+      {
+        "id": "p_meteor",
+        "asset": "meteor",
+        "position": {
+          "key": "castPoint"
+        },
+        "scale": 3,
+        "triggers": [
+          {
+            "id": "impact",
+            "type": "on_animation_marker",
+            "timing": {
+              "marker": "impact",
+              "delaySeconds": 0.6
+            },
+            "actions": [
+              {
+                "id": "sel",
+                "type": "select_targets",
+                "target": {
+                  "source": "all_in_scene",
+                  "origin": "impact_position",
+                  "relations": [
+                    "enemy"
+                  ],
+                  "radius": 230
+                },
+                "outputs": {
+                  "targets": "hitEnemies"
+                }
+              },
+              {
+                "id": "dmg",
+                "type": "deal_damage",
+                "input": {
+                  "targets": {
+                    "key": "hitEnemies"
+                  }
+                },
+                "config": {
+                  "amount": 140,
+                  "type": "fire"
+                }
+              },
+              {
+                "id": "zone",
+                "type": "create_zone",
+                "config": {
+                  "name": "Burning Crater",
+                  "position": {
+                    "key": "impactPosition"
+                  },
+                  "radius": 120,
+                  "duration": 4,
+                  "tickInterval": 0.5,
+                  "owner": {
+                    "key": "caster"
+                  },
+                  "presentation": "burning_crater",
+                  "scale": 3,
+                  "triggers": [
+                    {
+                      "id": "burn",
+                      "type": "on_zone_tick",
+                      "timing": {
+                        "tickInterval": 0.5
+                      },
+                      "actions": [
+                        {
+                          "id": "bsel",
+                          "type": "select_targets",
+                          "target": {
+                            "source": "all_in_scene",
+                            "origin": "zone_center",
+                            "relations": [
+                              "enemy"
+                            ],
+                            "radius": 120
+                          },
+                          "outputs": {
+                            "targets": "burnHits"
+                          }
+                        },
+                        {
+                          "id": "bdmg",
+                          "type": "deal_damage",
+                          "input": {
+                            "targets": {
+                              "key": "burnHits"
+                            }
+                          },
+                          "config": {
+                            "amount": 12,
+                            "type": "fire"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
 }

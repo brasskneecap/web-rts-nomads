@@ -2,6 +2,18 @@ package game
 
 import "math"
 
+// siphonLifeAbilityID is the catalog id of the Siphoner's life-drain channel.
+// The Siphoner perks that augment that channel (repurposed_life's mana-on-kill,
+// beam_mastery's range multiplier) are gated to this specific ability by id —
+// deliberately per-ability, so an unrelated future channel a Siphoner might
+// carry doesn't silently inherit these perks (see the doc comments at each gate
+// site). This named constant replaces the literal "siphon_life" that used to be
+// duplicated across the three gate sites (channelRangeMultiplierForCasterLocked,
+// clearChannelStateLocked, onSiphonVictimDeathLocked): a rename is now one edit
+// and every gate is greppable. If a second siphon-style channel is ever added,
+// generalize the gates here rather than adding a second literal.
+const siphonLifeAbilityID = "siphon_life"
+
 // ═════════════════════════════════════════════════════════════════════════════
 // SIPHONER PERKS
 //
@@ -758,9 +770,10 @@ func (s *GameState) applyChainSiphonBeamsLocked(caster, primary *Unit, primaryDa
 			// auto-colors dark purple via the damage-type hint emitted inside
 			// applyUnitDamageWithSourceLocked off DamageType=DamageShadow.
 			s.applyUnitDamageWithSourceLocked(t, secondaryDamage, DamageSource{
-				AttackerUnitID: caster.ID,
-				Kind:           "chain_siphon",
-				DamageType:     DamageShadow,
+				AttackerUnitID:  caster.ID,
+				Kind:            "chain_siphon",
+				DamageType:      DamageShadow,
+				SourceAbilityID: abilityID,
 			})
 		}
 		// Heal generation runs per chain victim so two chain targets produce
@@ -1215,10 +1228,13 @@ func (s *GameState) darkRenewalAllyRecipientLockedExcluding(siphoner *Unit, radi
 
 // applySharedSufferingLocked echoes a fraction of `primaryDamage` to every
 // visible hostile within `radius` of `primary`. Fires no-op when the caster
-// doesn't own the perk.
+// doesn't own the perk. abilityID (the channel ability that produced
+// primaryDamage — unit.ChannelAbilityID at the call site) is stamped onto
+// each echo's DamageSource.SourceAbilityID, mirroring applyChainSiphonBeamsLocked's
+// abilityID threading, so an echo kill attributes to the same ability.
 //
 // Caller holds s.mu write lock.
-func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDamage int) {
+func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDamage int, abilityID string) {
 	if caster == nil || primary == nil || primaryDamage <= 0 {
 		return
 	}
@@ -1271,9 +1287,10 @@ func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDam
 		// popup is naturally consumed when no remainder is left.
 		s.recordMinorDamageHitLocked(u, echoDamage, "shadow")
 		s.applyUnitDamageWithSourceLocked(u, echoDamage, DamageSource{
-			AttackerUnitID: caster.ID,
-			Kind:           "shared_suffering",
-			DamageType:     DamageShadow,
+			AttackerUnitID:  caster.ID,
+			Kind:            "shared_suffering",
+			DamageType:      DamageShadow,
+			SourceAbilityID: abilityID,
 		})
 	}
 }
@@ -1520,7 +1537,7 @@ func (s *GameState) onSiphonVictimDeathLocked(victim *Unit) {
 		if u == nil || u.HP <= 0 {
 			continue
 		}
-		if u.ChannelAbilityID != "siphon_life" || u.ChannelTargetID != victim.ID {
+		if u.ChannelAbilityID != siphonLifeAbilityID || u.ChannelTargetID != victim.ID {
 			continue
 		}
 		if !containsString(u.PerkIDs, "repurposed_life") {

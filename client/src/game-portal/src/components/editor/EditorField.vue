@@ -3,6 +3,13 @@
     <label v-if="label" :for="forId" class="ed-field__label">
       {{ label }}
       <span v-if="hint" class="ed-field__hint">{{ hint }}</span>
+      <!-- Optional slot for a per-field InfoTip (or similar small
+           label-adjacent control) — kept separate from the plain-text `hint`
+           prop above rather than overloading it, since an InfoTip is a
+           component instance (with its own click/hover state), not a string. -->
+      <span v-if="$slots['label-extra']" class="ed-field__label-extra">
+        <slot name="label-extra" />
+      </span>
     </label>
     <!-- The control itself is a plain <input>/<select>/<textarea> supplied by
          the caller; editor-controls.css styles anything inside .ed-field, so
@@ -57,5 +64,12 @@ defineProps<{
   text-transform: none;
   color: var(--ed-text-dim);
   opacity: 0.75;
+}
+
+.ed-field__label-extra {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  vertical-align: middle;
 }
 </style>

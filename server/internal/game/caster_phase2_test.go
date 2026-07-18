@@ -1006,10 +1006,19 @@ func TestPhase2_PathAbilityLoader_UnknownRankPanics(t *testing.T) {
 // DamageAmount HP when the bolt lands (deferred delivery — not instant). Derives
 // the damage amount from the catalog def — never hardcodes it.
 func TestPhase2_DamageAmount_DamagesTargetOnImpact(t *testing.T) {
-	arcaneDef, ok := getAbilityDef("arcane_bolt")
+	rawDef, ok := getAbilityDef("arcane_bolt")
 	if !ok {
 		t.Fatal(`getAbilityDef("arcane_bolt") = _, false; arcane_bolt must be registered`)
 	}
+	// arcane_bolt is schemaVersion:2 as of the composable-abilities migration:
+	// DamageAmount/Projectile are cleared on the raw def (the compiled
+	// launch_projectile action's Config is the sole authority now). The
+	// expectations below are read from the RECOVERED shadow (identity for the
+	// cast-setup fields ManaCost/DamageType this test also reads), while the
+	// call to resolveAbilityCastLocked further down passes rawDef so it
+	// genuinely exercises the SchemaVersion>=2 executor routing, not a
+	// hand-rebuilt legacy shape.
+	arcaneDef := abilityMechanicsShadow(rawDef)
 	if arcaneDef.DamageAmount <= 0 {
 		t.Fatalf("arcane_bolt.DamageAmount = %d; must be > 0 for this test to be meaningful", arcaneDef.DamageAmount)
 	}
@@ -1036,20 +1045,32 @@ func TestPhase2_DamageAmount_DamagesTargetOnImpact(t *testing.T) {
 	targetID := target.ID
 
 	// Resolve spawns the arcane_bolt projectile (damage deferred to impact).
-	s.resolveAbilityCastLocked(caster, arcaneDef, []*Unit{target})
+	// Passes rawDef (the real v2 catalog def, Program intact) so this exercises
+	// the actual SchemaVersion>=2 executor routing — see the doc comment above.
+	s.resolveAbilityCastLocked(caster, rawDef, []*Unit{target})
 
-	// The bolt must carry the ability's damage, type, sprite, and caster credit.
+	// The bolt must carry the ability's sprite + caster credit while in
+	// flight. As of the launch_projectile composable redesign, Damage/
+	// DamageType are NO LONGER baked onto the in-flight Projectile for a
+	// composable-impact bolt (arcane_bolt's migrated shape) — they resolve
+	// only when the bolt's nested on_projectile_impact trigger fires at
+	// landing (see Projectile.ImpactActions' doc comment,
+	// ability_exec_projectile.go). The HP-delta assertion further down is
+	// what proves the ability's damage actually lands correctly; this
+	// assertion only checks what's still true about the bolt in flight.
 	if n := len(s.Projectiles); n != 1 {
 		s.mu.Unlock()
 		t.Fatalf("expected exactly 1 arcane_bolt projectile after resolve; got %d", n)
 	}
 	proj := s.Projectiles[0]
-	if proj.Variant != arcaneDef.Projectile || proj.Damage != arcaneDef.DamageAmount ||
-		proj.DamageType != arcaneDef.DamageType || proj.OwnerUnitID != caster.ID {
+	if proj.Variant != arcaneDef.Projectile || proj.OwnerUnitID != caster.ID {
 		s.mu.Unlock()
-		t.Fatalf("arcane_bolt projectile mismatch: variant=%q damage=%d type=%q owner=%d (want variant=%q damage=%d type=%q owner=%d)",
-			proj.Variant, proj.Damage, proj.DamageType, proj.OwnerUnitID,
-			arcaneDef.Projectile, arcaneDef.DamageAmount, arcaneDef.DamageType, caster.ID)
+		t.Fatalf("arcane_bolt projectile mismatch: variant=%q owner=%d (want variant=%q owner=%d)",
+			proj.Variant, proj.OwnerUnitID, arcaneDef.Projectile, caster.ID)
+	}
+	if len(proj.ImpactActions) == 0 {
+		s.mu.Unlock()
+		t.Fatal("arcane_bolt projectile carries no ImpactActions; damage would never land")
 	}
 	// Mana is deducted at resolve (cast completion), before the bolt lands.
 	wantMana := (arcaneDef.ManaCost + 200) - arcaneDef.ManaCost

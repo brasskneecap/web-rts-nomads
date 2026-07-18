@@ -1003,6 +1003,10 @@ export type PerkCooldownSnapshot = {
 export type AbilitySnapshot = {
   id: string
   displayName?: string
+  /** Player-facing tooltip prose (author override or server-generated). The
+   *  action bar renders this directly — the description is never hardcoded
+   *  client-side. */
+  description?: string
   icon?: string
   manaCost?: number
   supportsAutoCast?: boolean

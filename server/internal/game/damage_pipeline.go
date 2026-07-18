@@ -73,6 +73,74 @@ type DamageSource struct {
 	// the hint were still emitted, its (unitID, amount) entry would mis-color
 	// the physical remainder of the same-tick HP-diff.
 	SuppressTypeHint bool
+	// SourceAbilityID names the composable ability whose damage this instance
+	// carries — "" means either "not from an ability" (a basic attack, a trap,
+	// a building, an item proc, a perk-triggered counter like retaliation) or
+	// "from an ability, but attribution wasn't threaded at this call site".
+	// Widened the same way DamageType was (see its doc comment): the zero
+	// value keeps every pre-existing DamageSource{} literal compiling and
+	// behaving exactly as before.
+	//
+	// This is the sole attribution drainPendingDeathsLocked reads to decide
+	// "was this unit killed BY a specific ability" for on_unit_death
+	// (fireOnUnitDeathLocked, ability_unit_death.go) — the semantics the
+	// composable-abilities design settled on for that trigger: it means "a
+	// unit killed BY this ability", not merely "an ability was involved
+	// upstream of this tick".
+	//
+	// THREADED at: deal_damage's Execute (ability_program_registry.go, from
+	// ctx.AbilityID — the executing program's own id), landProjectileLocked's
+	// SkipOnHitEffects branch (from Projectile.SourceAbilityID, which
+	// launch_projectile/launch_vortex already stamp at spawn), the arcane_orb
+	// vortex DoT tick (applyAbilitySplashDamageLocked's sourceAbilityID
+	// param), the siphon_life channel tick + its chain/echo fan-outs
+	// (ability_channel.go, perks_siphoner.go — all already had the ability id
+	// in scope as unit.ChannelAbilityID / a passed-through abilityID param),
+	// and chain_lightning's bounce delivery (fireAbilityChainLocked,
+	// ability_cast.go, stamping def.ID onto ProcSource.SourceAbilityID, which
+	// flows through fireProcBeamLocked → Beam.SourceAbilityID →
+	// applyBeamPendingDamageLocked, beam.go — see ProcSource.SourceAbilityID's
+	// doc comment, proc_effects.go, for the full thread). This closes what was
+	// previously documented here as a KNOWN GAP: chain_lightning's bounce hops
+	// (and any authored launch_projectile+chainCount ability) now attribute
+	// bounce kills exactly like their primary-target kills. Equipment/item/
+	// perk procs that ALSO route through fireProcBeamLocked (e.g. equipment's
+	// lightning_chain proc) still stamp nothing — ProcSource.SourceAbilityID
+	// is only ever set at the one ability call site above, so their
+	// DamageSource.SourceAbilityID stays "" exactly as before.
+	//
+	// PROPAGATED (deliberately) through pain_share redirect
+	// (perkRedirectIncomingDamageLocked, perks_auras.go) and Shared Pain
+	// (perkShareDamageToMarkedLocked, trap.go): both already propagate
+	// AttackerUnitID/AttackerBuildingID/AttackerTrapID "so if the absorbing
+	// Vanguard dies, the kill credits the original attacker" — this is the
+	// SAME instance of damage, just redirected/fanned-out to a different
+	// victim, so it is still, transitively, this ability's damage. A Vanguard
+	// killed by a redirected execute-ability hit correctly fires that
+	// ability's on_unit_death.
+	//
+	// NOT propagated into retaliation's reflected counter-hit
+	// (onPerkDamageTakenLocked's "retaliation" case, perks_defense.go): that
+	// is a BRAND NEW damage instance the reflecting unit deals back with its
+	// own armor stat — it was never "this ability's damage" to begin with
+	// (retaliation already builds its DamageSource from scratch, crediting
+	// the reflecting unit as AttackerUnitID, and never reads src at all).
+	//
+	// DELIBERATELY LEFT EMPTY at every non-ability damage entry point
+	// (basic-attack melee/splash/pierce, buildings, traps, item-procs,
+	// equipment elemental on-hit) — those sites have no ability id to carry
+	// and must keep reading as "not from an ability".
+	//
+	// KNOWN GAP: chain_lightning's bounce delivery (fireAbilityChainLocked,
+	// ability_cast.go, called from both the legacy resolver and
+	// ability_exec_projectile.go's launch_projectile Execute) routes through
+	// the equipment-proc beam-bounce mechanic (executeProcEffectLocked →
+	// fireProcBeamLocked → Beam → applyBeamPendingDamageLocked), which has no
+	// ability-attribution field on ProcSource/Beam today. The one call site
+	// that would supply it sits inside ability_cast.go, which was off-limits
+	// for this change (a concurrent edit was in flight there) — see the
+	// composable-abilities-on-unit-death task notes for the follow-up.
+	SourceAbilityID string
 }
 
 // ResolvedDamageType returns the damage event's element, defaulting an unset
@@ -237,6 +305,14 @@ func (s *GameState) drainPendingDeathsLocked() {
 		if target.NeutralCampID != "" {
 			s.markCampKillerLocked(target.NeutralCampID, killerOwnerID)
 		}
+		// Composable on_unit_death: fire the killing ability's trigger(s), if
+		// any (see DamageSource.SourceAbilityID's doc comment for exactly what
+		// "killed by this ability" covers). MUST run before removeUnitLocked —
+		// the dying unit is still resolvable by ID here (HP<=0, still in
+		// s.Units), which is what lets an authored trigger's
+		// select_targets{source:"current_event"} bind the corpse. A peer to
+		// the reactions above, not a replacement for any of them.
+		s.fireOnUnitDeathLocked(target, d.Source)
 		// Anonymous or after bookkeeping: remove the unit. If the unit was
 		// already removed by the call site above, removeUnitLocked is safe
 		// (removeUnitByIDLocked is a no-op for unknown IDs).

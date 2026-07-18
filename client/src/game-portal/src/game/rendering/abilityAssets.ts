@@ -89,6 +89,15 @@ function getServerAbilityIcon(key: string): HTMLImageElement | null {
   return img
 }
 
+// invalidateServerAbilityIcon drops any cached image / failed-fetch marker for
+// a key so the NEXT resolve refetches it — call after uploading a new icon for
+// that key, otherwise a previously-cached 404 (or the old image) would stick.
+export function invalidateServerAbilityIcon(key: string): void {
+  const k = key.toLowerCase()
+  serverAbilityIconCache.delete(k)
+  serverAbilityIconFailed.delete(k)
+}
+
 // getAbilityIconImageByKey resolves a chosen icon key: bundled-by-key first,
 // else the server-served uploaded icon. Only a key matching the ability-id
 // pattern is treated as a real key — placeholder paths (e.g. "TODO/x.png")

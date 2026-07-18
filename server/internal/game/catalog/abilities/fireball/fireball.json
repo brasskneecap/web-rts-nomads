@@ -2,22 +2,86 @@
   "id": "fireball",
   "displayName": "Fireball",
   "type": "spell",
-  "category": "offensive",
-  "manaCost": 18,
-  "damageAmount": 90,
-  "radius": 100,
+  "canTargetEnemies": true,
   "castRange": 400,
   "castTime": 0.6,
+  "manaCost": 18,
   "cooldown": 6,
   "damageType": "fire",
-  "projectile": "fire_bolt",
-  "tags": ["aoe", "projectile", "damage"],
-  "canTargetSelf": false,
-  "canTargetAllies": false,
-  "canTargetEnemies": true,
-  "casterAnimation": "Attacking",
-  "icon": "TODO/abilities/fireball.png",
+  "tags": [
+    "aoe",
+    "projectile",
+    "damage"
+  ],
+  "category": "offensive",
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
-  "defaultAutoCast": true
+  "defaultAutoCast": true,
+  "icon": "TODO/abilities/fireball.png",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 400
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "proj",
+            "type": "launch_projectile",
+            "target": {
+              "source": "initial_target"
+            },
+            "config": {
+              "projectile": "fire_bolt",
+              "projectileScale": 2.5,
+              "triggers": [
+                {
+                  "id": "impact",
+                  "type": "on_projectile_impact",
+                  "actions": [
+                    {
+                      "id": "sel",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "origin": "impact_position",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radius": 100
+                      },
+                      "outputs": {
+                        "targets": "splashHits"
+                      }
+                    },
+                    {
+                      "id": "dmg",
+                      "type": "deal_damage",
+                      "input": {
+                        "targets": {
+                          "key": "splashHits"
+                        }
+                      },
+                      "config": {
+                        "amount": 90,
+                        "type": "fire"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -2,17 +2,40 @@
   "id": "arcane_missiles",
   "displayName": "Arcane Missiles",
   "type": "passive",
-  "chargeRequired": 30,
-  "manaToChargeRatio": 1.0,
-  "missileCount": 3,
-  "damagePerMissile": 25,
-  "missileDelayMs": 100,
-  "minorDamage": true,
-  "projectile": "arcane_missiles",
-  "projectileScale": 0.5,
-  "projectileSpeed": 280,
+  "castRange": 0,
   "damageType": "arcane",
-  "targeting": "random_enemy_in_range",
-  "allowDuplicateTargets": true,
-  "icon": "TODO/abilities/arcane_missiles.png"
+  "icon": "TODO/abilities/arcane_missiles.png",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "passive",
+      "range": 0
+    },
+    "triggers": [
+      {
+        "id": "charge_full",
+        "type": "on_charge_full",
+        "actions": [
+          {
+            "id": "charge",
+            "type": "charge_fire_volley",
+            "config": {
+              "chargeRequired": 30,
+              "manaToChargeRatio": 1,
+              "missileCount": 3,
+              "damagePerMissile": 25,
+              "missileDelayMs": 100,
+              "projectile": "arcane_missiles",
+              "projectileScale": 1.25,
+              "projectileSpeed": 280,
+              "type": "arcane",
+              "minorDamage": true,
+              "targeting": "random_enemy_in_range",
+              "allowDuplicateTargets": true
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -356,7 +356,11 @@ func TestRepurposedLife_TriggersWhenSiphonerOwnTickKills(t *testing.T) {
 	// the killing tick (they paid 1 mana to cast the tick that triggered
 	// the restore). Use a lower bound that accounts for any tick mana cost
 	// rather than asserting the full amount.
-	channelCfg, _ := getAbilityDef("siphon_life")
+	// abilityMechanicsShadow recovers ManaCostPerTick off the compiled
+	// Program — the live siphon_life catalog def is schemaVersion:2, so its
+	// own flat ManaCostPerTick field is cleared (see ConvertLegacyAbility).
+	rawChannelCfg, _ := getAbilityDef("siphon_life")
+	channelCfg := abilityMechanicsShadow(rawChannelCfg)
 	expectedSiphonerGain := amount - channelCfg.ManaCostPerTick
 	if got := siphoner.CurrentMana - startSiphoner; got < expectedSiphonerGain {
 		t.Errorf("siphoner mana on Siphoner-killing-blow: got +%d, want >= +%d (restore %d − tick cost %d)",
