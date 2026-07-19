@@ -160,7 +160,7 @@ describe('AbilityPreviewPanel', () => {
     expect(typeof req.durationSeconds).toBe('number')
   })
 
-  it('renders timeline + log + summary once a result comes back', async () => {
+  it('renders the timeline + event log once a result comes back', async () => {
     runAbilityPreviewMock.mockResolvedValue(makeResult())
     const builder = makeBuilderStub()
     const wrapper = await mountPanel(builder)
@@ -170,11 +170,6 @@ describe('AbilityPreviewPanel', () => {
 
     expect(wrapper.find('[data-test="preview-execution-timeline"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="preview-event-log"]').exists()).toBe(true)
-    const summary = wrapper.find('[data-test="preview-summary"]')
-    expect(summary.exists()).toBe(true)
-    expect(summary.text()).toContain('15') // caster mana spent
-    expect(summary.text()).toContain('200')
-    expect(summary.text()).toContain('190')
   })
 
   it('tabs between the timeline and event log so only one is shown at a time', async () => {
@@ -215,7 +210,7 @@ describe('AbilityPreviewPanel', () => {
     await flushPromises()
 
     // Same canvas instance now has real frames — edit mode's drag layer is
-    // gone, controls enabled, and the rest of the panel (timeline/log/summary)
+    // gone, controls enabled, and the rest of the panel (timeline/log)
     // still works.
     expect(wrapper.find('[data-test="preview-drag-layer"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="preview-canvas-empty"]').exists()).toBe(false)

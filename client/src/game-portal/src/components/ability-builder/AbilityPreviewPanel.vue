@@ -109,21 +109,6 @@
             @seek="onSeekEvent"
           />
         </div>
-
-        <div class="ab-preview__summary" data-test="preview-summary">
-          <span class="ab-preview__summary-mana">Caster mana spent: {{ result.casterManaSpent }}</span>
-          <ul class="ab-preview__unit-list">
-            <li
-              v-for="u in unitSummaries"
-              :key="u.index"
-              class="ab-preview__unit"
-              :class="{ 'ab-preview__unit--healed': u.kind === 'healed', 'ab-preview__unit--damaged': u.kind === 'damaged' }"
-            >
-              <span class="ab-preview__unit-label">{{ u.label }}</span>
-              <span class="ab-preview__unit-hp">{{ u.hpBefore }} → {{ u.hpAfter }}</span>
-            </li>
-          </ul>
-        </div>
       </div>
     </div>
   </div>
@@ -571,27 +556,6 @@ watch(
 )
 
 const skippedCount = computed(() => result.value?.trace.filter((e) => e.type === 'action_skipped').length ?? 0)
-
-type UnitKind = 'healed' | 'damaged' | 'unchanged'
-interface UnitSummary {
-  index: number
-  label: string
-  hpBefore: number
-  hpAfter: number
-  kind: UnitKind
-}
-
-const unitSummaries = computed<UnitSummary[]>(() => {
-  const units = result.value?.units ?? []
-  const teamSeen: Record<string, number> = {}
-  return units.map((u) => {
-    const n = (teamSeen[u.team] ?? 0) + 1
-    teamSeen[u.team] = n
-    const teamLabel = u.team.charAt(0).toUpperCase() + u.team.slice(1)
-    const kind: UnitKind = u.hpAfter > u.hpBefore ? 'healed' : u.hpAfter < u.hpBefore ? 'damaged' : 'unchanged'
-    return { index: u.index, label: `${teamLabel} ${n}`, hpBefore: u.hpBefore, hpAfter: u.hpAfter, kind }
-  })
-})
 </script>
 
 <style scoped>
@@ -624,7 +588,7 @@ const unitSummaries = computed<UnitSummary[]>(() => {
 }
 
 /* The run result is a flex column that fills the body: banner + view tabs sit
-   at fixed height, the views container grows, the summary pins to the bottom. */
+   at fixed height, the views container grows to fill the rest. */
 .ab-preview__result {
   display: flex;
   flex-direction: column;
@@ -711,53 +675,5 @@ const unitSummaries = computed<UnitSummary[]>(() => {
 .ab-preview__banner-error {
   color: var(--ed-danger);
   font-weight: 600;
-}
-
-.ab-preview__summary {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--ed-line);
-  border-radius: var(--ed-radius);
-  background: rgba(15, 23, 42, 0.2);
-}
-
-.ab-preview__summary-mana {
-  font-size: 0.78rem;
-  color: var(--ed-text-dim);
-}
-
-.ab-preview__unit-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-}
-
-.ab-preview__unit {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 0.8rem;
-}
-
-.ab-preview__unit-label {
-  color: var(--ed-text-dim);
-}
-
-.ab-preview__unit-hp {
-  font-weight: 600;
-  color: var(--ed-text);
-}
-
-.ab-preview__unit--healed .ab-preview__unit-hp {
-  color: var(--ed-ok);
-}
-
-.ab-preview__unit--damaged .ab-preview__unit-hp {
-  color: var(--ed-danger);
 }
 </style>
