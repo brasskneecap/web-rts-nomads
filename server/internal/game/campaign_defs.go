@@ -146,8 +146,9 @@ func loadCampaignHeaders() map[string]CampaignDef {
 // so the recompute cost is negligible compared to the simplicity of a live
 // view.
 func buildCampaignDefs() map[string]CampaignDef {
-	out := make(map[string]CampaignDef, len(campaignHeadersByID))
-	for id, header := range campaignHeadersByID {
+	headers := currentCampaignHeaders()
+	out := make(map[string]CampaignDef, len(headers))
+	for id, header := range headers {
 		// Copy by value so the cached header's Levels stays nil.
 		copy := header
 		copy.Levels = []CampaignLevelDef{}
@@ -317,7 +318,7 @@ func validateMapCampaignBlockBasics(mapID string, block *protocol.MapCampaignBlo
 	if block.CampaignID == "" {
 		return errCampaignSave("campaign block missing campaignId")
 	}
-	if _, ok := campaignHeadersByID[block.CampaignID]; !ok {
+	if _, ok := currentCampaignHeaders()[block.CampaignID]; !ok {
 		return errCampaignSave(`campaign id "` + block.CampaignID + `" has no catalog/campaigns/<id>.json header`)
 	}
 

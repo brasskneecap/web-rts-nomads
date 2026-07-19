@@ -106,6 +106,10 @@ export interface Campaign {
   description?: string
   /** Levels in display order. The first level is the entry point. */
   levels: CampaignLevel[]
+  /** Tab order in the campaign strip (ties broken by id). Sent by the server
+   *  (`CampaignDef.SortOrder`); the player UI receives campaigns already
+   *  sorted, but the Campaigns editor reads/writes this. */
+  sortOrder?: number
   /** Whether the campaign is currently unlockable. `true` keeps the tab in
    *  the strip but greys it out and blocks selection — used for advertising
    *  upcoming content (e.g. Swamp before its levels ship). Defaults to

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strings"
 
 	"webrts/server/internal/game"
 	"webrts/server/internal/profile"
@@ -586,18 +587,65 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 		})
 	})
 
-	// Campaign catalog. Static data sourced from
-	// server/internal/game/catalog/campaigns/*.json — drop new files there to
-	// add campaigns; no code change is required for the data path. The
-	// payload shape matches `Campaign` in client/src/game-portal/src/types/campaign.ts.
+	// Campaign catalog. Headers live at
+	// server/internal/game/catalog/campaigns/*.json; a campaign's LEVELS are
+	// derived from campaign-tagged maps. The GET payload shape matches
+	// `Campaign` in client/src/game-portal/src/types/campaign.ts.
+	//
+	// GET  → list all campaigns (headers + derived levels).
+	// POST → create/update a campaign HEADER (the Campaigns editor). Levels are
+	//        authored by assigning maps (which write their own campaign block
+	//        via POST /maps), not here.
 	mux.HandleFunc("/api/catalog/campaigns", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, map[string]any{
+				"campaigns": game.ListCampaignDefs(),
+			})
+		case http.MethodPost:
+			var in game.CampaignHeaderInput
+			if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+				writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+				return
+			}
+			if err := game.SaveCampaignHeader(in); err != nil {
+				if game.IsCampaignSaveValidationError(err) {
+					writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+					return
+				}
+				writeJSONError(w, http.StatusInternalServerError, "save_failed", err.Error())
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": strings.TrimSpace(in.ID), "status": "saved"})
+		default:
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or POST")
+		}
+	})
+
+	// DELETE /api/catalog/campaigns/{id} removes an author-created campaign
+	// header. Refused (400) while any map still references it, or when it's a
+	// built-in campaign — see game.DeleteCampaignDef.
+	mux.HandleFunc("/api/catalog/campaigns/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/api/catalog/campaigns/")
+		if r.Method != http.MethodDelete {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "DELETE only")
 			return
 		}
-		writeJSON(w, map[string]any{
-			"campaigns": game.ListCampaignDefs(),
-		})
+		if id == "" || strings.Contains(id, "/") {
+			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /api/catalog/campaigns/{id}")
+			return
+		}
+		if _, err := game.DeleteCampaignDef(id); err != nil {
+			if game.IsCampaignSaveValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+			return
+		}
+		writeJSON(w, map[string]string{"id": id, "status": "deleted"})
 	})
 }
 

@@ -149,10 +149,15 @@ function Invoke-Shell {
         Write-Host "shell: stopping running nomads-desktop.exe (pid $($_.Id)) to free the binary"
         $_ | Stop-Process -Force
     }
-    # Also kill any orphaned sidecar children (would hold open log files we
-    # don't strictly need to overwrite, but they're noisy if they linger).
-    Get-Process -Name 'nomads-server' -ErrorAction SilentlyContinue | ForEach-Object {
-        Write-Host "shell: stopping orphaned nomads-server.exe (pid $($_.Id))"
+    # Also kill any orphaned sidecar children. The wildcard is REQUIRED: the
+    # bundled sidecar exe is `nomads-server-<target-triple>.exe` (e.g.
+    # nomads-server-x86_64-pc-windows-msvc.exe), and a plain `-Name
+    # 'nomads-server'` is an exact match that never catches it. If such a
+    # process is still running, tauri-build panics at copy_binaries'
+    # `fs::remove_file(&dest).unwrap()` (can't overwrite a locked exe) → the
+    # "cargo build failed (exit 101)" seen when a prior run's sidecar lingers.
+    Get-Process -Name 'nomads-server*' -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host "shell: stopping orphaned $($_.Name).exe (pid $($_.Id))"
         $_ | Stop-Process -Force
     }
     Push-Location (Join-Path $RepoRoot 'desktop\src-tauri')
