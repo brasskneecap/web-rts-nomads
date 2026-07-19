@@ -4,26 +4,48 @@
     <!-- v-show, not v-if: the map canvas keeps its renderer, camera and
          ResizeObserver alive while another editor screen is on top. -->
     <div v-show="activeScreen === 'map'" class="editor-shell">
+    <!-- Landing / selection state. Overlays the (still-mounted) canvas so the
+         renderer, camera and ResizeObserver keep running underneath; nothing is
+         loaded into the editor until the author opens or creates a map. -->
+    <MapEditorLanding
+      v-if="mapEditorView === 'landing'"
+      class="map-landing-overlay"
+      :maps="availableMaps"
+      :loading="isLoadingMapCatalog"
+      :busy="landingBusy"
+      :error="mapLoadError"
+      @open="onLandingOpen"
+      @create="onLandingCreate"
+      @retry="loadAvailableMaps"
+    />
+    <!-- Editing surface, framed by the same worldMenu 9-slice panel every
+         other editor sits in (via EditorShell). The left options column uses
+         the shared warRoomInner sidebar frame; the canvas is the main area. -->
+    <UiPanel variant="worldMenu" :padding="0" class="map-edit-shell ed-theme-forge">
+      <div class="map-edit-grid">
+        <UiPanel variant="warRoomInner" :padding="0" class="map-edit-sidebar">
     <div class="editor-controls">
-      <div class="editor-title">Map Editor</div>
-      <p class="editor-copy">
-        Pan and zoom like the main game view. Turn on paint mode only when you
-        want clicks to edit the map.
-      </p>
+      <header class="editor-head">
+        <button type="button" class="editor-head__back" title="Back to maps" @click="backToLanding">‹ Maps</button>
+        <div class="editor-head__title">
+          <span class="editor-head__name">{{ model.name || 'Untitled Map' }}</span>
+          <span v-if="isNewMap" class="editor-head__badge" title="This map has not been saved yet">New · unsaved</span>
+        </div>
+      </header>
 
       <section class="editor-section" :class="{ 'editor-section--open': openSection === 'setup' }">
         <button type="button" class="editor-section__summary" @click="toggleSection('setup')">
-          Map Setup
+          Map Settings
         </button>
         <div v-if="openSection === 'setup'" class="editor-section__body">
           <div class="control-group">
-            <label for="editor-map-id">Map ID</label>
-            <input id="editor-map-id" v-model.trim="model.id" type="text" />
+            <label for="editor-map-name">Map Name</label>
+            <input id="editor-map-name" v-model.trim="model.name" type="text" placeholder="e.g. Ashen Valley" />
           </div>
 
           <div class="control-group">
-            <label for="editor-map-name">Map Name</label>
-            <input id="editor-map-name" v-model.trim="model.name" type="text" />
+            <label for="editor-map-id">Map ID <span class="field-hint">(auto-generated from the name)</span></label>
+            <input id="editor-map-id" :value="model.id" type="text" readonly class="readonly-field" />
           </div>
 
           <div class="control-group">
@@ -34,73 +56,6 @@
               class="metadata-box"
               rows="3"
             ></textarea>
-          </div>
-
-          <div class="wave-config-block">
-            <div class="wave-config-title">Wave Config</div>
-            <div class="control-group">
-              <label for="wave-total">Total Waves <span class="field-hint">(0 = disabled)</span></label>
-              <input
-                id="wave-total"
-                :value="model.waveConfig?.totalWaves ?? 0"
-                @input="setWaveConfig('totalWaves', +($event.target as HTMLInputElement).value)"
-                type="number"
-                min="0"
-                max="999"
-              />
-            </div>
-            <div class="control-group">
-              <label for="wave-initial-prep">Initial Prep <span class="field-hint">(sec before wave 1, 0 = use Prep Duration)</span></label>
-              <input
-                id="wave-initial-prep"
-                :value="model.waveConfig?.initialPrepDuration ?? 0"
-                @input="setWaveConfig('initialPrepDuration', +($event.target as HTMLInputElement).value)"
-                type="number"
-                min="0"
-              />
-            </div>
-            <div class="control-group">
-              <label for="wave-prep">Prep Duration <span class="field-hint">(sec between waves, 0 = default 60)</span></label>
-              <input
-                id="wave-prep"
-                :value="model.waveConfig?.prepDuration ?? 0"
-                @input="setWaveConfig('prepDuration', +($event.target as HTMLInputElement).value)"
-                type="number"
-                min="0"
-              />
-            </div>
-            <div class="control-group">
-              <label for="wave-active">Wave Duration <span class="field-hint">(sec, 0 = default 120)</span></label>
-              <input
-                id="wave-active"
-                :value="model.waveConfig?.waveDuration ?? 0"
-                @input="setWaveConfig('waveDuration', +($event.target as HTMLInputElement).value)"
-                type="number"
-                min="0"
-              />
-            </div>
-            <div class="control-group control-group--checkbox">
-              <label for="wave-continuous">
-                <input
-                  id="wave-continuous"
-                  type="checkbox"
-                  :checked="!!model.waveConfig?.continuousWaves"
-                  @change="setWaveConfig('continuousWaves', ($event.target as HTMLInputElement).checked)"
-                />
-                Continuous Waves <span class="field-hint">(release next wave on timer; never wait for clear)</span>
-              </label>
-            </div>
-            <div class="control-group control-group--checkbox">
-              <label for="wave-enemies-fight-neutrals">
-                <input
-                  id="wave-enemies-fight-neutrals"
-                  type="checkbox"
-                  :checked="!!model.waveConfig?.enemiesFightNeutrals"
-                  @change="setWaveConfig('enemiesFightNeutrals', ($event.target as HTMLInputElement).checked)"
-                />
-                Enemies Fight Neutrals <span class="field-hint">(camps wiped by enemies drop no loot)</span>
-              </label>
-            </div>
           </div>
 
           <div class="wave-config-block">
@@ -128,31 +83,6 @@
                objectives now live on `CampaignLevel.objectives` in
                `catalog/campaigns/*.json` and are authored by hand for this
                change. A campaign objectives editor is a separate proposal. -->
-
-          <div class="control-group load-map-group">
-            <label for="editor-load-map">Load Existing Map</label>
-            <select
-              id="editor-load-map"
-              v-model="selectedLoadMapId"
-              :disabled="isLoadingMapCatalog || isLoadingSelectedMap || availableMaps.length === 0"
-            >
-              <option v-for="map in availableMaps" :key="map.id" :value="map.id">
-                {{ map.name }}
-              </option>
-            </select>
-
-            <div class="menu-text" v-if="mapLoadError">
-              {{ mapLoadError }}
-            </div>
-
-            <button
-              type="button"
-              @click="loadSelectedMapIntoEditor"
-              :disabled="!selectedLoadMapId || isLoadingMapCatalog || isLoadingSelectedMap"
-            >
-              {{ isLoadingSelectedMap ? 'Loading...' : 'Load Into Editor' }}
-            </button>
-          </div>
 
           <div class="control-group">
             <label for="editor-cols">Columns</label>
@@ -192,6 +122,77 @@
           >
             Clear Everything
           </button>
+        </div>
+      </section>
+
+      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'waves' }">
+        <button type="button" class="editor-section__summary" @click="toggleSection('waves')">
+          Waves
+        </button>
+        <div v-if="openSection === 'waves'" class="editor-section__body">
+          <div class="control-group">
+            <label for="wave-total">Total Waves <span class="field-hint">(0 = disabled)</span></label>
+            <input
+              id="wave-total"
+              :value="model.waveConfig?.totalWaves ?? 0"
+              @input="setWaveConfig('totalWaves', +($event.target as HTMLInputElement).value)"
+              type="number"
+              min="0"
+              max="999"
+            />
+          </div>
+          <div class="control-group">
+            <label for="wave-initial-prep">Initial Prep <span class="field-hint">(sec before wave 1, 0 = use Prep Duration)</span></label>
+            <input
+              id="wave-initial-prep"
+              :value="model.waveConfig?.initialPrepDuration ?? 0"
+              @input="setWaveConfig('initialPrepDuration', +($event.target as HTMLInputElement).value)"
+              type="number"
+              min="0"
+            />
+          </div>
+          <div class="control-group">
+            <label for="wave-prep">Prep Duration <span class="field-hint">(sec between waves, 0 = default 60)</span></label>
+            <input
+              id="wave-prep"
+              :value="model.waveConfig?.prepDuration ?? 0"
+              @input="setWaveConfig('prepDuration', +($event.target as HTMLInputElement).value)"
+              type="number"
+              min="0"
+            />
+          </div>
+          <div class="control-group">
+            <label for="wave-active">Wave Duration <span class="field-hint">(sec, 0 = default 120)</span></label>
+            <input
+              id="wave-active"
+              :value="model.waveConfig?.waveDuration ?? 0"
+              @input="setWaveConfig('waveDuration', +($event.target as HTMLInputElement).value)"
+              type="number"
+              min="0"
+            />
+          </div>
+          <div class="control-group control-group--checkbox">
+            <label for="wave-continuous">
+              <input
+                id="wave-continuous"
+                type="checkbox"
+                :checked="!!model.waveConfig?.continuousWaves"
+                @change="setWaveConfig('continuousWaves', ($event.target as HTMLInputElement).checked)"
+              />
+              Continuous Waves <span class="field-hint">(release next wave on timer; never wait for clear)</span>
+            </label>
+          </div>
+          <div class="control-group control-group--checkbox">
+            <label for="wave-enemies-fight-neutrals">
+              <input
+                id="wave-enemies-fight-neutrals"
+                type="checkbox"
+                :checked="!!model.waveConfig?.enemiesFightNeutrals"
+                @change="setWaveConfig('enemiesFightNeutrals', ($event.target as HTMLInputElement).checked)"
+              />
+              Enemies Fight Neutrals <span class="field-hint">(camps wiped by enemies drop no loot)</span>
+            </label>
+          </div>
         </div>
       </section>
 
@@ -764,30 +765,34 @@
           Paint
         </button>
         <div v-if="openSection === 'paint'" class="editor-section__body">
-          <button
-            type="button"
-            class="paint-toggle"
-            :class="{ 'paint-toggle--active': paintModeEnabled }"
-            @click="paintModeEnabled = !paintModeEnabled"
-          >
-            {{ paintModeEnabled ? 'Painting Enabled' : 'Painting Disabled' }}
-          </button>
-
-          <div class="control-group">
-            <label for="brush-mode">Brush</label>
-            <select id="brush-mode" v-model="brushMode" :disabled="!paintModeEnabled">
-              <option value="terrain">Terrain</option>
-              <option value="tile">Tile</option>
-              <option value="obstacle">Obstacle</option>
-              <option value="building">Building</option>
-              <option value="enemy-spawn">Enemy Spawn</option>
-              <option value="neutral-spawn">Neutral Spawn</option>
-              <option value="unit">Unit</option>
-              <option value="erase">Erase</option>
-            </select>
+          <!-- The active tool IS the mode: pick a brush and clicks paint; pick
+               Select to click placed things and edit/move them. No separate
+               paint on/off toggle. -->
+          <div class="tool-picker" role="group" aria-label="Editing tool">
+            <button
+              v-for="tool in BRUSH_TOOLS"
+              :key="tool.id"
+              type="button"
+              class="tool-picker__btn"
+              :class="{ 'tool-picker__btn--on': brushMode === tool.id }"
+              :title="tool.label"
+              @click="brushMode = tool.id"
+            >
+              <span class="tool-picker__glyph" aria-hidden="true">{{ tool.glyph }}</span>
+              <span class="tool-picker__label">{{ tool.label }}</span>
+            </button>
           </div>
 
-          <div v-if="brushMode !== 'building' && brushMode !== 'enemy-spawn' && brushMode !== 'neutral-spawn' && brushMode !== 'unit'" class="control-group">
+          <div class="undo-bar">
+            <button type="button" class="undo-bar__btn" :disabled="!canUndo" title="Undo (Ctrl+Z)" @click="undoPaint">↶ Undo</button>
+            <button type="button" class="undo-bar__btn" :disabled="!canRedo" title="Redo (Ctrl+Y)" @click="redoPaint">↷ Redo</button>
+          </div>
+
+          <p v-if="brushMode === 'select'" class="tool-picker__hint">
+            Select mode — click a building, unit or spawn to edit it. Pick a brush above to paint.
+          </p>
+
+          <div v-if="brushMode === 'terrain' || brushMode === 'tile' || brushMode === 'obstacle' || brushMode === 'erase'" class="control-group">
             <label for="brush-size">Brush Size</label>
             <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
               <option :value="1">1 × 1</option>
@@ -1149,8 +1154,9 @@
         </div>
       </section>
     </div>
+        </UiPanel>
 
-    <div class="editor-preview">
+        <div class="editor-preview">
       <div class="preview-header">
         <span v-if="movingBuilding" class="preview-header__paste-mode">
           Move mode — click to place {{ movingBuilding.buildingType }}
@@ -1164,14 +1170,14 @@
           Paste mode — click to place {{ copiedBuilding?.buildingType }}
           <button type="button" class="preview-header__cancel-paste" @click="isPasteMode = false">Cancel (Esc)</button>
         </span>
-        <span v-else>{{ paintModeEnabled ? 'Paint mode armed' : 'Navigation mode' }}</span>
+        <span v-else>{{ activeToolLabel }}</span>
         <span>{{ hoverLabel }}</span>
       </div>
 
       <div class="canvas-frame">
         <canvas v-show="!playtestPlaying" ref="canvas" class="editor-canvas"></canvas>
         <canvas
-          v-show="!playtestPlaying"
+          v-show="!playtestPlaying && mapEditorView === 'editing'"
           ref="minimapCanvas"
           class="editor-minimap"
           aria-label="Map minimap (click or drag to jump)"
@@ -1715,6 +1721,8 @@
         </div>
       </div>
     </div>
+        </div>
+    </UiPanel>
     </div>
 
     <!-- No header/close affordance: the toolbar is the tab bar, so Map is
@@ -1738,6 +1746,8 @@ import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGr
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
+import MapEditorLanding from '@/components/world-editor/MapEditorLanding.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import ItemCatalogEditor from '@/components/ItemCatalogEditor.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
 import AbilityBuilderPanel from '@/components/ability-builder/AbilityBuilderPanel.vue'
@@ -1816,17 +1826,17 @@ const model = defineModel<MapConfig>({ required: true })
 const canvas = ref<HTMLCanvasElement | null>(null)
 const tilePickerCanvas = ref<HTMLCanvasElement | null>(null)
 
-// Editor minimap overlay. Lives in the top-left of .canvas-frame and
+// Editor minimap overlay. Lives in the bottom-right of .canvas-frame and
 // provides a click/drag jump-to navigation plus a viewport rect tied to
 // the editor camera. Static layers (terrain/obstacles/buildings/POIs)
 // render through the shared minimapLayers module so the visual style
 // matches the in-game minimap and the lobby preview.
 const minimapCanvas = ref<HTMLCanvasElement | null>(null)
 const MINIMAP_MAX_SIZE = 200
-// Inset of the minimap from the top-left corner of the canvas frame, plus
+// Inset of the minimap from the bottom-right corner of the canvas frame, plus
 // a small buffer. Used both for CSS positioning and for sizing the editor
-// camera's top-left pan overscan so the user can scroll the map past the
-// minimap to see the underlying top-left content. Kept slightly bigger
+// camera's bottom-right pan overscan so the user can scroll the map past the
+// minimap to see the underlying bottom-right content. Kept slightly bigger
 // than MINIMAP_MAX_SIZE + margin so there's a visible breath of black
 // gutter when panned to the extreme corner.
 const MINIMAP_INSET = 12
@@ -1836,7 +1846,40 @@ let minimapStaticDirty = true
 let minimapDragging = false
 
 const TILE_PICKER_SCALE = 2
-const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'enemy-spawn' | 'neutral-spawn' | 'unit' | 'erase'>('terrain')
+// The active tool. 'select' is navigate/edit (click placed things to open their
+// popups); every other value is a paint brush. There is no separate paint
+// on/off toggle any more — choosing a brush IS arming it, and 'select' is the
+// "off" that lets you pick and move what you've placed.
+type BrushMode =
+  | 'select'
+  | 'terrain'
+  | 'tile'
+  | 'obstacle'
+  | 'building'
+  | 'enemy-spawn'
+  | 'neutral-spawn'
+  | 'unit'
+  | 'erase'
+const brushMode = ref<BrushMode>('select')
+// Tool buttons rendered in the Paint section. Order = display order.
+// NOTE: 'terrain' is intentionally omitted from the picker for now (kept in the
+// BrushMode type + paint handlers so it can be re-added by dropping a row back
+// in here). Ground painting is done with the Tile brush.
+const BRUSH_TOOLS: ReadonlyArray<{ id: BrushMode; label: string; glyph: string }> = [
+  { id: 'select', label: 'Select', glyph: '⊹' },
+  { id: 'tile', label: 'Tile', glyph: '▧' },
+  { id: 'obstacle', label: 'Obstacle', glyph: '⬢' },
+  { id: 'building', label: 'Building', glyph: '⌂' },
+  { id: 'enemy-spawn', label: 'Enemy', glyph: '☠' },
+  { id: 'neutral-spawn', label: 'Neutral', glyph: '◈' },
+  { id: 'unit', label: 'Unit', glyph: '✦' },
+  { id: 'erase', label: 'Erase', glyph: '⌫' },
+]
+const activeToolLabel = computed(() =>
+  brushMode.value === 'select'
+    ? 'Select mode'
+    : `Painting: ${BRUSH_TOOLS.find((t) => t.id === brushMode.value)?.label ?? brushMode.value}`,
+)
 
 // ─── Zone sidebar state ────────────────────────────────────────────────────────
 // selectedZoneId: the zone selected in the Zones list
@@ -1945,8 +1988,187 @@ const copiedLabel = ref('Copy Export')
 const saveLabel = ref('Save to Server')
 const saveError = ref('')
 const hoverLabel = ref('Hover a tile')
-const paintModeEnabled = ref(false)
-const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | null>('paint')
+// Painting is armed whenever a brush tool is selected. 'select' is the one
+// non-painting tool, so it reads as "navigation / edit mode". Derived, not a
+// separate flag, so the tool and the paint state can never disagree.
+const paintModeEnabled = computed(() => brushMode.value !== 'select')
+const openSection = ref<'setup' | 'waves' | 'campaign' | 'zones' | 'paint' | 'export' | null>('paint')
+
+// ─── Landing / editing view ────────────────────────────────────────────────
+// The map screen opens on a select-or-create landing state (like the item /
+// unit / ability editors) rather than dropping the author into a blank draft.
+// 'editing' is only entered once a map is opened or a new one is created.
+const mapEditorView = ref<'landing' | 'editing'>('landing')
+// True while the author is working on a map that has never been saved — drives
+// the "New (unsaved)" banner so a template-derived map is never mistaken for
+// the map it was copied from.
+const isNewMap = ref(false)
+// Blocks double open/create round-trips and dims the landing buttons.
+const landingBusy = ref(false)
+
+// ─── Paint undo / redo ─────────────────────────────────────────────────────
+// First-pass history scoped to paint strokes (terrain / tile / obstacle /
+// building / unit / spawn / erase). A stroke is one press→release: we snapshot
+// the map at press time and commit that snapshot on release only if something
+// actually changed. Modeled on the ability builder's snapshot stacks.
+type MapSnapshot = { map: MapConfig; placedUnits: PlacedUnit[] }
+const UNDO_CAP = 50
+const undoStack = ref<MapSnapshot[]>([])
+const redoStack = ref<MapSnapshot[]>([])
+const canUndo = computed(() => undoStack.value.length > 0)
+const canRedo = computed(() => redoStack.value.length > 0)
+// Pending pre-stroke snapshot + the model/units references it was taken from,
+// so a stroke that paints nothing new commits no history entry.
+let pendingSnapshot: MapSnapshot | null = null
+let pendingBaseMap: MapConfig | null = null
+let pendingBaseUnits: PlacedUnit[] | null = null
+
+// Deep-clone via JSON round-trip, NOT structuredClone: model.value is a Vue
+// reactive proxy and structuredClone throws DataCloneError on proxies. The map
+// config and placed units are pure JSON data, so a round-trip is a faithful,
+// reactivity-stripped snapshot.
+function captureSnapshot(): MapSnapshot {
+  return {
+    map: JSON.parse(JSON.stringify(model.value)) as MapConfig,
+    placedUnits: JSON.parse(JSON.stringify(placedUnits.value)) as PlacedUnit[],
+  }
+}
+
+function resetHistory() {
+  undoStack.value = []
+  redoStack.value = []
+  pendingSnapshot = null
+  pendingBaseMap = null
+  pendingBaseUnits = null
+}
+
+// Call before the first mutation of a reversible action.
+function beginPaintAction() {
+  pendingBaseMap = model.value
+  pendingBaseUnits = placedUnits.value
+  pendingSnapshot = captureSnapshot()
+}
+
+// Call after the action completes. Commits to the undo stack only if the model
+// (or placed-unit list) reference was actually replaced during the action —
+// every mutation helper returns a fresh object, so identity is a reliable
+// "did anything change" test and empty strokes leave no undo step behind.
+function commitPaintAction() {
+  const snap = pendingSnapshot
+  pendingSnapshot = null
+  if (!snap) return
+  const changed = model.value !== pendingBaseMap || placedUnits.value !== pendingBaseUnits
+  pendingBaseMap = null
+  pendingBaseUnits = null
+  if (!changed) return
+  undoStack.value.push(snap)
+  if (undoStack.value.length > UNDO_CAP) undoStack.value.shift()
+  redoStack.value = []
+}
+
+function applySnapshot(snap: MapSnapshot) {
+  const units = snap.placedUnits
+  model.value = { ...snap.map, placedUnits: units }
+  placedUnits.value = units
+  draftCols.value = model.value.gridCols
+  draftRows.value = model.value.gridRows
+  zoneCellIndex = buildZoneCellIndex(model.value.zones ?? [])
+  // The selected entity may have just been erased/restored out from under its
+  // popup; drop the selection so we never edit a stale id.
+  selectedEditBuildingId.value = null
+  selectedEditPlacedUnitId.value = null
+  selectedEditNeutralSpawnId.value = null
+}
+
+function undoPaint() {
+  if (!canUndo.value) return
+  redoStack.value.push(captureSnapshot())
+  applySnapshot(undoStack.value.pop() as MapSnapshot)
+}
+
+function redoPaint() {
+  if (!canRedo.value) return
+  undoStack.value.push(captureSnapshot())
+  applySnapshot(redoStack.value.pop() as MapSnapshot)
+}
+
+// ─── Landing → editing transitions ─────────────────────────────────────────
+function slugifyMapId(name: string): string {
+  const base = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return base || 'new-map'
+}
+
+// Open an existing map from the landing picker into the editing view.
+async function onLandingOpen(mapId: string) {
+  if (landingBusy.value) return
+  landingBusy.value = true
+  selectedLoadMapId.value = mapId
+  try {
+    await loadSelectedMapIntoEditor()
+    if (!mapLoadError.value) {
+      isNewMap.value = false
+      resetHistory()
+      mapEditorView.value = 'editing'
+    }
+  } finally {
+    landingBusy.value = false
+  }
+}
+
+// Create a brand-new map — blank, or copied from an existing one as a template.
+// A template copy gets a fresh id/name and drops the source's campaign binding
+// so saving it never edits or collides with the map it was copied from.
+async function onLandingCreate(payload: {
+  name: string
+  templateId: string | null
+  cols: number
+  rows: number
+}) {
+  if (landingBusy.value) return
+  landingBusy.value = true
+  mapLoadError.value = ''
+  try {
+    let built: MapConfig
+    if (payload.templateId) {
+      const file = await fetchMapCatalogFile(payload.templateId)
+      built = createEditorMapConfig(file.map.gridCols, file.map.gridRows, file.map)
+    } else {
+      built = createEditorMapConfig(payload.cols, payload.rows)
+    }
+    built = {
+      ...built,
+      id: slugifyMapId(payload.name),
+      name: payload.name,
+      campaign: undefined,
+      contentHash: undefined,
+      version: undefined,
+    }
+    model.value = built
+    placedUnits.value = built.placedUnits ?? []
+    draftCols.value = built.gridCols
+    draftRows.value = built.gridRows
+    zoneCellIndex = buildZoneCellIndex(built.zones ?? [])
+    isNewMap.value = true
+    resetHistory()
+    mapEditorView.value = 'editing'
+    openSection.value = 'setup'
+    recenterCamera()
+  } catch (err) {
+    mapLoadError.value = err instanceof Error ? err.message : 'Failed to create map.'
+  } finally {
+    landingBusy.value = false
+  }
+}
+
+// Return to the landing picker, refreshing the list so a just-saved map shows.
+function backToLanding() {
+  mapEditorView.value = 'landing'
+  void loadAvailableMaps()
+}
 
 // Top toolbar (world-editor-toolbar plan, Task 5). The toolbar switches
 // full-height screens rather than opening modals: 'map' is the paint canvas +
@@ -1959,11 +2181,10 @@ const router = useRouter()
 function onToolbarSelect(id: string) {
   switch (id) {
     case 'map':
-      // Opens the Paint section; the brush itself (terrain / obstacle /
-      // building / unit / erase) is picked from that section's dropdown.
+      // Returns to the map screen in whatever view it was left in (the landing
+      // picker, or the map being edited). Painting is armed by the tool
+      // selection in the Paint section, not forced on here.
       activeScreen.value = 'map'
-      openSection.value = 'paint'
-      paintModeEnabled.value = true
       break
     case 'items':
     case 'unit-types':
@@ -2051,12 +2272,13 @@ const movingClaimPoint = ref(false)
 const placingGuardSpawn = ref(false)
 
 const camera = new Camera()
-// Bump the top + left overscan so the user can pan the map's top-left
-// corner past the minimap overlay. Right/bottom use the defaults.
+// Bump the bottom + right overscan so the user can pan the map's bottom-right
+// corner past the minimap overlay (which lives in that corner). Left/top use
+// the defaults.
 camera.overscan = {
   ...camera.overscan,
-  left: Math.max(camera.overscan.left, MINIMAP_CLEAR_OVERSCAN),
-  top: Math.max(camera.overscan.top, MINIMAP_CLEAR_OVERSCAN),
+  right: Math.max(camera.overscan.right, MINIMAP_CLEAR_OVERSCAN),
+  bottom: Math.max(camera.overscan.bottom, MINIMAP_CLEAR_OVERSCAN),
 }
 let resizeObserver: ResizeObserver | null = null
 let animationFrameId = 0
@@ -2937,7 +3159,7 @@ function getCanvasCursor() {
   return 'crosshair'
 }
 
-function toggleSection(section: 'setup' | 'campaign' | 'zones' | 'paint' | 'export') {
+function toggleSection(section: 'setup' | 'waves' | 'campaign' | 'zones' | 'paint' | 'export') {
   openSection.value = openSection.value === section ? null : section
 }
 
@@ -3156,10 +3378,12 @@ function applyPreset(cols: number, rows: number) {
 }
 
 function clearMap() {
+  beginPaintAction()
   model.value = createEditorMapConfig(model.value.gridCols, model.value.gridRows)
   placedUnits.value = []
   selectedEditPlacedUnitId.value = null
   selectedEditNeutralSpawnId.value = null
+  commitPaintAction()
 }
 
 // Wipes all painted content (terrain, custom tiles, obstacles, buildings)
@@ -3403,6 +3627,8 @@ async function loadSelectedMapIntoEditor() {
     placedUnits.value = model.value.placedUnits ?? []
     draftCols.value = model.value.gridCols
     draftRows.value = model.value.gridRows
+    zoneCellIndex = buildZoneCellIndex(model.value.zones ?? [])
+    resetHistory()
     recenterCamera()
   } catch (error) {
     mapLoadError.value =
@@ -3447,6 +3673,8 @@ async function saveToServer() {
 // Shared success tail for both a plain save and a reassign save.
 async function onSaveSucceeded() {
   saveLabel.value = 'Saved!'
+  // The draft now exists on the server — it's no longer an unsaved new map.
+  isNewMap.value = false
   await loadAvailableMaps()
   window.setTimeout(() => {
     saveLabel.value = 'Save to Server'
@@ -3846,11 +4074,13 @@ function onMouseDown(event: MouseEvent) {
     event.preventDefault()
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) {
+      beginPaintAction()
       let next = model.value
       for (const c of getBrushCells(cell.x, cell.y, brushSize.value)) {
         next = setTilePaint(next, c.x, c.y, null)
       }
       model.value = next
+      commitPaintAction()
     }
     return
   }
@@ -4016,6 +4246,7 @@ function onMouseDown(event: MouseEvent) {
 
   isPainting = true
   lastPaintKey = ''
+  beginPaintAction()
   paintAtScreen(screen.x, screen.y)
 }
 
@@ -4081,6 +4312,10 @@ function onMouseUp(event: MouseEvent) {
   isPainting = false
   lastPaintKey = ''
 
+  // Close out any paint stroke started on mousedown. No-op for zone-draw /
+  // move / paste strokes, which never called beginPaintAction().
+  commitPaintAction()
+
   // After a zone draw stroke, auto-fill any region the stroke just enclosed.
   // No-op unless the drawn cells now form a closed loop.
   if (zoneSubMode.value === 'draw' && selectedZoneId.value) {
@@ -4123,6 +4358,22 @@ function isEditingText(): boolean {
 
 function onKeyDown(event: KeyboardEvent) {
   if (isEditingText()) return
+
+  // Paint undo / redo. Only while actually editing a map (never on the landing
+  // picker), and gated above so it can't fire while a text field is focused.
+  if ((event.ctrlKey || event.metaKey) && mapEditorView.value === 'editing') {
+    const key = event.key.toLowerCase()
+    if (key === 'z' && !event.shiftKey) {
+      event.preventDefault()
+      undoPaint()
+      return
+    }
+    if ((key === 'z' && event.shiftKey) || key === 'y') {
+      event.preventDefault()
+      redoPaint()
+      return
+    }
+  }
 
   if (event.key === 'Escape') {
     selectedEditBuildingId.value = null
@@ -5208,6 +5459,20 @@ watch(paintModeEnabled, () => {
   canvas.value.style.cursor = getCanvasCursor()
 })
 
+// A new map's ID is derived from its name (the ID field is read-only). Existing
+// maps keep the ID they were saved under — renaming a loaded map must not change
+// its server key — so this only runs while the map is an unsaved draft.
+watch(
+  () => model.value.name,
+  (name) => {
+    if (!isNewMap.value) return
+    const nextId = slugifyMapId(name ?? '')
+    if (nextId !== model.value.id) {
+      model.value = { ...model.value, id: nextId }
+    }
+  },
+)
+
 watch(isPasteMode, () => {
   if (!canvas.value || isSpacePanning) return
   canvas.value.style.cursor = getCanvasCursor()
@@ -5308,33 +5573,194 @@ onBeforeUnmount(() => {
 }
 
 .editor-shell {
-  display: grid;
-  grid-template-columns: minmax(410px, 450px) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  gap: 12px;
-  align-items: stretch;
+  display: flex;
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
+  /* Anchor for the landing overlay, which covers the still-mounted canvas. */
+  position: relative;
 }
 
-.editor-controls,
-.editor-preview {
-  background: rgba(3, 8, 14, 0.86);
+/* Editing surface wrapped in the shared worldMenu frame, so the map editor
+   reads as part of the same editor family as items / units / abilities. */
+.map-edit-shell {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Left options column | canvas. Mirrors EditorShell's grid, but the left
+   column is wider because the map's controls are a full form, not a list. */
+.map-edit-grid {
+  display: grid;
+  grid-template-columns: minmax(380px, 430px) minmax(0, 1fr);
+  gap: var(--ed-gap, 10px);
+  padding: var(--ed-gap, 10px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.map-edit-sidebar {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Landing picker sits on top of the editing surface so the canvas/renderer
+   stay alive underneath while the author is choosing a map. */
+.map-landing-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+}
+
+/* Editing-view header: map identity + new/unsaved badge + back-to-maps. */
+.editor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  margin-bottom: 2px;
+}
+
+.editor-head__back {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 8px;
+}
+
+.editor-head__back:hover {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.editor-head__title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.editor-head__name {
+  font-family: var(--font-title, inherit);
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #f8e7bd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-head__badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #0b1220;
+  background: #e7c88a;
+  border-radius: 999px;
+}
+
+/* Tool picker — replaces the paint on/off toggle. The selected tool is the
+   mode; a lit button reads as "this brush is armed". */
+.tool-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.tool-picker__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  font-size: 0.72rem;
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.1);
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 16px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.26);
-  backdrop-filter: blur(14px);
+  border-radius: 10px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
+.tool-picker__btn:hover {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.tool-picker__btn--on {
+  color: #0b1220;
+  background: #e7c88a;
+  border-color: #f2d79a;
+  box-shadow: 0 0 0 1px rgba(231, 200, 138, 0.5), 0 6px 16px rgba(231, 200, 138, 0.22);
+}
+
+.tool-picker__glyph {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.tool-picker__label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.tool-picker__hint {
+  margin: 8px 2px 0;
+  font-size: 0.76rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.undo-bar {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.undo-bar__btn {
+  flex: 1 1 0;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+}
+
+.undo-bar__btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.undo-bar__btn:disabled {
+  opacity: 0.4;
+}
+
+/* The worldMenu / warRoomInner UiPanel frames now supply the border and
+   backdrop, so the inner surfaces are transparent and just handle layout. */
 .editor-controls {
   min-height: 0;
-  max-height: 100%;
+  flex: 1 1 auto;
+  height: 100%;
   overflow-y: auto;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: transparent;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
 }
@@ -5357,45 +5783,60 @@ onBeforeUnmount(() => {
 }
 
 .editor-section {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 12px;
-  background: rgba(8, 14, 24, 0.55);
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+  background: rgba(0, 0, 0, 0.24);
   overflow: clip;
   flex: 0 0 auto;
 }
 
 .editor-section--open {
-  background: rgba(8, 14, 24, 0.72);
+  background: rgba(0, 0, 0, 0.32);
 }
 
 .editor-section__summary {
   width: 100%;
   border: 0;
-  cursor: pointer;
-  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-family: var(--font-title);
   font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #f8fafc;
+  color: var(--ed-brass);
   text-align: left;
-  background: linear-gradient(180deg, rgba(25, 35, 52, 0.92), rgba(14, 22, 36, 0.94));
+  background: transparent;
 }
 
-.editor-section__summary::after {
-  content: '+';
-  float: right;
-  color: #d7bb84;
+/* Leading chevron matching the shared SectionCard: points down when the
+   section is open, right when collapsed. Replaces the old +/- glyph. */
+.editor-section__summary::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--ed-brass);
+  transform: rotate(-90deg);
+  transition: transform 0.12s ease;
 }
 
-.editor-section--open .editor-section__summary::after {
-  content: '-';
+.editor-section--open .editor-section__summary::before {
+  transform: rotate(0deg);
+}
+
+.editor-section--open .editor-section__summary {
+  border-bottom: 1px solid var(--ed-line);
 }
 
 .editor-section__body {
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: var(--ed-gap, 10px);
+  padding: 10px 12px 12px;
 }
 
 .editor-title {
@@ -5432,7 +5873,6 @@ onBeforeUnmount(() => {
   background: #0a0a0a;
 }
 
-.control-group label,
 .preview-header,
 .summary-row,
 .hint-list {
@@ -5440,28 +5880,87 @@ onBeforeUnmount(() => {
   font-size: 0.75rem;
 }
 
-.control-group input,
+/* Field labels match the shared EditorField label: compact brass-dim caps. */
+.control-group > label {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ed-text-dim);
+}
+
+/* A checkbox labels itself (the <label> wraps the box and its text), so it
+   keeps sentence case and sits inline with the box. */
+.control-group--checkbox > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  font-size: 0.78rem;
+  color: var(--ed-text);
+}
+
+/* Form chrome matching editor-controls.css so the panel reads as part of the
+   same editor family as the item / unit / ability editors. */
+.control-group input:not([type='checkbox']),
 .control-group select,
-.control-group textarea,
+.control-group textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+  background: var(--ed-field);
+  color: var(--ed-text);
+  padding: 6px 8px;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.control-group input:not([type='checkbox']):focus,
+.control-group select:focus,
+.control-group textarea:focus {
+  border-color: var(--ed-line-strong);
+  box-shadow: 0 0 0 1px rgba(212, 168, 71, 0.18);
+}
+
+.control-group select option {
+  background: #17120c;
+  color: var(--ed-text);
+}
+
+.control-group input[type='checkbox'] {
+  accent-color: var(--ed-brass-dim);
+}
+
+/* The Map ID is derived from the name, so it's shown read-only and dimmed. */
+.readonly-field {
+  opacity: 0.7;
+  color: var(--ed-text-dim);
+}
+
+/* Themed action buttons (size presets, apply, export actions) to match the
+   brass button treatment used across the editors. */
 .apply-size,
 .preset-row button,
-.export-actions button,
-.paint-toggle {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
+.export-actions button {
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+  background: rgba(212, 168, 71, 0.08);
+  color: var(--ed-brass);
   padding: 7px 9px;
   font-size: 0.78rem;
+  font-weight: 600;
 }
 
-.paint-toggle {
-  font-weight: 700;
-}
-
-.paint-toggle--active {
-  background: rgba(22, 101, 52, 0.95);
-  border-color: rgba(74, 222, 128, 0.45);
+.apply-size:hover,
+.preset-row button:hover,
+.export-actions button:hover {
+  background: rgba(212, 168, 71, 0.16);
+  border-color: var(--ed-line-strong);
 }
 
 .preset-row,
@@ -6295,8 +6794,8 @@ onBeforeUnmount(() => {
 
 .editor-minimap {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  bottom: 12px;
+  right: 12px;
   z-index: 15;
   border: 1px solid rgba(166, 191, 255, 0.45);
   border-radius: 6px;
