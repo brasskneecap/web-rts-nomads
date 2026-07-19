@@ -115,6 +115,90 @@ function collectAllIds(prog: AbilityProgram): string[] {
   return ids
 }
 
+// collectSavedContextNames returns every named-context key an ability SAVES to
+// — the destination names in any action's `outputs` map, plus every
+// `store_targets` action's `config.as`. These are exactly the keys a later
+// query can read back via source="named_context" / origin="named_context_value"
+// (the "Saved Value" picker), so the editor can offer the names actually
+// defined in THIS ability instead of a fixed guess-list. Walks every nesting
+// slot (children, config.triggers, loop bodies, namedTriggers, presentations),
+// mirroring collectAllIds. De-duplicated and sorted for a stable menu order.
+export function collectSavedContextNames(prog: AbilityProgram): string[] {
+  const names = new Set<string>()
+  function addAction(a: AbilityActionDef): void {
+    if (a.outputs) {
+      for (const dest of Object.values(a.outputs)) {
+        if (typeof dest === 'string' && dest) names.add(dest)
+      }
+    }
+    if (a.type === 'store_targets') {
+      const as = a.config?.as
+      if (typeof as === 'string' && as) names.add(as)
+    }
+    if (a.children) for (const child of a.children) addTrigger(child)
+    for (const body of loopBodyOf(a)) addAction(body)
+    for (const nested of configTriggersOf(a)) addTrigger(nested)
+  }
+  function addTrigger(t: AbilityTriggerDef): void {
+    for (const a of t.actions) addAction(a)
+  }
+  for (const t of prog.triggers) addTrigger(t)
+  if (prog.namedTriggers) for (const t of Object.values(prog.namedTriggers)) addTrigger(t)
+  if (prog.presentations) {
+    for (const p of prog.presentations) {
+      if (p.triggers) for (const t of p.triggers) addTrigger(t)
+    }
+  }
+  return [...names].sort()
+}
+
+// collectReadContextNames returns every named-context key an ability READS
+// back BY NAME — a target query's originRef.key (source "named_context" /
+// origin "named_context_value") and excludeRef.key, plus any action Input
+// ContextRef. It is the counterpart to collectSavedContextNames: a saved name
+// present here is consumed somewhere; one absent is dead weight (nothing reads
+// it). Same full-tree traversal. The implicit "previous_action_targets" /
+// "selected" / "initial_target" refs are NOT names an author saved, so they're
+// irrelevant to that dead-weight check and simply never appear as saved names.
+export function collectReadContextNames(prog: AbilityProgram): string[] {
+  const names = new Set<string>()
+  function addAction(a: AbilityActionDef): void {
+    const q = a.target
+    if (q?.originRef?.key) names.add(q.originRef.key)
+    if (q?.excludeRef?.key) names.add(q.excludeRef.key)
+    if (a.input) {
+      for (const ref of Object.values(a.input)) {
+        if (ref && typeof ref.key === 'string' && ref.key) names.add(ref.key)
+      }
+    }
+    if (a.children) for (const child of a.children) addTrigger(child)
+    for (const body of loopBodyOf(a)) addAction(body)
+    for (const nested of configTriggersOf(a)) addTrigger(nested)
+  }
+  function addTrigger(t: AbilityTriggerDef): void {
+    for (const a of t.actions) addAction(a)
+  }
+  for (const t of prog.triggers) addTrigger(t)
+  if (prog.namedTriggers) for (const t of Object.values(prog.namedTriggers)) addTrigger(t)
+  if (prog.presentations) {
+    for (const p of prog.presentations) {
+      if (p.triggers) for (const t of p.triggers) addTrigger(t)
+    }
+  }
+  return [...names].sort()
+}
+
+// namesSavedByAction returns the named-context keys a single action saves to —
+// its `outputs` destinations plus, for a store_targets action, its config.as.
+// (The per-action slice of collectSavedContextNames, for the inspector's
+// dead-save warning.)
+export function namesSavedByAction(a: AbilityActionDef): string[] {
+  const names = new Set<string>()
+  if (a.outputs) for (const dest of Object.values(a.outputs)) if (dest) names.add(dest)
+  if (a.type === 'store_targets' && typeof a.config?.as === 'string' && a.config.as) names.add(a.config.as)
+  return [...names]
+}
+
 // nextUniqueId returns `<prefix><n>` where n is one more than the highest
 // numeric suffix currently used by any existing `<prefix>NNN`-shaped id in
 // the program (or 1 if none exist).

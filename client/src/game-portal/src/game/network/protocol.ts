@@ -1458,6 +1458,10 @@ export type ProjectileSnapshot = {
   /** Target unit id — informational. The server owns homing updates; `targetX`/`targetY`
    *  already reflect the current tracked position. Absent when unknown. */
   targetUnitId?: number
+  /** Unit the SPAWN sprite anchors to (its chest) — set when the launch
+   *  resolved a spawn origin that is a unit (e.g. a split bolt spawning from
+   *  the hit enemy). Absent / 0 ⇒ anchor to the owner, like an ordinary shot. */
+  originUnitId?: number
   originX: number
   originY: number
   targetX: number

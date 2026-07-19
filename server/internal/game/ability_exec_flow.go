@@ -223,7 +223,8 @@ func init() {
 			return nil
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "as", Label: "Store As", Control: "text", Section: "Basic"},
+			{Key: "as", Label: "Save As", Control: "text", Section: "Basic"},
+			{Key: "merge", Label: "Merge Into Existing", Control: "boolean", Section: "Properties"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(storeTargetsConfig)
@@ -274,10 +275,13 @@ func init() {
 		},
 		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue { return nil },
 		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "relations", Label: "Relations", Control: "multiselect", Section: "Targeting"},
-			{Key: "aliveState", Label: "Alive State", Control: "enum", Section: "Targeting"},
-			{Key: "maxCount", Label: "Max Count", Control: "number", Section: "Targeting"},
-			{Key: "ordering", Label: "Ordering", Control: "enum", Section: "Targeting"},
+			// Same human-readable vocabulary as TargetQueryEditor's fields
+			// (targetQueryHints.ts) — filter_targets narrows an existing target
+			// set with the same relations/aliveState/maxCount/ordering semantics.
+			{Key: "relations", Label: "Relationship to Caster", Control: "multiselect", Section: "Targeting"},
+			{Key: "aliveState", Label: "Unit State", Control: "enum", Section: "Targeting"},
+			{Key: "maxCount", Label: "Maximum Targets", Control: "number", Section: "Targeting"},
+			{Key: "ordering", Label: "Prioritize By", Control: "enum", Section: "Targeting"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(filterTargetsConfig)

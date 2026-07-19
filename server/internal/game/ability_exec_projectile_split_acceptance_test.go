@@ -137,6 +137,13 @@ func TestFrostBoltSplitShape_EndToEnd_HitsEnemyThenSplitsToTwoOthers(t *testing.
 		if p.OriginX == caster.X && p.OriginY == caster.Y {
 			t.Errorf("split bolt origin coincides with the caster (%v,%v); spawnOrigin should have overridden it", caster.X, caster.Y)
 		}
+		// The client anchors the spawn SPRITE (its chest) to this unit — the hit
+		// enemy, not the caster — so a size-mismatched caster's chest offset
+		// can't push the spawn to the enemy's head. (current_event_position →
+		// originUnitForSpawnLocked → the hit unit.)
+		if p.OriginUnitID != primary.ID {
+			t.Errorf("split bolt OriginUnitID = %d; want the hit enemy %d (chest anchor)", p.OriginUnitID, primary.ID)
+		}
 	}
 
 	splitTargets := map[int]bool{}

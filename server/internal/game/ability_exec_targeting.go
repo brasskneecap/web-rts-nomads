@@ -80,6 +80,30 @@ func (s *GameState) resolveOriginLocked(ctx *RuntimeAbilityContext, origin Targe
 	}
 }
 
+// targetsCenterLocked returns the centroid (mean X/Y) of the LIVE units in
+// `targets` — the position OriginTargetsCenter resolves to. Dead/missing ids
+// are skipped so a stale entry can't drag the average off; if nothing survives
+// (empty or all-dead), it falls back to the caster's position, matching every
+// other origin's caster fallback. Caller holds s.mu.
+func (s *GameState) targetsCenterLocked(ctx *RuntimeAbilityContext, targets []int) protocol.Vec2 {
+	var sumX, sumY float64
+	var n int
+	for _, id := range targets {
+		if u := s.getUnitByIDLocked(id); u != nil && u.HP > 0 {
+			sumX += u.X
+			sumY += u.Y
+			n++
+		}
+	}
+	if n == 0 {
+		if u := s.getUnitByIDLocked(ctx.CasterID); u != nil {
+			return protocol.Vec2{X: u.X, Y: u.Y}
+		}
+		return protocol.Vec2{}
+	}
+	return protocol.Vec2{X: sumX / float64(n), Y: sumY / float64(n)}
+}
+
 // originUnitForSpawnLocked returns the unit whose sprite a spawned beam should
 // visually lift its endpoint from for the given SpawnOrigin, or 0 when the
 // origin is a pure world position with no single owning unit. It mirrors
@@ -116,9 +140,10 @@ func (s *GameState) originUnitForSpawnLocked(ctx *RuntimeAbilityContext, origin 
 			}
 		}
 		return 0
-	case OriginCastPoint, OriginImpactPosition, OriginZoneCenter, OriginProjectilePos:
+	case OriginCastPoint, OriginImpactPosition, OriginZoneCenter, OriginProjectilePos, OriginTargetsCenter:
 		// Pure world positions with no single owning unit — the client falls
 		// back to its default beam anchor offset when the unit id is 0/absent.
+		// (targets_center is a group centroid, so it has no single owner.)
 		return 0
 	default:
 		// OriginCaster and every caster-fallback case in resolveOriginLocked

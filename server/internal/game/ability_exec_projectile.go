@@ -96,39 +96,48 @@ const (
 	travelModeDirection = "direction"
 )
 
-// launchProjectileSpawnOriginOptions is the Options list offered by
-// launch_projectile's spawnOrigin schema field: ONLY the TargetOrigin values
-// s.resolveOriginLocked (ability_exec_targeting.go) actually resolves to a
-// real, non-caster-fallback position. OriginProjectilePos/OriginStatusOwner/
-// OriginSummonedUnit are deliberately withheld — resolveOriginLocked's own
-// doc comment documents they silently fall back to the caster's position
-// (no projectile/status/summon runtime context is threaded into
-// RuntimeAbilityContext yet, its TODO(phase-3b)) — offering one here would
-// be exactly the "inert dropdown option" bug per-action schema declarations
-// exist to prevent (see SchemaField's doc comment, ability_program_registry.go).
-// OriginNamedContextValue is withheld too: it requires an OriginRef this
-// action's config has no field for, so selecting it would silently resolve
-// to the caster (no ref -> resolveOriginLocked's ref==nil branch) — an
-// equally inert option without one.
-var launchProjectileSpawnOriginOptions = []string{
+// spawnOriginOptions is the SHARED Spawn Origin selection for BOTH
+// launch_projectile and beam (they carry the same SpawnOrigin + SpawnOriginRef
+// fields, so their editor dropdowns are identical). It lists ONLY the
+// TargetOrigin values that resolve to a real, non-caster-fallback position:
+// OriginProjectilePos/OriginStatusOwner/OriginSummonedUnit are withheld —
+// resolveOriginLocked (ability_exec_targeting.go) documents they silently fall
+// back to the caster (no projectile/status/summon runtime context is threaded
+// in yet, its TODO(phase-3b)) — offering one would be the "inert dropdown
+// option" bug per-action schemas exist to prevent (SchemaField's doc comment).
+//
+//   - named_context_value: resolves via SpawnOriginRef (both actions now carry
+//     one) to a saved cursor unit/position — arc a bolt/beam FROM it.
+//   - targets_center: the centroid of the units this bolt is aimed at, so a
+//     spread emanates from the MIDDLE of the group it hits. Resolved from the
+//     action's target list in Execute (targetsCenterLocked), not resolveOriginLocked.
+var spawnOriginOptions = []string{
 	string(OriginCaster), string(OriginCastPoint), string(OriginImpactPosition),
 	string(OriginCurrentEventPos), string(OriginZoneCenter),
 	string(OriginInitialTarget), string(OriginInitialTargetPos),
+	string(OriginNamedContextValue), string(OriginTargetsCenter),
 }
 
-// isValidLaunchProjectileSpawnOrigin reports whether origin is either unset
-// (the byte-identical caster default) or one of
-// launchProjectileSpawnOriginOptions' offered values.
-func isValidLaunchProjectileSpawnOrigin(origin TargetOrigin) bool {
+// isValidSpawnOrigin reports whether origin is either unset (the byte-identical
+// caster default) or one of the shared spawnOriginOptions. Used by both
+// launch_projectile and beam validation.
+func isValidSpawnOrigin(origin TargetOrigin) bool {
 	if origin == "" {
 		return true
 	}
-	for _, o := range launchProjectileSpawnOriginOptions {
+	for _, o := range spawnOriginOptions {
 		if string(origin) == o {
 			return true
 		}
 	}
 	return false
+}
+
+// spawnOriginNamedShowWhen gates the shared "Saved Value" (spawnOriginRef)
+// field so it appears only when Spawn Origin is "named_context_value" — the
+// one origin that needs a ref. Used by both launch_projectile and beam.
+func spawnOriginNamedShowWhen() *FieldCondition {
+	return &FieldCondition{Key: "spawnOrigin", Op: "eq", Value: json.RawMessage(strconv.Quote(string(OriginNamedContextValue)))}
 }
 
 func (launchProjectileConfig) actionConfig() {}
@@ -159,7 +168,7 @@ func init() {
 			// "match_attack_range" sentinel (CastRange.MatchesAttackRange), not
 			// an error — no CastRange field anywhere else in this codebase
 			// rejects negative values either. Nothing to validate here.
-			if !isValidLaunchProjectileSpawnOrigin(c.SpawnOrigin) {
+			if !isValidSpawnOrigin(c.SpawnOrigin) {
 				out = append(out, ValidationIssue{Code: "invalid_property", Message: "unknown spawnOrigin " + string(c.SpawnOrigin), Severity: "error"})
 			}
 			if c.TickInterval > 0 {
@@ -205,14 +214,24 @@ func init() {
 			{Key: "projectile", Label: "Projectile", Control: "asset", Section: "Presentation"},
 			{Key: "travelMode", Label: "Travel Mode", Control: "enum", Options: []string{travelModeToTarget, travelModeDirection}, Section: "Properties"},
 			{
-				Key: "target", Label: "Target", Control: "target_query", Section: "Targeting",
+				// "Fire Projectile At", not "Target": this action resolves the
+				// source and immediately launches a projectile at EVERY unit it
+				// yields (no narrowing step). Naming the behavior here — and
+				// rendering the picker without the misleading "Start With"
+				// sub-label client-side (TargetQueryEditor's source-only shape) —
+				// keeps a source of "all_in_scene" from silently meaning "bolt
+				// everything on the field."
+				Key: "target", Label: "Fire Projectile At", Control: "target_query", Section: "Targeting",
 				TargetQueryFields: targetQueryFieldsSourceOnly,
 			},
 			{
 				Key: "distance", Label: "Distance", Control: "number", Section: "Properties",
 				ShowWhen: &FieldCondition{Key: "travelMode", Op: "eq", Value: json.RawMessage(strconv.Quote(travelModeDirection))},
 			},
-			{Key: "spawnOrigin", Label: "Spawn Origin", Control: "enum", Options: launchProjectileSpawnOriginOptions, Section: "Properties"},
+			{Key: "spawnOrigin", Label: "Spawn Origin", Control: "enum", Options: spawnOriginOptions, Section: "Properties"},
+			// Shown only when Spawn Origin is "Saved Position" — the ctx.Named key
+			// the bolt arcs from. Mirrors beam's identical field (shared selection).
+			{Key: "spawnOriginRef", Label: "Saved Value", Control: "context_ref", Section: "Properties", ShowWhen: spawnOriginNamedShowWhen()},
 			{Key: "projectileScale", Label: "Projectile Scale", Control: "number", Section: "Presentation"},
 			// arcane_orb's ticking-vortex shim: tickInterval is the toggle (stays
 			// unconditionally visible) and is the only vortex
@@ -274,8 +293,17 @@ func init() {
 			// unset/"caster" default (resolveOriginLocked's own default case) —
 			// the byte-identical geometry every ability compiled before this
 			// field existed keeps. See launchProjectileConfig.SpawnOrigin's doc
-			// comment (ability_compile.go).
-			originPos := s.resolveOriginLocked(ctx, c.SpawnOrigin, nil)
+			// comment (ability_compile.go). targets_center is the exception:
+			// it's the centroid of THIS launch's target list, which
+			// resolveOriginLocked can't see — so compute it here.
+			originPos := s.resolveOriginLocked(ctx, c.SpawnOrigin, c.SpawnOriginRef)
+			if c.SpawnOrigin == OriginTargetsCenter {
+				originPos = s.targetsCenterLocked(ctx, targets)
+			}
+			// The unit (if any) the client anchors the spawn sprite to — the hit
+			// enemy for current_event_position, the caster for the default, 0 for
+			// a pure-position origin (targets_center / cast point). Mirrors beam.
+			originUnit := s.originUnitForSpawnLocked(ctx, c.SpawnOrigin, c.SpawnOriginRef)
 
 			hit := make([]int, 0, len(targets))
 			for _, id := range targets {
@@ -288,7 +316,7 @@ func init() {
 				if target == nil || target.HP <= 0 {
 					continue
 				}
-				s.fireProjectileWithImpactActionsLocked(caster, target, originPos, c.Projectile, c.ProjectileScale, ctx.AbilityID, impactActions, budget, ctx.effectiveDamageMultiplier())
+				s.fireProjectileWithImpactActionsLocked(caster, target, originPos, originUnit, c.Projectile, c.ProjectileScale, ctx.AbilityID, impactActions, budget, ctx.effectiveDamageMultiplier())
 				hit = append(hit, id)
 				ctx.trace("projectile_launched", ctx.currentActionPath, map[string]any{
 					"target": id, "travelMode": travelModeToTarget,

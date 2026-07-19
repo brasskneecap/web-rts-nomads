@@ -407,10 +407,16 @@ type launchProjectileConfig struct {
 	// Lets a composed ability whose impact splits into more bolts (a
 	// "hit an enemy, then splits to nearby enemies" shape) spawn the split
 	// bolts at the HIT enemy's position instead of back at the original
-	// caster. See launchProjectileSpawnOriginOptions (ability_exec_
-	// projectile.go) for which concrete TargetOrigin values the schema
-	// actually offers, and why the rest are deliberately withheld.
+	// caster. See spawnOriginOptions (ability_exec_projectile.go) for which
+	// concrete TargetOrigin values the schema actually offers, and why the
+	// rest are deliberately withheld.
 	SpawnOrigin TargetOrigin `json:"spawnOrigin,omitempty"`
+	// SpawnOriginRef supplies the named-context key when SpawnOrigin is
+	// "named_context_value" — a bolt arcing FROM a saved "cursor" unit/position
+	// (the current chain target). nil for every other origin. Mirrors
+	// beamConfig.SpawnOriginRef exactly: launch_projectile and beam share the
+	// same Spawn Origin selection (spawnOriginOptions) and the same ref field.
+	SpawnOriginRef *ContextRef `json:"spawnOriginRef,omitempty"`
 
 	// ── arcane_orb's ticking-vortex shim (retired launch_vortex's fields) ──
 	// TickInterval > 0 selects the vortex shape: a "direction" travelMode

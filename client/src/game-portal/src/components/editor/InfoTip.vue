@@ -84,13 +84,21 @@ const rootEl = ref<HTMLElement | null>(null)
 const bubbleEl = ref<HTMLElement | null>(null)
 const bubbleStyle = ref<Record<string, string>>({})
 
+// The custom game "hover" cursor is a 48px gauntlet with hotspot [16, 4]
+// (see assets/cursors/cursors.json), so it reaches ~32px to the RIGHT of the
+// pointer. Anchored directly under the icon, the bubble's first words end up
+// underneath that gauntlet. Push the bubble right by the cursor's reach so it
+// clears — then clamp to the viewport so an icon near the right edge doesn't
+// shove the bubble off-screen.
+const CURSOR_CLEARANCE = 32
+const BUBBLE_MAX_W = 280 // keep in sync with .info-tip__bubble max-width
+
 function positionBubble() {
   const el = rootEl.value?.querySelector('.info-tip__btn')
   if (!el) return
   const r = el.getBoundingClientRect()
-  // Anchor under-left of the icon; the bubble's own CSS clamps max-width so it
-  // won't run off the right edge of the viewport for icons near the panel edge.
-  bubbleStyle.value = { left: `${r.left}px`, top: `${r.bottom + 6}px` }
+  const left = Math.min(r.left + CURSOR_CLEARANCE, window.innerWidth - BUBBLE_MAX_W - 8)
+  bubbleStyle.value = { left: `${Math.max(8, left)}px`, top: `${r.bottom + 6}px` }
 }
 
 function onViewportChange() {

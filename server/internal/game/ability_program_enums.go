@@ -33,7 +33,7 @@ func ProgramEnums() map[string][]string {
 			string(OriginCaster), string(OriginInitialTarget), string(OriginInitialTargetPos),
 			string(OriginCastPoint), string(OriginImpactPosition), string(OriginCurrentEventPos),
 			string(OriginProjectilePos), string(OriginZoneCenter), string(OriginStatusOwner),
-			string(OriginSummonedUnit), string(OriginNamedContextValue),
+			string(OriginSummonedUnit), string(OriginNamedContextValue), string(OriginTargetsCenter),
 		},
 		"targetOrderings": {
 			string(OrderClosest), string(OrderFarthest), string(OrderLowestHealth),

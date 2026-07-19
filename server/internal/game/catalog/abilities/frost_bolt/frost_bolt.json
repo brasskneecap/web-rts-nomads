@@ -129,7 +129,8 @@
                     }
                   ]
                 }
-              ]
+              ],
+              "travelMode": "to_target"
             }
           }
         ]

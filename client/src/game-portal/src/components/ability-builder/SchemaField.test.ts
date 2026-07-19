@@ -50,7 +50,7 @@ describe('SchemaField', () => {
   })
 
   it('renders a text control and commits the raw string on change', async () => {
-    const wrapper = mountField({ key: 'as', label: 'Store As', control: 'text' }, 'hits')
+    const wrapper = mountField({ key: 'as', label: 'Save As', control: 'text' }, 'hits')
     const input = wrapper.find('input[type="text"]')
     expect((input.element as HTMLInputElement).value).toBe('hits')
 
@@ -89,12 +89,50 @@ describe('SchemaField', () => {
   })
 
   it('falls back to a plain text input for an enum control with no resolvable options', () => {
-    // "aliveState" has no explicit options and no key/label heuristic match
-    // (no matching catalog or enums-bundle entry) — per SchemaField's
+    // A field with no explicit options and no key/label heuristic match (no
+    // matching catalog or enums-bundle entry) — per SchemaField's
     // resolveOptionList doc comment, that's an intentional text fallback.
-    const wrapper = mountField({ key: 'aliveState', label: 'Alive State', control: 'enum' }, '')
+    const wrapper = mountField({ key: 'someUnknownEnum', label: 'Mystery', control: 'enum' }, '')
     expect(wrapper.findComponent(FilterableSelect).exists()).toBe(false)
     expect(wrapper.find('input[type="text"]').exists()).toBe(true)
+  })
+
+  it('resolves aliveState to a humanized dropdown (the filter_targets Unit State gap)', () => {
+    const wrapper = mountField({ key: 'aliveState', label: 'Unit State', control: 'enum' }, 'dead')
+    const select = wrapper.findComponent(FilterableSelect)
+    expect(select.exists()).toBe(true)
+    expect(select.props('options')).toEqual([
+      { id: '', label: 'Living (default)' },
+      { id: 'alive', label: 'Living' },
+      { id: 'dead', label: 'Dead' },
+      { id: 'any', label: 'Living or Dead' },
+    ])
+  })
+
+  it('humanizes the shared targeting enums (relations multiselect, ordering dropdown)', () => {
+    const enums = { relations: ['self', 'ally', 'enemy', 'neutral'], targetOrderings: ['closest', 'random'] }
+    const rels = mountField({ key: 'relations', label: 'Relationship to Caster', control: 'multiselect' }, [], { enums })
+    const relText = rels.findAll('.sf-checkgroup label.ed-check').map((l) => l.text())
+    expect(relText).toContain('Enemy')
+    expect(relText).toContain('Allied')
+    expect(relText.find((t) => t.startsWith('Neutral'))).toBe('Neutral (unavailable)')
+
+    const ord = mountField({ key: 'ordering', label: 'Prioritize By', control: 'enum' }, 'closest', { enums })
+    const ordOpts = ord.findComponent(FilterableSelect).props('options') as { id: string; label: string }[]
+    expect(ordOpts.find((o) => o.id === 'closest')?.label).toBe('Closest')
+    expect(ordOpts.find((o) => o.id === 'random')?.label).toBe('Random — uses the seeded RNG stream')
+  })
+
+  it('humanizes the launch/beam spawnOrigin dropdown via the origin labels', () => {
+    const wrapper = mountField(
+      { key: 'spawnOrigin', label: 'Spawn Origin', control: 'enum', options: ['caster', 'impact_position', 'targets_center'] },
+      'caster',
+    )
+    const opts = wrapper.findComponent(FilterableSelect).props('options') as { id: string; label: string }[]
+    const byId = Object.fromEntries(opts.map((o) => [o.id, o.label]))
+    expect(byId.caster).toBe('Caster')
+    expect(byId.impact_position).toBe('Projectile Impact Point')
+    expect(byId.targets_center).toBe('Center of Targets')
   })
 
   it('resolves an enum control against a catalog via the key heuristic (damage type)', () => {
@@ -105,6 +143,22 @@ describe('SchemaField', () => {
     )
     const select = wrapper.findComponent(FilterableSelect)
     expect(select.props('options').map((o: { id: string }) => o.id)).toEqual(['fire', 'cold', 'physical'])
+  })
+
+  it('shows Title-Cased projectile names in the asset picker while keeping the id as the value', async () => {
+    const wrapper = mountField(
+      { key: 'projectile', label: 'Projectile', control: 'asset' },
+      'frost_bolt',
+      { catalogs: { ...emptyCatalogs(), projectiles: ['frost_bolt', 'fire_bolt'] } },
+    )
+    const select = wrapper.findComponent(FilterableSelect)
+    expect(select.props('options')).toEqual([
+      { id: 'frost_bolt', label: 'Frost Bolt' },
+      { id: 'fire_bolt', label: 'Fire Bolt' },
+    ])
+    // Selecting still commits the raw id, not the label.
+    await select.vm.$emit('update:modelValue', 'fire_bolt')
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['fire_bolt'])
   })
 
   it('renders a sentinel_number control: checked hides the number input and commits the sentinel', async () => {

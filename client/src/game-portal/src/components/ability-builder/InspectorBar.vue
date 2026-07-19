@@ -82,6 +82,11 @@
                 This action isn't executed by the runtime yet — display-only.
               </p>
               <p v-if="fieldSections.length === 0" class="ib-hint">No configurable fields for this action type.</p>
+              <p v-if="unreadSavedNames.length" class="ib-warning" data-test="ib-unread-save">
+                Nothing reads {{ unreadSavedNames.length > 1 ? 'these saved names' : 'the saved name' }}
+                <strong>{{ unreadSavedNames.map((n) => `"${n}"`).join(', ') }}</strong> back — the save has
+                no effect. Reference it via Saved Value or Exclude Saved Set on a later query, or remove it.
+              </p>
             </SectionCard>
 
             <SectionCard v-for="[section, fields] in fieldSections" :key="section" :title="section" class="ib-card">
@@ -97,6 +102,7 @@
                   :model-value="selectedAction.target"
                   :enums="enumsValue"
                   :catalogs="builder.catalogs.value"
+                  :saved-names="savedNames"
                   @update:model-value="commitActionTarget"
                 />
                 <SchemaField
@@ -110,6 +116,25 @@
                   @update:model-value="(v) => commitActionConfig(f.key, v)"
                 />
               </template>
+            </SectionCard>
+
+            <!-- Save result: a producing action (select/filter) can name its
+                 own resulting set inline via `outputs.targets`, so a later
+                 query can read it back — the same effect as a separate Save
+                 Targets action, without the extra step. Reuses SchemaField's
+                 text control (commit-on-change), routed to outputs not config. -->
+            <SectionCard v-if="canSaveResult" title="Output" class="ib-card">
+              <SchemaField
+                :field="{ key: 'saveResultAs', label: 'Save result as', control: 'text' }"
+                :model-value="outputTargetsName"
+                :enums="enumsValue"
+                :catalogs="builder.catalogs.value"
+                @update:model-value="(v) => commitActionOutput(v as string)"
+              />
+              <p class="ib-hint">
+                Names this action's targets so a later query can start from them (Saved Value) or skip
+                them (Exclude Saved Set).
+              </p>
             </SectionCard>
           </template>
           <p v-else class="ib-hint">This action no longer exists — select another node.</p>
@@ -136,7 +161,14 @@ import { fieldVisible, schemaForAction, type SchemaField as SchemaFieldDescripto
 import { issuesForPath, type ValidationIssue } from '@/game/abilities/program/programValidation'
 import SectionCard from '@/components/editor/SectionCard.vue'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
-import { indexPathFor, loopScopeFor, resolveNode } from './programTree'
+import {
+  collectReadContextNames,
+  collectSavedContextNames,
+  indexPathFor,
+  loopScopeFor,
+  namesSavedByAction,
+  resolveNode,
+} from './programTree'
 import SchemaField from './SchemaField.vue'
 
 const builder = useAbilityBuilderContext()
@@ -242,6 +274,24 @@ const loopScope = computed<{ inLoop: boolean; vars: string[] }>(() => {
   return loopScopeFor(builder.program.value, sel.path)
 })
 
+// savedNames: every named-context key this ability saves to (outputs +
+// store_targets), offered to the target-query "Saved Value" picker so an
+// author references real saved selections instead of a fixed guess-list. The
+// whole program is scanned (not just earlier actions) — scope-to-position
+// precision is a later refinement (F2).
+const savedNames = computed<string[]>(() => collectSavedContextNames(builder.program.value))
+
+// Dead-save warning (G): names the SELECTED action saves that NOTHING reads
+// back by name — a saved output that has no effect (the review's Frost Bolt
+// "hit" case). Advisory only; never blocks. Reads are scanned program-wide, so
+// a name consumed by any sibling/nested query counts.
+const unreadSavedNames = computed<string[]>(() => {
+  const action = selectedAction.value
+  if (!action) return []
+  const read = new Set(collectReadContextNames(builder.program.value))
+  return namesSavedByAction(action).filter((name) => !read.has(name))
+})
+
 // Fields grouped by their declared `section` (falling back to "Properties"),
 // in first-seen order — a Map preserves insertion order, so this needs no
 // separate sort step. Each group renders as its own `.ib-card` in the stack.
@@ -277,6 +327,33 @@ function commitActionConfig(key: string, value: unknown) {
 function commitActionTarget(value: unknown) {
   if (!selectedAction.value || selected.value.kind !== 'action') return
   builder.updateAction(selected.value.path, { target: value as TargetQueryDef })
+}
+
+// ── Save result (outputs.targets) ────────────────────────────────────────────
+// Action types whose Execute returns a meaningful target SET worth naming
+// inline — the selection producers. Other actions' returns aren't a
+// "selection" you'd read back, so they don't get the field (it would just be
+// noise). store_targets is excluded: it already has its own "Save As".
+const SAVE_RESULT_ACTION_TYPES = new Set(['select_targets', 'filter_targets'])
+
+const canSaveResult = computed(
+  () => !!selectedAction.value && SAVE_RESULT_ACTION_TYPES.has(selectedAction.value.type),
+)
+
+// The conventional single output slot is `targets` (mirrors compiled abilities
+// and bindActionOutputsLocked). The field edits that slot; any other keys the
+// action carries are preserved.
+const outputTargetsName = computed(() => selectedAction.value?.outputs?.targets ?? '')
+
+function commitActionOutput(name: string) {
+  if (!selectedAction.value || selected.value.kind !== 'action') return
+  const next = { ...(selectedAction.value.outputs ?? {}) }
+  const trimmed = name.trim()
+  if (trimmed) next.targets = trimmed
+  else delete next.targets
+  builder.updateAction(selected.value.path, {
+    outputs: Object.keys(next).length ? next : undefined,
+  })
 }
 </script>
 
@@ -370,6 +447,19 @@ function commitActionTarget(value: unknown) {
 .ib-display-only {
   margin: 0;
   font-size: 0.76rem;
+  color: #e0b258;
+}
+
+/* Advisory (non-blocking) — a saved name nothing reads back. Same amber as the
+   warning issues, with a faint rule so it reads as a nudge, not a hard error. */
+.ib-warning {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-left: 2px solid #e0b258;
+  background: rgba(224, 178, 88, 0.08);
+  border-radius: 0 4px 4px 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
   color: #e0b258;
 }
 </style>

@@ -3,8 +3,11 @@ import type { AbilityActionDef, AbilityProgram, AbilityTriggerDef } from '@/game
 import {
   addAction,
   addTrigger,
+  collectReadContextNames,
+  collectSavedContextNames,
   duplicateAction,
   emptyProgram,
+  namesSavedByAction,
   findAction,
   findNodePathById,
   findTrigger,
@@ -143,6 +146,104 @@ describe('emptyProgram', () => {
     const prog = emptyProgram()
     expect(prog.entry.type).toBe('no_target')
     expect(prog.triggers).toEqual([])
+  })
+})
+
+describe('collectSavedContextNames', () => {
+  it('collects outputs + store_targets names across every nesting slot, deduped and sorted', () => {
+    const prog: AbilityProgram = {
+      entry: { type: 'no_target', range: 0 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [
+            // outputs binding
+            { id: 'a1', type: 'select_targets', outputs: { targets: 'hit' } },
+            // store_targets config.as
+            { id: 'a2', type: 'store_targets', config: { as: 'chainHits' } },
+            // nested config.triggers (create_zone) with a deeper output
+            {
+              id: 'a3',
+              type: 'create_zone',
+              config: {
+                triggers: [
+                  {
+                    id: 'zt',
+                    type: 'on_zone_tick',
+                    actions: [{ id: 'za', type: 'select_targets', outputs: { targets: 'zoneHit' } }],
+                  },
+                ],
+              },
+            },
+            // loop body store_targets + a duplicate name (dedup)
+            {
+              id: 'a4',
+              type: 'loop',
+              config: { body: [{ id: 'la', type: 'store_targets', config: { as: 'hit' } }] },
+            },
+          ],
+        },
+      ],
+    }
+    expect(collectSavedContextNames(prog)).toEqual(['chainHits', 'hit', 'zoneHit'])
+  })
+
+  it('returns an empty list when nothing is saved', () => {
+    expect(collectSavedContextNames(baseProgram())).toEqual([])
+  })
+})
+
+describe('collectReadContextNames', () => {
+  it('collects originRef, excludeRef, and input keys across every nesting slot', () => {
+    const prog: AbilityProgram = {
+      entry: { type: 'no_target', range: 0 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [
+            // source named_context -> originRef, plus excludeRef
+            {
+              id: 'a1',
+              type: 'select_targets',
+              target: { source: 'named_context', originRef: { key: 'saved' }, excludeRef: { key: 'struck' } },
+            },
+            // input ContextRef
+            { id: 'a2', type: 'deal_damage', input: { targets: { key: 'hit' } } },
+            // nested config.triggers read
+            {
+              id: 'a3',
+              type: 'create_zone',
+              config: {
+                triggers: [
+                  {
+                    id: 'zt',
+                    type: 'on_zone_tick',
+                    actions: [
+                      { id: 'za', type: 'select_targets', target: { source: 'named_context', originRef: { key: 'zoneRef' } } },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    }
+    expect(collectReadContextNames(prog)).toEqual(['hit', 'saved', 'struck', 'zoneRef'])
+  })
+
+  it('returns an empty list when nothing is read by name', () => {
+    expect(collectReadContextNames(baseProgram())).toEqual([])
+  })
+})
+
+describe('namesSavedByAction', () => {
+  it('returns outputs destinations and a store_targets as-name', () => {
+    expect(namesSavedByAction({ id: 'a', type: 'select_targets', outputs: { targets: 'hit' } })).toEqual(['hit'])
+    expect(namesSavedByAction({ id: 'b', type: 'store_targets', config: { as: 'chainHits' } })).toEqual(['chainHits'])
+    expect(namesSavedByAction({ id: 'c', type: 'deal_damage' })).toEqual([])
   })
 })
 

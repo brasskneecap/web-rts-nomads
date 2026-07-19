@@ -40,25 +40,6 @@ import "encoding/json"
 // beam leaves Variant unset.
 const defaultBeamVariant = "lightning_bolt"
 
-// beamSpawnOriginOptions extends the launch_projectile origins with
-// named_context_value — a beam (unlike a projectile) threads a SpawnOriginRef,
-// so it can arc FROM a named "cursor" unit (a loop chain's current target).
-var beamSpawnOriginOptions = append(append([]string{}, launchProjectileSpawnOriginOptions...), string(OriginNamedContextValue))
-
-// isValidBeamSpawnOrigin reports whether origin is unset (caster default) or one
-// of beamSpawnOriginOptions.
-func isValidBeamSpawnOrigin(origin TargetOrigin) bool {
-	if origin == "" {
-		return true
-	}
-	for _, o := range beamSpawnOriginOptions {
-		if string(origin) == o {
-			return true
-		}
-	}
-	return false
-}
-
 // beamConfig is the unified beam action config. The Channeled toggle selects
 // which field group and which nested trigger apply:
 //   - momentary: Variant/SpawnOrigin/ImpactDelaySeconds/DurationMs + on_beam_impact
@@ -130,7 +111,7 @@ func init() {
 				if c.ImpactDelaySeconds < 0 {
 					out = append(out, ValidationIssue{Code: "invalid_property", Message: "beam impactDelaySeconds must not be negative", Severity: "error"})
 				}
-				if !isValidBeamSpawnOrigin(c.SpawnOrigin) {
+				if !isValidSpawnOrigin(c.SpawnOrigin) {
 					out = append(out, ValidationIssue{Code: "invalid_property", Message: "unknown spawnOrigin " + string(c.SpawnOrigin), Severity: "error"})
 				}
 			}
@@ -140,11 +121,14 @@ func init() {
 			// target: the ONE unit the beam hits/channels at — its own direct
 			// TargetQueryDef (SrcInitialTarget), narrow source-only shape, same
 			// as launch_projectile.
-			{Key: "target", Label: "Target", Control: "target_query", Section: "Targeting", TargetQueryFields: targetQueryFieldsSourceOnly},
+			{Key: "target", Label: "Fire Beam At", Control: "target_query", Section: "Targeting", TargetQueryFields: targetQueryFieldsSourceOnly},
 			{Key: "variant", Label: "Variant", Control: "text", Section: "Presentation"},
 			{Key: "channeled", Label: "Channeled", Control: "boolean", Section: "Properties"},
 			// momentary-only fields (hidden while channeled)
-			{Key: "spawnOrigin", Label: "Spawn Origin", Control: "enum", Options: beamSpawnOriginOptions, Section: "Advanced", ShowWhen: beamMomentaryShowWhen()},
+			{Key: "spawnOrigin", Label: "Spawn Origin", Control: "enum", Options: spawnOriginOptions, Section: "Advanced", ShowWhen: beamMomentaryShowWhen()},
+			// Shared with launch_projectile: the Saved Value the beam arcs from,
+			// shown only when Spawn Origin is "Saved Position".
+			{Key: "spawnOriginRef", Label: "Saved Value", Control: "context_ref", Section: "Advanced", ShowWhen: spawnOriginNamedShowWhen()},
 			{Key: "impactDelaySeconds", Label: "Impact Delay (s)", Control: "number", Section: "Advanced", ShowWhen: beamMomentaryShowWhen()},
 			{Key: "durationMs", Label: "Duration (ms)", Control: "number", Section: "Presentation", ShowWhen: beamMomentaryShowWhen()},
 			// channeled-only fields (shown only while channeled) — this is the
@@ -211,6 +195,11 @@ func (s *GameState) executeMomentaryBeamLocked(ctx *RuntimeAbilityContext, c bea
 		delay = beamProcDamageDelaySeconds
 	}
 	originPos := s.resolveOriginLocked(ctx, c.SpawnOrigin, c.SpawnOriginRef)
+	if c.SpawnOrigin == OriginTargetsCenter {
+		// Centroid of this beam's target list — resolveOriginLocked can't see
+		// the targets, so compute it here (matches launch_projectile).
+		originPos = s.targetsCenterLocked(ctx, targets)
+	}
 	// The VISUAL-origin unit (Beam.CasterUnitID) is the unit at the spawn
 	// origin, NOT necessarily the caster: a chain bounce spawns from
 	// current_event_position, so it must lift from the previous victim's chest

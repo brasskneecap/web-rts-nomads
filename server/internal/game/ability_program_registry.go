@@ -197,9 +197,13 @@ func FieldVisible(f SchemaField, config map[string]any) bool {
 // (that file's own TODO(phase-3b) notes) — declaring them here would just
 // re-create the exact "advertises a field the action can't use" bug this
 // mechanism exists to fix. Add them back once they're wired.
+//
+// excludeRef IS enforced (applyTargetFiltersLocked drops candidates in the
+// named ctxUnitSet — the chain "already hit" set), so it's declared here now
+// that the editor can author a saved set to point it at (store_targets).
 var targetQueryFieldsFull = []string{
 	"source", "origin", "originRef", "relations", "radius",
-	"ordering", "maxCount", "includeInitialTarget", "excludeSource", "excludeCurrentEvent", "aliveState",
+	"ordering", "maxCount", "includeInitialTarget", "excludeSource", "excludeCurrentEvent", "excludeRef", "aliveState",
 }
 
 // targetQueryFieldsSourceOnly is launch_projectile's and channel_beam's
@@ -494,7 +498,7 @@ func init() {
 		Decode:   func(b json.RawMessage) (ActionConfig, error) { return selectTargetsConfig{}, nil },
 		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue { return nil },
 		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "target", Label: "Target Query", Control: "target_query", Section: "Targeting", TargetQueryFields: targetQueryFieldsFull},
+			{Key: "target", Label: "Target Selection", Control: "target_query", Section: "Targeting", TargetQueryFields: targetQueryFieldsFull},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, _ ActionConfig, targets []int) []int {
 			ctx.trace("targets_selected", ctx.currentActionPath, map[string]any{"count": len(targets)})

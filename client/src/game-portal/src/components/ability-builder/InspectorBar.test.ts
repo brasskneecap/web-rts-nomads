@@ -32,6 +32,25 @@ function makeProgram(): AbilityProgram {
   }
 }
 
+// A producing action (select_targets) whose result can be named via
+// outputs.targets — the F3 "Save result as" surface.
+function makeSelectProgram(outputs?: Record<string, string>): AbilityProgram {
+  return {
+    entry: { type: 'unit', range: 300 },
+    triggers: [
+      {
+        id: 't1',
+        type: 'on_cast_complete',
+        actions: [{ id: 'a1', type: 'select_targets', target: { source: 'all_in_scene' }, ...(outputs ? { outputs } : {}) }],
+      },
+    ],
+  }
+}
+
+function selectSchema(): ActionSchemaBundle {
+  return { actions: [{ type: 'select_targets', runnable: true, fields: [] }], enums: {} }
+}
+
 function makeSchema(): ActionSchemaBundle {
   return {
     actions: [
@@ -127,6 +146,88 @@ describe('InspectorBar', () => {
     await amountInput.trigger('change')
     expect(builder.updateActionConfig).toHaveBeenCalledTimes(1)
     expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, { amount: 42 })
+  })
+
+  it('shows a "Save result as" field for a producing action and commits outputs.targets', async () => {
+    const builder = makeBuilderStub({
+      program: makeSelectProgram(),
+      schema: selectSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).toContain('Save result as')
+    const input = wrapper.find('input[type="text"]')
+    const el = input.element as HTMLInputElement
+    el.value = 'marked'
+    await input.trigger('input')
+    await input.trigger('change')
+    expect(builder.updateAction).toHaveBeenCalledWith(t1ActionA1Path, { outputs: { targets: 'marked' } })
+  })
+
+  it('does not show "Save result as" for a non-producing action', () => {
+    const builder = makeBuilderStub({
+      program: makeProgram(),
+      schema: makeSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+    expect(wrapper.text()).not.toContain('Save result as')
+  })
+
+  it('prefills "Save result as" from outputs.targets and clears the output when emptied', async () => {
+    const builder = makeBuilderStub({
+      program: makeSelectProgram({ targets: 'marked' }),
+      schema: selectSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const input = wrapper.find('input[type="text"]')
+    expect((input.element as HTMLInputElement).value).toBe('marked')
+    const el = input.element as HTMLInputElement
+    el.value = ''
+    await input.trigger('input')
+    await input.trigger('change')
+    expect(builder.updateAction).toHaveBeenCalledWith(t1ActionA1Path, { outputs: undefined })
+  })
+
+  it('warns when a saved name is never read back (dead save)', () => {
+    const builder = makeBuilderStub({
+      program: makeSelectProgram({ targets: 'hit' }), // saved, but nothing reads "hit"
+      schema: selectSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const warn = wrapper.find('[data-test="ib-unread-save"]')
+    expect(warn.exists()).toBe(true)
+    expect(warn.text()).toContain('"hit"')
+    expect(warn.text()).toContain('no effect')
+  })
+
+  it('does not warn when the saved name is read back by a later query', () => {
+    const program: AbilityProgram = {
+      entry: { type: 'unit', range: 300 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [
+            { id: 'a1', type: 'select_targets', target: { source: 'all_in_scene' }, outputs: { targets: 'hit' } },
+            // a sibling reads "hit" back via excludeRef → not dead
+            { id: 'a2', type: 'select_targets', target: { source: 'all_in_scene', excludeRef: { key: 'hit' } } },
+          ],
+        },
+      ],
+    }
+    const builder = makeBuilderStub({
+      program,
+      schema: selectSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+    expect(wrapper.find('[data-test="ib-unread-save"]').exists()).toBe(false)
   })
 
   it('shows a display-only note for a non-runnable action type', () => {

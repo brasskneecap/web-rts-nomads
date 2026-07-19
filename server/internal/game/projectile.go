@@ -39,6 +39,15 @@ type Projectile struct {
 
 	TargetUnitID int
 
+	// OriginUnitID is the unit the client anchors this bolt's SPAWN sprite to
+	// (its chest), when the launch resolved a spawn origin that IS a unit —
+	// e.g. a split bolt spawning FROM the enemy a preceding bolt hit
+	// (spawnOrigin=current_event_position). 0 for a pure-position origin (the
+	// centroid, a cast point) or an ordinary attack, where the client falls
+	// back to OwnerUnitID for the chest lift — byte-identical to old behavior.
+	// Mirrors Beam.CasterUnitID (see originUnitForSpawnLocked).
+	OriginUnitID int
+
 	OriginX, OriginY float64
 	// TargetX/Y is refreshed each tick from the target unit so the client can
 	// render a homing arc that doesn't get outrun by moving targets. For
@@ -521,7 +530,7 @@ func (s *GameState) fireAbilityProjectileLocked(caster, target *Unit, def Abilit
 // moves, never who cast it or who it's flying at.
 //
 // Caller holds s.mu.
-func (s *GameState) fireProjectileWithImpactActionsLocked(caster, target *Unit, originPos protocol.Vec2, projectileID string, scale float64, abilityID string, impactActions []AbilityActionDef, opsBudget *int, damageMultiplier float64) {
+func (s *GameState) fireProjectileWithImpactActionsLocked(caster, target *Unit, originPos protocol.Vec2, originUnitID int, projectileID string, scale float64, abilityID string, impactActions []AbilityActionDef, opsBudget *int, damageMultiplier float64) {
 	speed := defaultProjectileSpeed
 	var followEffect, impactEffect string
 	if pdef, ok := getProjectileDef(projectileID); ok {
@@ -545,6 +554,7 @@ func (s *GameState) fireProjectileWithImpactActionsLocked(caster, target *Unit, 
 		OwnerUnitID:            caster.ID,
 		OwnerPlayerID:          caster.OwnerID,
 		TargetUnitID:           target.ID,
+		OriginUnitID:           originUnitID,
 		OriginX:                originPos.X,
 		OriginY:                originPos.Y,
 		TargetX:                target.X,
@@ -647,7 +657,8 @@ func (s *GameState) directionalAimPointLocked(ctx *RuntimeAbilityContext, target
 //
 // Caller holds s.mu.
 func (s *GameState) launchDirectionalProjectileLocked(caster *Unit, ctx *RuntimeAbilityContext, c launchProjectileConfig, impactActions []AbilityActionDef, opsBudget *int, targets []int) {
-	originPos := s.resolveOriginLocked(ctx, c.SpawnOrigin, nil)
+	originPos := s.resolveOriginLocked(ctx, c.SpawnOrigin, c.SpawnOriginRef)
+	originUnitID := s.originUnitForSpawnLocked(ctx, c.SpawnOrigin, c.SpawnOriginRef)
 	aimX, aimY := s.directionalAimPointLocked(ctx, targets)
 	dx := aimX - originPos.X
 	dy := aimY - originPos.Y
@@ -688,6 +699,7 @@ func (s *GameState) launchDirectionalProjectileLocked(caster *Unit, ctx *Runtime
 		OwnerUnitID:            caster.ID,
 		OwnerPlayerID:          caster.OwnerID,
 		TargetUnitID:           0, // no homing target — see DirectionalImpact
+		OriginUnitID:           originUnitID,
 		OriginX:                originPos.X,
 		OriginY:                originPos.Y,
 		TargetX:                originPos.X + dirX*distance,

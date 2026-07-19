@@ -100,7 +100,7 @@
             :checked="multiselectValue.has(opt)"
             @change="toggleMultiselect(opt, ($event.target as HTMLInputElement).checked)"
           />
-          {{ opt }}
+          {{ optionLabelFor(opt) }}<span v-if="optionNoteFor(opt)" class="sf-opt-note"> ({{ optionNoteFor(opt) }})</span>
         </label>
       </template>
       <p v-else class="sf-note">No known options for this field.</p>
@@ -154,6 +154,7 @@
       :model-value="modelValue as TargetQueryDef | undefined"
       :enums="enums"
       :fields="field.targetQueryFields"
+      :saved-names="savedNames"
       @update:model-value="(v) => emit('update:modelValue', v)"
     />
 
@@ -201,6 +202,7 @@ import type { TargetQueryDef } from '@/game/abilities/program/abilityProgram'
 import EditorField from '@/components/editor/EditorField.vue'
 import FilterableSelect, { type FilterableOption } from '@/components/editor/FilterableSelect.vue'
 import TargetQueryEditor from './TargetQueryEditor.vue'
+import { ALIVE_STATE_OPTIONS, targetQueryOptionHint, targetQueryOptionLabel } from './targetQueryHints'
 import type { AbilityBuilderCatalogs } from './useAbilityBuilder'
 
 const props = defineProps<{
@@ -217,6 +219,9 @@ const props = defineProps<{
    *  literal-or-variable selector. Off (default) keeps every existing field
    *  a plain number input. */
   variableCapable?: boolean
+  /** Named-context keys this ability saves to (outputs + store_targets),
+   *  forwarded to the target_query control's "Saved Value" picker. */
+  savedNames?: string[]
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: unknown] }>()
@@ -321,6 +326,9 @@ function resolveOptionList(
   if (key === 'source') return enums.targetSources ?? null
   if (key === 'origin') return enums.targetOrigins ?? null
   if (key === 'anchor') return enums.zoneAnchors ?? null
+  // aliveState has no ProgramEnums bundle (see ALIVE_STATE_OPTIONS) — supply
+  // its list here so filter_targets gets a real dropdown, not a free-text box.
+  if (key === 'alivestate') return ALIVE_STATE_OPTIONS.map((o) => o.id)
   if (key === 'type' || key === 'school' || key === 'damagetype') {
     return catalogs.damageTypes.length > 0 ? catalogs.damageTypes : null
   }
@@ -333,8 +341,37 @@ function resolveOptionList(
 
 const optionList = computed(() => resolveOptionList(props.field, props.enums, props.catalogs))
 
+// Field keys whose enum values are the shared targeting enums — humanize their
+// options so the same relation/ordering/state/origin reads identically here
+// and in TargetQueryEditor (the target_query control). The map value is the
+// LABEL DOMAIN to look up: usually the same key, but `spawnOrigin`
+// (launch_projectile / beam) borrows the `origin` labels — so "targets_center"
+// reads "Center of Targets", etc. Scoped deliberately so nothing else
+// (apply_force's own `origin`, create_zone's anchor, catalog enums) is touched.
+const TARGETING_ENUM_DOMAINS: Record<string, string> = {
+  relations: 'relations',
+  ordering: 'ordering',
+  aliveState: 'aliveState',
+  spawnOrigin: 'origin',
+}
+
+function optionLabelFor(id: string): string {
+  const domain = TARGETING_ENUM_DOMAINS[props.field.key]
+  if (domain) return targetQueryOptionLabel(domain, id)
+  return id === '' ? '(none)' : id
+}
+
+function optionNoteFor(id: string): string {
+  const domain = TARGETING_ENUM_DOMAINS[props.field.key]
+  return domain ? targetQueryOptionHint(domain, id) : ''
+}
+
 const optionFilterList = computed<FilterableOption[]>(() =>
-  (optionList.value ?? []).map((v) => ({ id: v, label: v === '' ? '(none)' : v })),
+  (optionList.value ?? []).map((v) => {
+    const label = optionLabelFor(v)
+    const note = optionNoteFor(v)
+    return { id: v, label: note ? `${label} — ${note}` : label }
+  }),
 )
 
 const multiselectValue = computed<Set<string>>(
@@ -352,9 +389,22 @@ function toggleMultiselect(opt: string, checked: boolean) {
 // Heuristic: a field literally named "projectile" resolves against the
 // projectile catalog; every other asset field (presentation refs, etc.)
 // resolves against the effect catalog.
+//
+// Projectiles have no display name of their own (ProjectileDef is id-only), so
+// the picker shows the id Title-Cased ("frost_bolt" → "Frost Bolt") — the
+// readable name authors expect — while the STORED value stays the raw id.
+function titleCaseAssetId(id: string): string {
+  return id
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
 const assetOptions = computed<FilterableOption[]>(() => {
-  const list = props.field.key.toLowerCase() === 'projectile' ? props.catalogs.projectiles : props.catalogs.effects
-  return list.map((v) => ({ id: v, label: v }))
+  const isProjectile = props.field.key.toLowerCase() === 'projectile'
+  const list = isProjectile ? props.catalogs.projectiles : props.catalogs.effects
+  return list.map((v) => ({ id: v, label: isProjectile ? titleCaseAssetId(v) : v }))
 })
 
 // ── sentinel_number ─────────────────────────────────────────────────────
@@ -447,5 +497,12 @@ function commitContextRef(e: Event) {
   font-size: 0.72rem;
   font-style: italic;
   color: var(--ed-text-dim);
+}
+
+/* Inline "(unavailable)"-style note after a multiselect option's label,
+   matching TargetQueryEditor's .tqe-opt-note treatment. */
+.sf-opt-note {
+  color: var(--ed-text-dim);
+  opacity: 0.75;
 }
 </style>

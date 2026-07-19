@@ -15,6 +15,10 @@ describe('humanizeActionType', () => {
   it('returns an empty string for an empty type', () => {
     expect(humanizeActionType('')).toBe('')
   })
+
+  it('applies the display override for store_targets', () => {
+    expect(humanizeActionType('store_targets')).toBe('Save Targets')
+  })
 })
 
 describe('summarizeAction', () => {
@@ -50,6 +54,13 @@ describe('summarizeAction', () => {
   it('summarizes apply_status with config.status', () => {
     const a = action({ id: 'a1', type: 'apply_status', config: { status: 'slow' } })
     expect(summarizeAction(a, null)).toBe('Apply Status — slow')
+  })
+
+  it('summarizes store_targets ("Save Targets") with its saved name, noting merge', () => {
+    const a = action({ id: 'a1', type: 'store_targets', config: { as: 'chainHits' } })
+    expect(summarizeAction(a, null)).toBe('Save Targets — chainHits')
+    const merged = action({ id: 'a2', type: 'store_targets', config: { as: 'chainHits', merge: true } })
+    expect(summarizeAction(merged, null)).toBe('Save Targets — chainHits (merge)')
   })
 
   it('falls back to just the label for an unknown type', () => {

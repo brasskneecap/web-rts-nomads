@@ -1608,6 +1608,11 @@ type ProjectileSnapshot struct {
 	OwnerUnitID  int     `json:"ownerUnitId"`
 	OwnerID      string  `json:"ownerId"`
 	TargetUnitID int     `json:"targetUnitId,omitempty"`
+	// OriginUnitID is the unit the client anchors the SPAWN sprite to (its
+	// chest) — the hit enemy for a split bolt spawned at
+	// spawnOrigin=current_event_position, etc. 0 (omitted) for an ordinary shot
+	// or a pure-position origin, where the client falls back to OwnerUnitID.
+	OriginUnitID int     `json:"originUnitId,omitempty"`
 	OriginX      float64 `json:"originX"`
 	OriginY      float64 `json:"originY"`
 	TargetX      float64 `json:"targetX"`

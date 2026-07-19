@@ -7,11 +7,22 @@
 import type { AbilityActionDef } from '@/game/abilities/program/abilityProgram'
 import type { ActionSchemaBundle } from '@/game/abilities/program/programSchema'
 
+// Display-name overrides for action types whose plain title-cased id doesn't
+// read the way we want in the UI. The wire type is UNCHANGED (store_targets
+// stays store_targets); only the label differs. "Save Targets" pairs with the
+// "Saved Value" picker that reads the saved set back.
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  store_targets: 'Save Targets',
+}
+
 // humanizeActionType turns a snake_case action type id into a Title Case
-// label, e.g. "deal_damage" -> "Deal Damage". Unknown/empty types fall back
-// to the raw string so the card never renders blank.
+// label, e.g. "deal_damage" -> "Deal Damage" (with a few overrides above).
+// Unknown/empty types fall back to the raw string so the card never renders
+// blank. Also reused for trigger types — none of which collide with an
+// override key, so the override table is action-only in practice.
 export function humanizeActionType(type: string): string {
   if (!type) return ''
+  if (ACTION_TYPE_LABELS[type]) return ACTION_TYPE_LABELS[type]
   return type
     .split('_')
     .filter(Boolean)
@@ -49,6 +60,12 @@ function detailFor(action: AbilityActionDef): string {
       const relPart = Array.isArray(relations) && relations.length ? relations.join('/') : undefined
       const radiusPart = typeof radius === 'number' ? `within ${radius}` : undefined
       return [relPart, radiusPart].filter(Boolean).join(' ')
+    }
+    case 'store_targets': {
+      // The saved-selection name (+ a "merge" note when it accumulates).
+      const as = asString(config.as)
+      if (as == null) return ''
+      return config.merge === true ? `${as} (merge)` : as
     }
     case 'create_zone': {
       const name = asString(config.name)

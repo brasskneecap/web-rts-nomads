@@ -8,8 +8,9 @@ function mountEditor(
   modelValue: TargetQueryDef | undefined,
   enums: Record<string, string[]> = {},
   fields?: string[],
+  savedNames?: string[],
 ) {
-  return mount(TargetQueryEditor, { props: { modelValue, enums, fields } })
+  return mount(TargetQueryEditor, { props: { modelValue, enums, fields, savedNames } })
 }
 
 // InfoTip's bubble is Teleported to <body>; the tests below use this instead
@@ -32,18 +33,39 @@ describe('TargetQueryEditor', () => {
 
   it('renders relation checkboxes from the enums bundle and toggling one emits a merged query', async () => {
     const wrapper = mountEditor({ source: 'all_in_scene', relations: ['ally'] }, { relations: ['self', 'ally', 'enemy'] })
-    const checkboxes = wrapper.findAll('.tqe-checkgroup input[type="checkbox"]')
-    expect(checkboxes).toHaveLength(3)
-    // ally is pre-checked.
-    expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true)
+    // One "Any relationship" reset + one per enum relation.
+    expect(wrapper.findAll('.tqe-checkgroup input[type="checkbox"]')).toHaveLength(4)
+    // ally is pre-checked (targeted by data-test, not position).
+    expect((wrapper.find('[data-test="tqe-rel-ally"]').element as HTMLInputElement).checked).toBe(true)
 
-    await checkboxes[2].setValue(true) // check "enemy"
+    await wrapper.find('[data-test="tqe-rel-enemy"]').setValue(true)
 
     const emitted = wrapper.emitted('update:modelValue')
     expect(emitted).toBeTruthy()
     const merged = emitted![0][0] as TargetQueryDef
     expect(merged.source).toBe('all_in_scene')
     expect(merged.relations).toEqual(['ally', 'enemy'])
+  })
+
+  it('"Any relationship" is active only when no specific relation is checked', () => {
+    const none = mountEditor({ source: 'all_in_scene' }, { relations: ['self', 'ally', 'enemy'] })
+    expect((none.find('[data-test="tqe-any-relation"]').element as HTMLInputElement).checked).toBe(true)
+
+    const some = mountEditor({ source: 'all_in_scene', relations: ['enemy'] }, { relations: ['self', 'ally', 'enemy'] })
+    expect((some.find('[data-test="tqe-any-relation"]').element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('clicking "Any relationship" clears the specific relation filter', async () => {
+    const wrapper = mountEditor({ source: 'all_in_scene', relations: ['enemy', 'ally'] }, { relations: ['self', 'ally', 'enemy'] })
+    await wrapper.find('[data-test="tqe-any-relation"]').setValue(true)
+    const merged = wrapper.emitted('update:modelValue')!.at(-1)![0] as TargetQueryDef
+    expect(merged.relations).toEqual([])
+  })
+
+  it('clicking "Any relationship" while already active is a no-op (no commit)', async () => {
+    const wrapper = mountEditor({ source: 'all_in_scene' }, { relations: ['self', 'ally', 'enemy'] })
+    await wrapper.find('[data-test="tqe-any-relation"]').setValue(false)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })
 
   it('changing the source select commits a merged query preserving other fields', async () => {
@@ -107,48 +129,120 @@ describe('TargetQueryEditor', () => {
     expect(wrapper.findAll('label.ed-check').length).toBe(0) // includeInitialTarget/excludeSource
   })
 
-  it('renders declared fields in the DECLARED order, not the fixed internal order', () => {
-    // maxCount declared before source — order must follow the prop, so the
-    // Max Count input's DOM position precedes the Source select's.
+  it('groups declared fields into fixed sections, regardless of the declared order', () => {
+    // maxCount declared before source, but sections impose the display order:
+    // source (Start With) always precedes maxCount (Choose Results).
     const wrapper = mountEditor({ source: 'all_in_scene' }, {}, ['maxCount', 'source'])
     const html = wrapper.html()
-    expect(html.indexOf('tqe-max-count')).toBeLessThan(html.indexOf('Target source'))
+    expect(html.indexOf('Start With')).toBeLessThan(html.indexOf('Choose Results'))
+    expect(html.indexOf('Target source')).toBeLessThan(html.indexOf('tqe-max-count'))
   })
 
-  it('falls back to rendering all 10 fields when `fields` is not supplied (forward-compat)', () => {
+  it('falls back to the full sectioned layout when `fields` is not supplied (forward-compat)', () => {
     const wrapper = mountEditor({ source: 'all_in_scene' })
-    expect(wrapper.find('#tqe-origin-ref').exists()).toBe(true)
+    const text = wrapper.text()
+    for (const title of ['Start With', 'Search Area', 'Filter Units', 'Choose Results']) {
+      expect(text).toContain(title)
+    }
+    // Always-visible fields render; progressively-disclosed ones (origin at
+    // radius 0, Saved Value without a named source) do not.
+    expect(wrapper.find('#tqe-max-count').exists()).toBe(true)
     expect(wrapper.findAll('[aria-label="Alive state"]').length).toBeGreaterThan(0)
+    expect(wrapper.find('#tqe-origin-ref').exists()).toBe(false)
   })
 
-  // ── newly-exposed fields: originRef, aliveState ─────────────────────────
-  it('originRef renders as a select over curated context keys and commits a ContextRef', async () => {
-    const wrapper = mountEditor({ source: 'all_in_scene' }, {}, ['originRef'])
-    const select = wrapper.find('#tqe-origin-ref')
-    expect(select.exists()).toBe(true)
+  // ── progressive disclosure ──────────────────────────────────────────────
+  it('hides Search Around until a radius is set, with a nudge in its place', async () => {
+    const wrapper = mountEditor({ source: 'all_in_scene', radius: 0 })
+    // origin picker absent, nudge present.
+    expect(wrapper.find('[aria-label="Target origin"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Set a Search Radius')
 
-    await select.setValue('impactPosition')
+    await wrapper.setProps({ modelValue: { source: 'all_in_scene', radius: 200 } })
+    // radius > 0 reveals the origin picker and drops the nudge.
+    expect(wrapper.find('[aria-label="Target origin"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Set a Search Radius')
+  })
+
+  it('hides Saved Value unless a named source/origin needs it', async () => {
+    const wrapper = mountEditor({ source: 'all_in_scene' })
+    expect(wrapper.find('#tqe-origin-ref').exists()).toBe(false)
+
+    await wrapper.setProps({ modelValue: { source: 'named_context' } })
+    expect(wrapper.find('#tqe-origin-ref').exists()).toBe(true)
+  })
+
+  // ── Saved Value (originRef) picker ──────────────────────────────────────
+  it('Saved Value suggests the ability\'s saved names and commits a typed ContextRef', async () => {
+    // source 'named_context' reveals Saved Value (progressive disclosure).
+    const wrapper = mountEditor({ source: 'named_context' }, {}, ['source', 'originRef'], ['chainHits', 'splashTargets'])
+    const input = wrapper.find('#tqe-origin-ref')
+    expect(input.exists()).toBe(true)
+    // The datalist offers the scanned saved names.
+    const suggestions = wrapper.findAll('datalist option').map((o) => o.attributes('value'))
+    expect(suggestions).toEqual(['chainHits', 'splashTargets'])
+
+    await input.setValue('chainHits')
     const merged = wrapper.emitted('update:modelValue')!.at(-1)![0] as TargetQueryDef
-    expect(merged.originRef).toEqual({ key: 'impactPosition' })
+    expect(merged.originRef).toEqual({ key: 'chainHits' })
   })
 
-  it('originRef commits undefined when reset to "(none)"', async () => {
-    const wrapper = mountEditor({ source: 'all_in_scene', originRef: { key: 'caster' } }, {}, ['originRef'])
-    const select = wrapper.find('#tqe-origin-ref')
+  it('Saved Value accepts a free-typed name and trims it', async () => {
+    const wrapper = mountEditor({ source: 'named_context' }, {}, ['source', 'originRef'], [])
+    await wrapper.find('#tqe-origin-ref').setValue('  customName  ')
+    const merged = wrapper.emitted('update:modelValue')!.at(-1)![0] as TargetQueryDef
+    expect(merged.originRef).toEqual({ key: 'customName' })
+  })
 
-    await select.setValue('')
+  it('Saved Value commits undefined when cleared', async () => {
+    const wrapper = mountEditor(
+      { source: 'named_context', originRef: { key: 'chainHits' } },
+      {},
+      ['source', 'originRef'],
+      ['chainHits'],
+    )
+    await wrapper.find('#tqe-origin-ref').setValue('')
     const merged = wrapper.emitted('update:modelValue')!.at(-1)![0] as TargetQueryDef
     expect(merged.originRef).toBeUndefined()
+  })
+
+  it('Saved Value shows an empty-state hint when the ability saves no names', () => {
+    const wrapper = mountEditor({ source: 'named_context' }, {}, ['source', 'originRef'], [])
+    expect(wrapper.text()).toContain('No saved selections yet')
+  })
+
+  // ── Exclude Saved Set (excludeRef — chains) ─────────────────────────────
+  it('shows Exclude Saved Set only once the ability saves a set', () => {
+    const none = mountEditor({ source: 'all_in_scene' }, {}, undefined, [])
+    expect(none.find('#tqe-exclude-ref').exists()).toBe(false)
+
+    const some = mountEditor({ source: 'all_in_scene' }, {}, undefined, ['chainHits'])
+    expect(some.find('#tqe-exclude-ref').exists()).toBe(true)
+    // source is all_in_scene so Saved Value is hidden — the only datalist is
+    // excludeRef's, suggesting the saved set.
+    expect(some.findAll('datalist option').map((o) => o.attributes('value'))).toEqual(['chainHits'])
+  })
+
+  it('keeps Exclude Saved Set visible when already configured, even with no saved names', () => {
+    const wrapper = mountEditor({ source: 'all_in_scene', excludeRef: { key: 'chainHits' } }, {}, undefined, [])
+    expect(wrapper.find('#tqe-exclude-ref').exists()).toBe(true)
+  })
+
+  it('Exclude Saved Set commits an excludeRef ContextRef', async () => {
+    const wrapper = mountEditor({ source: 'all_in_scene' }, {}, undefined, ['chainHits'])
+    await wrapper.find('#tqe-exclude-ref').setValue('chainHits')
+    const merged = wrapper.emitted('update:modelValue')!.at(-1)![0] as TargetQueryDef
+    expect(merged.excludeRef).toEqual({ key: 'chainHits' })
   })
 
   it('aliveState renders as a FilterableSelect over alive/dead/any and commits the choice', async () => {
     const wrapper = mountEditor({ source: 'all_in_scene' }, {}, ['aliveState'])
     const select = wrapper.findComponent(FilterableSelect)
     expect(select.props('options')).toEqual([
-      { id: '', label: '(default: alive)' },
-      { id: 'alive', label: 'alive' },
-      { id: 'dead', label: 'dead' },
-      { id: 'any', label: 'any' },
+      { id: '', label: 'Living (default)' },
+      { id: 'alive', label: 'Living' },
+      { id: 'dead', label: 'Dead' },
+      { id: 'any', label: 'Living or Dead' },
     ])
 
     await select.vm.$emit('update:modelValue', 'dead')
@@ -158,7 +252,10 @@ describe('TargetQueryEditor', () => {
 
   // ── InfoTip wiring (explaining Source/Origin/Origin Ref etc.) ───────────
   it('renders an InfoTip beside Source whose tooltip explains the field on click', async () => {
-    const wrapper = mountEditor({ source: 'all_in_scene' }, {}, ['source'])
+    // ['source', 'radius'] — a multi-field query renders the labeled "Start
+    // With" field (a lone-source query is the source-only delivery shape,
+    // covered separately below).
+    const wrapper = mountEditor({ source: 'all_in_scene' }, {}, ['source', 'radius'])
     const infoBtn = wrapper.find('button.info-tip__btn')
     expect(infoBtn.exists()).toBe(true)
     expect(infoBtn.attributes('aria-expanded')).toBe('false')
@@ -183,12 +280,57 @@ describe('TargetQueryEditor', () => {
     const options = wrapper.findComponent(FilterableSelect).props('options') as { id: string; label: string }[]
     const byId = Object.fromEntries(options.map((o) => [o.id, o.label]))
 
-    expect(byId.caster).toBe('caster')
-    expect(byId.source_object).toBe('source_object — not implemented')
-    expect(byId.named_context).toBe('named_context — pick which in Origin Ref')
-    // A brand-new enum value the client has no copy for yet must render
-    // plain and unsuffixed, not throw, and not inherit another option's note.
+    expect(byId.caster).toBe('Caster')
+    expect(byId.source_object).toBe('Source Object — unavailable')
+    expect(byId.named_context).toBe('Saved Selection — pick which in Saved Value')
+    // A brand-new enum value the client has no copy for yet must render with
+    // its raw wire value and unsuffixed, not throw, and not inherit another
+    // option's label or note.
     expect(byId.some_brand_new_source).toBe('some_brand_new_source')
+  })
+
+  // ── generated summary sentence ──────────────────────────────────────────
+  it('renders a plain-English summary of the query in the sectioned shape', () => {
+    const wrapper = mountEditor({
+      source: 'all_in_scene',
+      relations: ['enemy'],
+      radius: 200,
+      origin: 'current_event_position',
+      maxCount: 2,
+      ordering: 'closest',
+      excludeCurrentEvent: true,
+    })
+    expect(wrapper.find('.tqe-summary').text()).toBe(
+      'Select the 2 closest living enemy units within 200 units of the triggering unit, excluding the triggering unit.',
+    )
+  })
+
+  it('does not render the summary in the source-only delivery shape', () => {
+    const wrapper = mountEditor({ source: 'previous_action_targets' }, {}, ['source'])
+    expect(wrapper.find('.tqe-summary').exists()).toBe(false)
+  })
+
+  // ── source-only shape (launch_projectile / channel_beam) ────────────────
+  it('renders a bare picker with a delivery hint (no "Start With") for a source-only query', async () => {
+    const wrapper = mountEditor({ source: 'previous_action_targets' }, {}, ['source'])
+
+    // The action's own field label names it; there is no inner "Start With".
+    expect(wrapper.find('.tqe-source-row').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Start With')
+
+    // The picker still renders and still reflects/commits the source.
+    const select = wrapper.findComponent(FilterableSelect)
+    expect(select.props('modelValue')).toBe('previous_action_targets')
+    await select.vm.$emit('update:modelValue', 'initial_target')
+    const merged = wrapper.emitted('update:modelValue')!.at(-1)![0] as TargetQueryDef
+    expect(merged.source).toBe('initial_target')
+
+    // Its InfoTip explains the direct-delivery behavior, not the pool-narrowing
+    // "Start With" copy.
+    const infoBtn = wrapper.find('button.info-tip__btn')
+    await infoBtn.trigger('click')
+    expect(bubble()?.textContent).toMatch(/targeted directly/)
+    await infoBtn.trigger('click')
   })
 
   it('relations checkboxes show an inline note only for the flagged relation (neutral)', () => {
@@ -199,9 +341,11 @@ describe('TargetQueryEditor', () => {
     )
     const labels = wrapper.findAll('.tqe-checkgroup label.ed-check')
     const text = labels.map((l) => l.text())
-    expect(text.find((t) => t.startsWith('self'))).toBe('self')
-    expect(text.find((t) => t.startsWith('ally'))).toBe('ally')
-    expect(text.find((t) => t.startsWith('neutral'))).toBe('neutral (not implemented, never matches)')
+    // Wire values self/ally/neutral render as their human labels; only the
+    // inert relation (neutral) carries an inline note.
+    expect(text.find((t) => t.startsWith('Caster'))).toBe('Caster')
+    expect(text.find((t) => t.startsWith('Allied'))).toBe('Allied')
+    expect(text.find((t) => t.startsWith('Neutral'))).toBe('Neutral (unavailable)')
   })
 
   it('a field with no InfoTip copy renders no icon (graceful fallback)', () => {

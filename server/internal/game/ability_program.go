@@ -169,6 +169,14 @@ const (
 	OriginStatusOwner       TargetOrigin = "status_owner"
 	OriginSummonedUnit      TargetOrigin = "summoned_unit"
 	OriginNamedContextValue TargetOrigin = "named_context_value"
+	// OriginTargetsCenter is the CENTROID of the units an action is aimed at
+	// (its resolved target set), not any single unit's point. It needs that
+	// target list, so it's resolved in the launch_projectile / beam Execute
+	// (see targetsCenterLocked), NOT in resolveOriginLocked — a query radius
+	// origin has no meaningful "targets" to average, so it's offered only as a
+	// spawn origin. Used for a bolt/beam that emanates from the middle of the
+	// group it hits (e.g. Frost Bolt's secondary bolts).
+	OriginTargetsCenter TargetOrigin = "targets_center"
 )
 
 // TargetOrdering determines the sort applied to candidates before a

@@ -3226,21 +3226,33 @@ export class CanvasRenderer {
     for (const proj of projectiles) {
       let originLift = this.projectileOriginLiftById.get(proj.id)
       if (!originLift) {
-        const owner = unitsById.get(proj.ownerUnitId)
-        const facing = owner ? this.unitAnim.currentDirection(owner.id) : undefined
-        // Path-first: a promoted owner's path attackOrigin wins over the base
-        // unit def's (mirrors getUnitBoundsFor's path-then-type precedence).
-        // Snapshotted into projectileOriginLiftById below like every other
-        // origin resolution here — a mid-flight owner re-path/rank change (or
-        // the owner dying) must not retroactively move an in-flight shot.
-        const authored = getResolvedAttackOriginFor(
-          { path: owner?.path, unitType: owner?.unitType },
-          facing,
-        )
-        originLift = resolveProjectileOriginLift(
-          authored,
-          this.getProjectileOriginLift(owner, originLiftCache),
-        )
+        // A launch may anchor its spawn to a unit OTHER than the owner — e.g. a
+        // frost-bolt split spawning FROM the enemy it just hit
+        // (spawnOrigin=current_event_position, server sets originUnitId). That
+        // unit isn't FIRING, so its authored attack-origin (a firing-pose
+        // offset) doesn't apply — use its plain geometric chest lift, the same
+        // anchor a chain-bounce beam uses. When the anchor IS the owner (every
+        // ordinary shot), keep the authored-over-geometric path unchanged.
+        const anchorsToOther = !!proj.originUnitId && proj.originUnitId !== proj.ownerUnitId
+        if (anchorsToOther) {
+          originLift = this.getProjectileOriginLift(unitsById.get(proj.originUnitId!), originLiftCache)
+        } else {
+          const owner = unitsById.get(proj.ownerUnitId)
+          const facing = owner ? this.unitAnim.currentDirection(owner.id) : undefined
+          // Path-first: a promoted owner's path attackOrigin wins over the base
+          // unit def's (mirrors getUnitBoundsFor's path-then-type precedence).
+          // Snapshotted into projectileOriginLiftById below like every other
+          // origin resolution here — a mid-flight owner re-path/rank change (or
+          // the owner dying) must not retroactively move an in-flight shot.
+          const authored = getResolvedAttackOriginFor(
+            { path: owner?.path, unitType: owner?.unitType },
+            facing,
+          )
+          originLift = resolveProjectileOriginLift(
+            authored,
+            this.getProjectileOriginLift(owner, originLiftCache),
+          )
+        }
         this.projectileOriginLiftById.set(proj.id, originLift)
       }
       const targetLift = this.getProjectileTargetLift(

@@ -49,6 +49,35 @@ func TestResolveTargetQueryRadiusRelationsOrdering(t *testing.T) {
 	}
 }
 
+func TestTargetsCenterLocked_CentroidSkipsDeadWithCasterFallback(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", -10, -10)
+	caster.HP, caster.MaxHP = 100, 100
+	e1 := teamCombatUnit(t, s, "p2", 0, 0)
+	e1.HP, e1.MaxHP = 50, 100
+	e2 := teamCombatUnit(t, s, "p2", 100, 40)
+	e2.HP, e2.MaxHP = 50, 100
+	dead := teamCombatUnit(t, s, "p2", 999, 999)
+	dead.HP = 0
+
+	ctx := &RuntimeAbilityContext{CasterID: caster.ID}
+
+	// Centroid of the two LIVE targets — the dead unit is skipped so it can't
+	// drag the mean toward (999,999).
+	got := s.targetsCenterLocked(ctx, []int{e1.ID, e2.ID, dead.ID})
+	if got.X != 50 || got.Y != 20 {
+		t.Fatalf("centroid = %+v, want {50 20}", got)
+	}
+
+	// No live targets ⇒ caster-position fallback (matches every other origin).
+	got = s.targetsCenterLocked(ctx, []int{dead.ID})
+	if got.X != -10 || got.Y != -10 {
+		t.Fatalf("empty centroid = %+v, want caster {-10 -10}", got)
+	}
+}
+
 func TestResolveTargetQuery_AllySelfRelations_ExcludesEnemies(t *testing.T) {
 	s := setupHostileTargetingPair(t)
 	defer s.mu.Unlock()

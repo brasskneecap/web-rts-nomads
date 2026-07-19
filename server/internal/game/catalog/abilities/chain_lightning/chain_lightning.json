@@ -79,7 +79,7 @@
             "id": "bounces",
             "type": "loop",
             "config": {
-              "iterations": 4,
+              "iterations": 2,
               "vars": [
                 {
                   "name": "a",
