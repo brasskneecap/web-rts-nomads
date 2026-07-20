@@ -1,0 +1,13 @@
+{
+  "id": "bolstering_prayer",
+  "displayName": "Bolstering Prayer",
+  "description": "Heal also grants temporary armor to every target.",
+  "tooltipTemplate": "Healed allies gain +{armorBonus:0} armor for {buffDurationSeconds:1}s. Recasts on the focus target when the buff is below {recastThresholdPercent%} of full duration.",
+  "icon": "perk-bolstering-prayer",
+  "config": {
+    "armorBonus": 50,
+    "buffDurationSeconds": 5,
+    "recastThresholdPercent": 0.3
+  },
+  "wired": false
+}

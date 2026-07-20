@@ -1,0 +1,27 @@
+{
+  "id": "ascendant_infusion",
+  "displayName": "Ascendant Infusion",
+  "description": "Your trap gains a secondary enhanced effect based on its type (Electrified Caltrops, Reactive Flames, Scatter Bomb, or Shared Pain).",
+  "tooltipTemplate": "Gains a trap-specific enhanced effect. Own a Bronze trap perk to see the specific bonus.",
+  "tooltipTemplateByTrap": {
+    "caltrops": "Electrified Caltrops: each tick deals +{electrifiedBonusDamagePerTick} bonus damage with a {electrifiedStunChance%} chance to stun for {electrifiedStunDuration:2}s and deal {electrifiedStunDamage} electric damage on stun (cooldown {electrifiedStunCooldownSeconds:1}s).",
+    "explosive_trap": "Scatter Bomb: spawns {scatterBombCount} child bombs within {scatterBombSpawnRadius} radius lasting {scatterBombChildDurationSeconds:1}s.",
+    "fire_pit": "Reactive Flames: expels a reactive burst ({reactiveFlamesRadius} radius, {reactiveFlamesDamage} damage) when triggered.",
+    "marker_trap": "Shared Pain: {sharedPainFraction%} of damage dealt to the marked enemy is also dealt to other marked enemies."
+  },
+  "icon": "perk-ascendant-infusion",
+  "config": {
+    "electrifiedBonusDamagePerTick": 9,
+    "electrifiedStunChance": 0.5,
+    "electrifiedStunCooldownSeconds": 0.6,
+    "electrifiedStunDamage": 15,
+    "electrifiedStunDuration": 0.3,
+    "reactiveFlamesDamage": 10,
+    "reactiveFlamesRadius": 85,
+    "scatterBombChildDurationSeconds": 6,
+    "scatterBombCount": 5,
+    "scatterBombSpawnRadius": 55,
+    "sharedPainFraction": 0.25
+  },
+  "wired": false
+}

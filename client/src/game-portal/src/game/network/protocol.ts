@@ -1026,10 +1026,10 @@ export type AbilitySnapshot = {
   /** Passive ability (arcane_missiles): never manually/auto cast. Hidden from
    *  the castable action row; may surface as a passive/charge indicator. */
   passive?: boolean
-  /** When set (bronze/silver/gold), this ability is a learnable spell-slot
-   *  spell gained at that rank — rendered in the matching perk cell as a
+  /** When set (bronze/silver/gold), this ability is a learnable ability-slot
+   *  ability gained at that rank — rendered in the matching perk cell as a
    *  CASTABLE slot rather than in the normal ability row. */
-  spellSlotRank?: 'bronze' | 'silver' | 'gold'
+  abilitySlotRank?: 'bronze' | 'silver' | 'gold'
   /** Charge-fire passive progress (arcane_missiles): current / required. */
   chargeCurrent?: number
   chargeRequired?: number

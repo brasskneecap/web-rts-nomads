@@ -1521,9 +1521,13 @@ func TestPerkPool_SilverFullyGatedCascadesToBronze(t *testing.T) {
 	if len(pool) == 0 {
 		t.Fatal("expected cascade to Bronze when Silver is fully gated, got empty pool")
 	}
+	bronzePool := make(map[string]bool, len(wantPathPools["trapper"][unitRankBronze]))
+	for _, id := range wantPathPools["trapper"][unitRankBronze] {
+		bronzePool[id] = true
+	}
 	for _, def := range pool {
-		if def.Rank != unitRankBronze {
-			t.Errorf("cascade returned non-Bronze perk %q at rank %q", def.ID, def.Rank)
+		if !bronzePool[def.ID] {
+			t.Errorf("cascade returned perk %q which is not in the trapper Bronze pool", def.ID)
 		}
 		if def.ID == "caltrops" {
 			t.Error("cascade returned already-owned perk caltrops")
@@ -1706,9 +1710,13 @@ func TestPerkPool_GoldReturnsGoldPerks(t *testing.T) {
 	if len(pool) == 0 {
 		t.Fatal("expected non-empty Gold pool for Trapper")
 	}
+	goldPool := make(map[string]bool, len(wantPathPools["trapper"][unitRankGold]))
+	for _, id := range wantPathPools["trapper"][unitRankGold] {
+		goldPool[id] = true
+	}
 	for _, def := range pool {
-		if def.Rank != unitRankGold {
-			t.Errorf("Gold pool returned non-Gold perk %q at rank %q", def.ID, def.Rank)
+		if !goldPool[def.ID] {
+			t.Errorf("Gold pool returned perk %q which is not in the trapper Gold pool", def.ID)
 		}
 	}
 }

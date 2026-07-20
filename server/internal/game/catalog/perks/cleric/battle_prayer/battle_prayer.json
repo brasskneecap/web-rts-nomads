@@ -1,0 +1,13 @@
+{
+  "id": "battle_prayer",
+  "displayName": "Battle Prayer",
+  "description": "Heal also grants temporary attack speed to every target.",
+  "tooltipTemplate": "Healed allies gain +{attackSpeedMultiplier%} attack speed for {buffDurationSeconds:1}s. Recasts on the focus target when the buff is below {recastThresholdPercent%} of full duration.",
+  "icon": "perk-battle-prayer",
+  "config": {
+    "attackSpeedMultiplier": 0.25,
+    "buffDurationSeconds": 5,
+    "recastThresholdPercent": 0.3
+  },
+  "wired": false
+}

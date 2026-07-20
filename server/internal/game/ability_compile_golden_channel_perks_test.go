@@ -194,10 +194,33 @@ type siphonerPerkGoldenCase struct {
 
 	// legacyUsesRealID routes the legacy leg through swapRuntimeAbilityForTest
 	// instead of the usual scratch id (see runSiphonerPerkGoldenCase). Needed
-	// ONLY for perk hooks that gate on the literal ability-id string
-	// "siphon_life" rather than on perk ownership + channel shape — today
-	// that is exactly repurposed_life's clearChannelStateLocked hook. Every
-	// other case leaves this false and uses the standard scratch-id
+	// for any perk hook that gates on the literal ability-id string
+	// "siphon_life" rather than on perk ownership + channel shape. That
+	// includes repurposed_life's clearChannelStateLocked hook AND — since the
+	// Task 2 data-driven abilityModifiers migration — every scalar-fold case
+	// (soul_leech, beam_mastery, and their combination), because
+	// abilityScalarModifiersForCasterLocked composes a perk's
+	// AbilityModifiers entries by matching entry.Target against the CHANNEL'S
+	// OWN ability id: the bespoke aggregator it replaced applied soul_leech /
+	// beam_mastery's scalars unconditionally (switch on perkID, no ability-id
+	// check), so running the legacy leg under a scratch id used to be
+	// harmless; now it would silently produce identity mods on the legacy leg
+	// while the executor leg (always built against the real "siphon_life"
+	// catalog id) correctly folds them — a harness artifact, not a migration
+	// regression.
+	//
+	// shared_suffering ALSO now needs this (Task 4, the ability-riders
+	// migration): its echo used to be a bespoke Go call
+	// (applySharedSufferingLocked) gated only on perk ownership, so which
+	// ability id the channel ran under never mattered. Post-migration it's a
+	// PerkDef.AbilityRiders entry gated on `target == abilityID` inside
+	// gatherOwnedRiderFragmentsLocked — so the legacy leg must also run under
+	// the real "siphon_life" id or the rider silently never fires on that
+	// leg, producing a spurious tick-by-tick mismatch that looks like a
+	// migration regression but is actually a harness artifact, exactly like
+	// the soul_leech/beam_mastery case above.
+	//
+	// Every other case leaves this false and uses the standard scratch-id
 	// technique (registerRuntimeTestAbility, shared with the parent golden
 	// test), which is safe because none of those perks' hooks read the
 	// ability id.
@@ -220,7 +243,7 @@ type siphonerPerkGoldenCase struct {
 
 	// checkFold additionally asserts the FIRST tick's total scene damage
 	// equals round(DamagePerTick * mods.DamageMult), where mods is computed
-	// from the LEGACY leg's own siphonLifeChannelModifiersForCasterLocked
+	// from the LEGACY leg's own abilityScalarModifiersForCasterLocked
 	// BEFORE any tick runs — i.e. derived from the same leg being asserted
 	// against, never a hardcoded literal. Both legs must land on that exact
 	// number. Skipped for chain_siphon/shared_suffering, whose setup adds
@@ -254,12 +277,13 @@ func TestAbilityCompileGolden_SiphonLife_Perks(t *testing.T) {
 	cases := []siphonerPerkGoldenCase{
 		// ── soul_leech (Bronze) — THE key fold test: scales DamageMult/HealMult. ──
 		{
-			name:      "soul_leech",
-			perkIDs:   []string{"soul_leech"},
-			rank:      unitRankBronze,
-			startMana: startMana,
-			ticks:     ticks,
-			checkFold: true,
+			name:             "soul_leech",
+			perkIDs:          []string{"soul_leech"},
+			rank:             unitRankBronze,
+			startMana:        startMana,
+			ticks:            ticks,
+			legacyUsesRealID: true, // abilityModifiers folds by ability id — see the field doc comment
+			checkFold:        true,
 			verify: func(t *testing.T, caster, target, tracked *Unit, trackedStartHP, trackedStartMana int) {
 				def := perkDefByID("soul_leech")
 				if def == nil {
@@ -272,12 +296,13 @@ func TestAbilityCompileGolden_SiphonLife_Perks(t *testing.T) {
 		},
 		// ── beam_mastery (Gold) — scales DamageMult/HealMult/ManaCostMult/RangeMult. ──
 		{
-			name:      "beam_mastery",
-			perkIDs:   []string{"beam_mastery"},
-			rank:      unitRankGold,
-			startMana: startMana,
-			ticks:     ticks,
-			checkFold: true,
+			name:             "beam_mastery",
+			perkIDs:          []string{"beam_mastery"},
+			rank:             unitRankGold,
+			startMana:        startMana,
+			ticks:            ticks,
+			legacyUsesRealID: true, // abilityModifiers folds by ability id — see the field doc comment
+			checkFold:        true,
 			verify: func(t *testing.T, caster, target, tracked *Unit, trackedStartHP, trackedStartMana int) {
 				def := perkDefByID("beam_mastery")
 				if def == nil {
@@ -292,12 +317,13 @@ func TestAbilityCompileGolden_SiphonLife_Perks(t *testing.T) {
 		// the two compose (multiplicatively) through the fold exactly once,
 		// not per-perk. ──
 		{
-			name:      "soul_leech+beam_mastery",
-			perkIDs:   []string{"soul_leech", "beam_mastery"},
-			rank:      unitRankGold,
-			startMana: startMana,
-			ticks:     ticks,
-			checkFold: true,
+			name:             "soul_leech+beam_mastery",
+			perkIDs:          []string{"soul_leech", "beam_mastery"},
+			rank:             unitRankGold,
+			startMana:        startMana,
+			ticks:            ticks,
+			legacyUsesRealID: true, // abilityModifiers folds by ability id — see the field doc comment
+			checkFold:        true,
 			verify: func(t *testing.T, caster, target, tracked *Unit, trackedStartHP, trackedStartMana int) {
 				// Nothing extra beyond the fold check itself — covered by checkFold.
 			},
@@ -323,13 +349,17 @@ func TestAbilityCompileGolden_SiphonLife_Perks(t *testing.T) {
 			},
 		},
 		// ── shared_suffering (Silver) — echoes a fraction of tickDamage to
-		// nearby enemies. ──
+		// nearby enemies. Now a PerkDef.AbilityRiders entry gated on
+		// abilityID=="siphon_life" (Task 4) — legacyUsesRealID:true so the
+		// legacy leg's rider gathering sees the real id too; see that
+		// field's doc comment. ──
 		{
-			name:      "shared_suffering",
-			perkIDs:   []string{"shared_suffering"},
-			rank:      unitRankSilver,
-			startMana: startMana,
-			ticks:     ticks,
+			name:             "shared_suffering",
+			perkIDs:          []string{"shared_suffering"},
+			rank:             unitRankSilver,
+			startMana:        startMana,
+			ticks:            ticks,
+			legacyUsesRealID: true,
 			setup: func(t *testing.T, s *GameState, caster, target *Unit) *Unit {
 				radius := perkDefByID("shared_suffering").Config["radius"]
 				neighbor := spawnEnemyAt(s, target.X+radius*0.5, target.Y+10) // second neighbor, not tracked — just extra echo-recipient coverage
@@ -518,7 +548,7 @@ func runSiphonerPerkGoldenCase(t *testing.T, legacyDef AbilityDef, tc siphonerPe
 		// with the lock held, and tc.afterScene/tc.setup ran above without
 		// releasing it) — do NOT re-lock; sync.Mutex is not reentrant and
 		// doing so deadlocks the test.
-		mods := sLegacy.siphonLifeChannelModifiersForCasterLocked(casterL)
+		mods := sLegacy.abilityScalarModifiersForCasterLocked(casterL, "siphon_life")
 		wantFirstTickDamage = int(math.Round(float64(legacyDef.DamagePerTick) * mods.DamageMult))
 		if wantFirstTickDamage <= 0 {
 			t.Fatalf("%s: fold-once setup produced a non-positive expected first-tick damage (%d)", tc.name, wantFirstTickDamage)

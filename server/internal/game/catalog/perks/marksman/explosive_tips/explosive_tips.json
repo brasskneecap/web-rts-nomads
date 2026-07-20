@@ -1,0 +1,18 @@
+{
+  "id": "explosive_tips",
+  "displayName": "Explosive Tips",
+  "description": "Each hit triggers a small explosion at the target. Enemies caught in the blast take damage. When paired with Hunter's Mark, blast victims also receive a mark stack. Explosions never chain.",
+  "tooltipTemplate": "Hits explode for {damageMultiplier%} damage in a {explosionRadius}px radius. Applies Hunter's Mark to blast victims if Hunter's Mark is owned. Explosions cannot trigger more explosions.",
+  "icon": "perk-explosive-tips",
+  "config": {
+    "damageMultiplier": 0.5,
+    "explosionRadius": 70
+  },
+  "effect": {
+    "name": "explosion",
+    "target": "enemies",
+    "sizeScale": 1,
+    "durationSeconds": 0.5
+  },
+  "wired": false
+}

@@ -111,7 +111,17 @@ const (
 	// spell_charge.go's file doc comment for the full design rationale.
 	ActionChargeFireVolley  ActionType = "charge_fire_volley"
 	ActionSummonUnit        ActionType = "summon_unit"
-	ActionMoveUnit          ActionType = "move_unit"
+	// ActionPlaceTrap plants a trap by reusing the existing trap runtime
+	// (plantTrapLocked / plantOneTrapLocked, trap.go) — the same
+	// primitive today's Trapper bronze perks (caltrops, fire_pit,
+	// explosive_trap, marker_trap) use to place their traps each combat
+	// tick. This action lets a composable ability's on_cast_complete
+	// trigger plant a trap identically, so a future trap-ability
+	// migration (Phase 2) can retire the perk-driven placement path
+	// without reimplementing trap placement/geometry. See
+	// placeTrapConfig (ability_exec_place_trap.go) for the config shape.
+	ActionPlaceTrap ActionType = "place_trap"
+	ActionMoveUnit  ActionType = "move_unit"
 	ActionApplyForce        ActionType = "apply_force"
 	ActionModifyResource    ActionType = "modify_resource"
 	ActionTriggerEvent      ActionType = "trigger_event"

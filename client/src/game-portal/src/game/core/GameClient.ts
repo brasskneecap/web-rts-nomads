@@ -21,7 +21,7 @@ import { BUILDING_DEF_MAP, initBuildingDefs, initBuildingStyleRenders } from '..
 import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initPathAttackOrigin, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
-import { initPerkDefs } from '../maps/perkDefs'
+import { initPerkDefs, initPerkRanksFromPaths } from '../maps/perkDefs'
 import { initItemDefs, ITEM_DEF_MAP, DEFAULT_CONSUMABLE_RANGE } from '../maps/itemDefs'
 import {
   fetchBuildingDefs,
@@ -29,6 +29,7 @@ import {
   fetchUnitDefs,
   fetchActionIcons,
   fetchPerkDefs,
+  fetchPathPerkRanks,
   fetchItemDefs,
 } from '../maps/catalog'
 
@@ -186,12 +187,13 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean; ephemeral?: boolean } = {}) {
-    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs] = await Promise.all([
+    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, pathPerkRanks, itemDefs] = await Promise.all([
       fetchBuildingDefs(),
       fetchObstacleDefs(),
       fetchUnitDefs(),
       fetchActionIcons(),
       fetchPerkDefs(),
+      fetchPathPerkRanks().catch(() => []),
       fetchItemDefs().catch(() => []),
     ])
     initBuildingDefs(buildingDefs.buildings)
@@ -203,6 +205,7 @@ export class GameClient {
     initPathsByUnitType(unitDefs.pathsByUnit)
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
+    initPerkRanksFromPaths(pathPerkRanks)
     // No initRecipeDefs: an item carries its own recipe (ItemDef.crafting).
     initItemDefs(itemDefs)
     window.addEventListener('keydown', this.handleDevHotkey)

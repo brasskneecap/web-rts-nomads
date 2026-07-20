@@ -1,0 +1,24 @@
+{
+  "id": "beam_mastery",
+  "displayName": "Beam Mastery",
+  "description": "Siphon Life deals more damage, heals more, reaches further, and costs less mana. Adds an extra chain target when paired with Chain Siphon.",
+  "tooltipTemplate": "Siphon Life: {damageMultiplier:1}× damage, {healingMultiplier:1}× healing, {rangeMultiplier:1}× range, {manaCostMultiplier:1}× mana cost per tick. With Chain Siphon: +{chainAdditionalTargetBonus:0} chain target.",
+  "icon": "perk-beam-mastery",
+  "config": {
+    "chainAdditionalTargetBonus": 1,
+    "damageMultiplier": 1.5,
+    "healingMultiplier": 1.5,
+    "manaCostMultiplier": 0.5,
+    "rangeMultiplier": 1.25
+  },
+  "abilityModifiers": [
+    {
+      "target": "siphon_life",
+      "damageMult": 1.5,
+      "healMult": 1.5,
+      "manaCostMult": 0.5,
+      "rangeMult": 1.25
+    }
+  ],
+  "wired": false
+}

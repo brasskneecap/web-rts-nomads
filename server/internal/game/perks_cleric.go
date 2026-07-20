@@ -26,10 +26,28 @@ import "math"
 //
 // AURA RADIUS CONVENTION
 //
-// All cleric auras (sanctuary bronze, divine_aegis silver, restoration_aura
-// silver, zealous_march silver) read their radius from the config key
-// "radiusPixels". A perk's in-world reach is a Cleric concept, not a per-perk
-// concept, so keeping the key uniform makes future tuning passes trivial.
+// sanctuary (bronze), divine_aegis (silver), and restoration_aura (silver)
+// still read their radius from the config key "radiusPixels" via bespoke Go
+// handlers in this file — a perk's in-world reach is a Cleric concept, not a
+// per-perk one, so keeping the key uniform makes future tuning passes
+// trivial. zealous_march (silver) is the exception: it has migrated to the
+// generic, data-driven PerkDef.Auras vocabulary (perk_defs.go,
+// perk_aura_stat_cache.go) and reads its radius, move-speed bonus, and
+// per-additional-source stack bonus from the aura's own "radius" /
+// "statModifiers[0].value" / "perAdditionalSource" fields in JSON instead —
+// see this file's zealous_march section below and describePerk's Auras
+// rendering (perk_describe.go). zealous_march's JSON still carries the
+// legacy "radiusPixels" / "moveSpeedMultiplier" / "stackBonus" config keys
+// even though no Go BEHAVIOR reads them anymore (tooltipTemplate was deleted
+// once describePerk could generate equivalent prose from the Auras block) —
+// they are NOT dead: (1) the client's AURA_RADIUS_SOURCES
+// (perkDefs.ts) still reads config.radiusPixels to draw the aura-radius ring
+// around the owning unit, and (2) perk_aura_migration_test.go's frozen
+// legacy-formula oracle (legacyZealousMarchBonusLocked — intentionally never
+// "fixed" to match new code) reads all three keys as its byte-for-byte
+// migration-proof input. Deleting them would break real consumers, not just
+// tidy JSON — see those two call sites before ever removing this Config
+// block.
 //
 // STACKING POLICY
 //
@@ -191,106 +209,26 @@ func (s *GameState) tickRestorationAuraPulseLocked(owner *Unit, def *PerkDef, dt
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SILVER — Zealous March (move-speed aura, recipient query)
+// SILVER — Zealous March (move-speed aura)
 //
-// perkMoveSpeedBonusFromClericAurasLocked returns the move-speed bonus the
-// unit receives from every allied Cleric with zealous_march whose aura covers
-// it. The first covering source contributes the full moveSpeedMultiplier;
-// every additional source contributes the smaller stackBonus on top. So with
-// the default tuning (base 30%, stack 5%) one cleric gives +30%, two clerics
-// give +35%, three clerics give +40%, and so on. Designed to mirror the
-// vanguard guardian_aura "companion synergy" feel but on the recipient
-// scan rather than the source scan, since zealous_march has no per-source
-// synergy state to cache.
+// zealous_march's move-speed bonus is fully data-driven: PerkDef.Auras
+// (perk_defs.go, catalog JSON) declares the radius/targets/stacking/value,
+// and the generic per-tick cache (perk_aura_stat_cache.go) resolves it for
+// every recipient with zero perk-specific Go. The read call lives in
+// perks_movement.go's perkMoveSpeedMultiplierLocked, at the exact arithmetic
+// position the old bespoke helper occupied (see that file's comment and
+// perk_aura_stat_cache.go's "ordering trap" doc for why the position
+// matters).
 //
-// Both the base and the stack bonus are taken max-wins across covering
-// sources (matters only when rank-tuning differs between covering clerics).
-// Empty / missing stackBonus collapses cleanly to base-only behaviour, so
-// re-tuning the JSON cannot break this helper.
-//
-// Caller holds s.mu (read or write).
-// ─────────────────────────────────────────────────────────────────────────────
-func (s *GameState) perkMoveSpeedBonusFromClericAurasLocked(unit *Unit) float64 {
-	if unit == nil {
-		return 0
-	}
-	def := perkDefByID("zealous_march")
-	if def == nil {
-		return 0
-	}
-	bestBase := 0.0
-	bestStack := 0.0
-	count := 0
-	for _, src := range s.Units {
-		if src == nil || src.HP <= 0 || !src.Visible {
-			continue
-		}
-		if !containsString(src.PerkIDs, "zealous_march") {
-			continue
-		}
-		if !s.unitsFriendlyLocked(src, unit) {
-			continue
-		}
-		cfg := def.ConfigForRank(src.Rank)
-		radius := cfg["radiusPixels"]
-		if radius <= 0 {
-			continue
-		}
-		dx := src.X - unit.X
-		dy := src.Y - unit.Y
-		if dx*dx+dy*dy > radius*radius {
-			continue
-		}
-		count++
-		if base := cfg["moveSpeedMultiplier"]; base > bestBase {
-			bestBase = base
-		}
-		if stack := cfg["stackBonus"]; stack > bestStack {
-			bestStack = stack
-		}
-	}
-	if count == 0 {
-		return 0
-	}
-	return bestBase + float64(count-1)*bestStack
-}
-
-// hasZealousMarchAuraLocked is a cheap one-shot probe used by the HUD code to
-// decide whether to display the zealous_march recipient buff icon. Shares the
-// same scan shape as perkMoveSpeedBonusFromClericAurasLocked but bails on the
-// first matching source instead of finding the max.
+// hasZealousMarchAuraLocked is a cheap one-shot probe used by the HUD code
+// (perks_icons.go) to decide whether to display the zealous_march recipient
+// buff icon — it reads the same generic aura cache the move-speed fold site
+// reads, so the icon appears exactly when the bonus is live.
 //
 // Caller holds s.mu (read or write).
 func (s *GameState) hasZealousMarchAuraLocked(unit *Unit) bool {
-	if unit == nil {
-		return false
-	}
-	def := perkDefByID("zealous_march")
-	if def == nil {
-		return false
-	}
-	for _, src := range s.Units {
-		if src == nil || src.HP <= 0 || !src.Visible {
-			continue
-		}
-		if !containsString(src.PerkIDs, "zealous_march") {
-			continue
-		}
-		if !s.unitsFriendlyLocked(src, unit) {
-			continue
-		}
-		cfg := def.ConfigForRank(src.Rank)
-		radius := cfg["radiusPixels"]
-		if radius <= 0 {
-			continue
-		}
-		dx := src.X - unit.X
-		dy := src.Y - unit.Y
-		if dx*dx+dy*dy <= radius*radius {
-			return true
-		}
-	}
-	return false
+	_, sources := s.unitAuraStatContributionLocked(unit, statMoveSpeed)
+	return sources > 0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

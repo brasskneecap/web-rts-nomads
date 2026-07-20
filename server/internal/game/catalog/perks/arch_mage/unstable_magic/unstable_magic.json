@@ -1,0 +1,12 @@
+{
+  "id": "unstable_magic",
+  "displayName": "Unstable Magic",
+  "description": "Your Arcane Missiles have a chance to unleash one of your learned spells at reduced power.",
+  "tooltipTemplate": "{procChance%} chance on an Arcane Missile hit to cast a random learned spell at {effectiveness%} effectiveness.",
+  "icon": "perk-unstable-magic",
+  "config": {
+    "effectiveness": 0.4,
+    "procChance": 0.2
+  },
+  "wired": false
+}

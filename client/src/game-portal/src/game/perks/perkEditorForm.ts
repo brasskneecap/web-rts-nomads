@@ -1,9 +1,58 @@
+import type { AbilityActionDef } from '@/game/abilities/program/abilityProgram'
+
 export interface PerkEffectShape {
   name?: string
   target?: string
   sizeScale?: number
   durationSeconds?: number
   variant?: string
+}
+
+// AbilityModifier mirrors the Go AbilityModifier struct: a scalar multiplier
+// bundle a perk applies to a named ability (target = ability id).
+export interface AbilityModifier {
+  target: string
+  damageMult?: number
+  healMult?: number
+  manaCostMult?: number
+  rangeMult?: number
+}
+
+// AbilityRider mirrors the Go AbilityRider struct: extra action fragments a
+// perk grafts onto a named ability's trigger. `actions` reuses the same
+// AbilityActionDef the ability builder authors (@/game/abilities/program/
+// abilityProgram) rather than redefining a parallel action shape.
+export interface AbilityRider {
+  target: string
+  trigger: string
+  actions: AbilityActionDef[]
+}
+
+// PerkStatModifier mirrors the Go PerkDef.statModifiers entry: a typed,
+// registry-validated unit-stat bonus a perk grants. `stat` must be one of
+// the ids in game/stats/statRegistry.ts (the client mirror of the Go
+// statRegistry). `stage` defaults server-side to "base" when omitted.
+export interface PerkStatModifier {
+  stat: string
+  op: 'add' | 'multiply'
+  value: number
+  stage?: 'intrinsic' | 'base' | 'final'
+}
+
+// PerkAura mirrors the Go PerkDef.auras entry: a continuously-emitted area
+// effect the perk's owner grants to nearby units (as opposed to
+// statModifiers, which only ever affect the owner itself). `statModifiers`
+// reuses PerkStatModifier for the nested list, but the server's aura fold
+// site only ever consumes `op: "add"` with `stage` empty/"base" — the editor
+// never renders op/stage controls for aura rows (see PerkEditorPanel's Auras
+// section) and always emits `op: "add"` with `stage` omitted.
+export interface PerkAura {
+  radius: number
+  targets: 'allies' | 'enemies'
+  includeSelf?: boolean
+  stacking?: 'max'
+  perAdditionalSource?: number
+  statModifiers: PerkStatModifier[]
 }
 
 export interface AuthoredPerkDef {
@@ -14,23 +63,31 @@ export interface AuthoredPerkDef {
   tooltipTemplateByTrap?: Record<string, string>
   tooltipTemplateByOwnedPerk?: Record<string, string>
   icon?: string
-  unitType?: string
   path?: string
-  rank?: string
   requiresPerk?: string
   config?: Record<string, number>
   configByRank?: Record<string, Record<string, number>>
   effect?: PerkEffectShape | null
   grantsAbilities?: string[]
+  abilityModifiers?: AbilityModifier[]
+  abilityRiders?: AbilityRider[]
+  statModifiers?: PerkStatModifier[]
+  auras?: PerkAura[]
   wired?: boolean
+  // generatedDescription: READ-ONLY, server-computed prose the Go generator
+  // derives from this perk's typed data (statModifiers/abilityModifiers/
+  // riders). Sent by GET /catalog/perks, same as `wired`. NEVER persisted —
+  // stripped in saveRequestFromForm. Mirrors AuthoredAbilityDef.generatedDescription.
+  generatedDescription?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
 
 const MODELED_KEYS = [
   'id', 'displayName', 'description', 'tooltipTemplate', 'tooltipTemplateByTrap',
-  'tooltipTemplateByOwnedPerk', 'icon', 'unitType', 'path', 'rank', 'requiresPerk',
-  'config', 'configByRank', 'effect', 'grantsAbilities', 'wired',
+  'tooltipTemplateByOwnedPerk', 'icon', 'path', 'requiresPerk',
+  'config', 'configByRank', 'effect', 'grantsAbilities',
+  'abilityModifiers', 'abilityRiders', 'statModifiers', 'auras', 'wired', 'generatedDescription',
 ] as const
 
 export interface PerkEditorForm extends AuthoredPerkDef {
@@ -57,6 +114,7 @@ export function saveRequestFromForm(form: PerkEditorForm): AuthoredPerkDef {
   for (const [k, v] of Object.entries(modeled)) {
     if (v === undefined) continue
     if (k === 'wired') continue // derived server-side; never sent
+    if (k === 'generatedDescription') continue // derived server-side; never sent
     out[k] = v
   }
   return out as AuthoredPerkDef

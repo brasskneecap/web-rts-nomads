@@ -9,6 +9,11 @@
     "ringOffsetX": 0,
     "ringOffsetY": -16
   },
+  "perksByRank": {
+    "bronze": ["caltrops", "explosive_trap", "fire_pit", "marker_trap"],
+    "silver": ["amplified_effects", "barbed_field", "explosive_chain", "exposed_weakness", "extended_setup", "lasting_flames", "rapid_deployment", "wider_nets"],
+    "gold": ["ascendant_infusion", "increased_deployment", "overload_protocol"]
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.50,

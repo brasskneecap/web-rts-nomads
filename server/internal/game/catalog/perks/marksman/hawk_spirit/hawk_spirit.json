@@ -1,0 +1,11 @@
+{
+  "id": "hawk_spirit",
+  "displayName": "Hawk Spirit",
+  "description": "Swift, deadly strikes: fire faster and hit harder with every shot.",
+  "icon": "perk-hawk-spirit",
+  "statModifiers": [
+    { "stat": "attackSpeed", "op": "add", "value": 0.3, "stage": "base" },
+    { "stat": "damage", "op": "multiply", "value": 1.15, "stage": "intrinsic" }
+  ],
+  "wired": false
+}

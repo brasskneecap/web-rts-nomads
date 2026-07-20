@@ -10,11 +10,13 @@ package game
 // ┌─────────────────────────────────────────────────────────────────────────┐
 // │  WHERE THINGS LIVE                                                      │
 // │                                                                         │
-// │    PERK DEFINITIONS (data, tuning, eligibility)                         │
-// │      → catalog/perks/<unitType>/<path>/<rank>.json                      │
-// │        One file per (unit, path, rank) slot. Adding a perk means        │
-// │        appending an entry to the right file; UnitType / Path / Rank     │
-// │        are inferred from the file path during loading.                  │
+// │    PERK DEFINITIONS (data, tuning)                                      │
+// │      → catalog/perks/<path>/<id>/<id>.json                              │
+// │        (or catalog/perks/generic/<id>/<id>.json for path-agnostic)      │
+// │        One directory per perk id, nested under its owning path's        │
+// │        folder; the folder name is authoritative for the perk's Path     │
+// │        association, derived at load. A perk becomes eligible only       │
+// │        when its id is added to that path's perksByRank[rank] list.      │
 // │                                                                         │
 // │    PERK RUNTIME BEHAVIOUR (effects, hooks, state)                       │
 // │                                                                         │
@@ -62,9 +64,19 @@ package game
 //
 // ┌─────────────────────────────────────────────────────────────────────────┐
 // │  TO ADD A NEW PERK (any path/rank)                                      │
-// │    1. Add the definition to catalog/perks/<unit>/<path>/<rank>.json.    │
+// │    1. Create catalog/perks/<path-or-generic>/<id>/<id>.json, then       │
+// │       add its id to the path's perksByRank[rank] in                     │
+// │       catalog/units/.../paths/<path>/<path>.json.                       │
 // │    2. Add an icon to         catalog/action-icons.json.                 │
-// │    3. Add a case to whichever of the hooks below the effect needs:      │
+// │    3. If the perk is a plain static stat delta (flat add or multiply on │
+// │       a registered stat — see stat_modifiers.go's statRegistry), author  │
+// │       it as PerkDef.StatModifiers in the JSON instead of a Go hook — no  │
+// │       case arm needed; unitPerkStatModifiersLocked picks it up           │
+// │       automatically at every existing per-stat fold site. Reach for a    │
+// │       hook only when the perk needs conditional logic, per-tick state,   │
+// │       or a proc. hold_the_line (maxHp) is the reference example.         │
+// │    3b. Otherwise, add a case to whichever of the hooks below the effect  │
+// │       needs:                                                            │
 // │         tickUnitPerkStateLocked              timers, decay, passive     │
 // │         perkAttackSpeedBonusLocked           attack-speed bonus         │
 // │         perkMoveSpeedMultiplierLocked        move-speed bonus           │
@@ -78,7 +90,6 @@ package game
 // │         onPerkAbilityResolvedLocked          per resolved ability target│
 // │         perkFlatDamageReductionLocked        flat per-hit reduction     │
 // │         perkBonusArmorLocked                 conditional armor bonus    │
-// │         perkFlatMaxHPBonusLocked             flat max HP bonus          │
 // │         unitMaxShieldLocked                  shield pool contributor    │
 // │         healUnitLocked                       overheal routing           │
 // │         activeBuffIconsLocked                add buff icon to the HUD   │
@@ -122,7 +133,9 @@ package game
 //                                                 perkBonusArmorFromAurasLocked,
 //                                                 perkArmorPercentBonusFromAurasLocked
 //   • progression.go     addUnitXPLocked()      — assignUnitPerkLocked (on rank-up)
-//   • progression.go     applyRankModifiersLocked() — perkFlatMaxHPBonusLocked
+//   • progression.go     applyRankModifiersLocked() — unitPerkStatModifiersLocked
+//                                                 (data-driven StatModifiers fold,
+//                                                 e.g. hold_the_line's flat maxHp)
 //   • ability_cast.go    resolveAbilityCastOnTargetLocked — onPerkAbilityResolvedLocked
 //                                                          (per ability target; battle_prayer
 //                                                          uses this to stamp the cross-unit buff)
@@ -677,13 +690,6 @@ type UnitPerkState struct {
 	AmplifyDamageRemaining         float64
 	AmplifyDamageMultiplier        float64
 
-	// shared_suffering — recursion guard. Set true on the caster's PerkState
-	// while a shared-damage echo is being applied so a victim with their
-	// own future on-damage perk cannot chain-trigger another echo. The
-	// echo damage is also tagged DamageSource.Kind = "shared_suffering"
-	// for telemetry / debug filtering — see applySharedSufferingLocked.
-	SharedSufferingActive bool
-
 	// ── Source-specific shield pools ────────────────────────────────────────
 	// A unit can carry multiple independent shield pools at the same time
 	// (e.g. dark_renewal + a future cleric barrier perk). Each pool tracks
@@ -914,26 +920,23 @@ func (ps *UnitPerkState) decayMarkStacks(dt float64) (lastExpired bool) {
 //
 // Call AFTER assignUnitPathOnRankUpLocked so ProgressionPath is already set.
 //
-// The pool is drawn from the perk catalog filtered by (unitType, path, rank)
-// where rank matches the unit's *current* rank. If the exact rank pool is empty
-// (e.g. Gold is not yet authored) we fall back to the Bronze pool so the unit
-// still receives a perk. Perks already on the unit are filtered out so no perk
-// can be received twice.
+// The pool is the unit's promotion path's authored perksByRank[rank] list
+// (resolved via eligiblePerksForUnitAtRank), for the unit's *current* rank.
+// If the exact rank pool is empty (e.g. Gold is not yet authored) we fall
+// back to the Bronze pool so the unit still receives a perk. Perks already
+// on the unit are filtered out so no perk can be received twice.
 //
 // ── FUTURE EXPANSION — where to add more perks ─────────────────────────────
 //
-//	Soldier → Berserker → Bronze    catalog/perks/soldier/berserker/bronze.json
-//	Soldier → Berserker → Silver    catalog/perks/soldier/berserker/silver.json
-//	Soldier → Berserker → Gold      catalog/perks/soldier/berserker/gold.json
-//	Soldier → Vanguard  → Bronze    catalog/perks/soldier/vanguard/bronze.json
-//	Soldier → Vanguard  → Silver    catalog/perks/soldier/vanguard/silver.json
-//	Soldier → Vanguard  → Gold      catalog/perks/soldier/vanguard/gold.json
-//	<other unit> → <path> → <rank>  catalog/perks/<unit>/<path>/<rank>.json
+//	New perks are authored at catalog/perks/<path>/<id>/<id>.json (or
+//	catalog/perks/generic/<id>/<id>.json for path-agnostic perks) and made
+//	eligible by adding their id to the owning path's perksByRank[rank] list
+//	in catalog/units/.../paths/<path>/<path>.json.
 //
-// No code changes needed in this file for adding perks at any existing slot —
-// the assignment, pool filter, and eligibility check all key off the hierarchy
-// in the JSON. You only touch this file to author RUNTIME EFFECT logic (the
-// hook cases further down).
+// No code changes are needed in this file to add a perk to an existing rank
+// slot — the pool draw above resolves purely from perksByRank. You only
+// touch this file to author RUNTIME EFFECT logic (the hook cases further
+// down).
 func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 	if unit == nil || unit.Rank == unitRankBase {
 		return

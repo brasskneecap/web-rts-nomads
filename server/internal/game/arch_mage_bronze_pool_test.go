@@ -11,11 +11,11 @@ func containsStr(xs []string, want string) bool {
 	return false
 }
 
-// The real embedded bronze pool contains exactly the authored spells. Silver
+// The real embedded bronze pool contains exactly the authored abilities. Silver
 // shares the same pool (cumulative Bronze∪Silver); Gold is the perk tier and
-// grants no pool spell (empty).
+// grants no pool ability (empty).
 func TestArchMageBronzePool_Contents(t *testing.T) {
-	bronze := spellPoolFor("arch_mage", "bronze")
+	bronze := abilityPoolFor("arch_mage", "bronze")
 	want := []string{"fireball", "chain_lightning", "arcane_orb", "shatter", "meteor"}
 	if len(bronze) != len(want) {
 		t.Fatalf("bronze pool = %v; want %v", bronze, want)
@@ -25,20 +25,20 @@ func TestArchMageBronzePool_Contents(t *testing.T) {
 			t.Errorf("bronze pool missing %q (got %v)", id, bronze)
 		}
 		if _, ok := getAbilityDef(id); !ok {
-			t.Errorf("bronze pool spell %q has no registered AbilityDef", id)
+			t.Errorf("bronze pool ability %q has no registered AbilityDef", id)
 		}
 	}
 	// Silver shares the pool — it inherits the full bronze list (Bronze∪Silver).
-	if silver := spellPoolFor("arch_mage", "silver"); len(silver) != len(want) {
+	if silver := abilityPoolFor("arch_mage", "silver"); len(silver) != len(want) {
 		t.Errorf("silver pool = %v; want the shared bronze list %v", silver, want)
 	}
-	// Gold grants no pool spell (perk tier).
-	if gold := spellPoolFor("arch_mage", "gold"); len(gold) != 0 {
+	// Gold grants no pool ability (perk tier).
+	if gold := abilityPoolFor("arch_mage", "gold"); len(gold) != 0 {
 		t.Errorf("gold pool = %v; want empty (Gold is the perk tier)", gold)
 	}
 }
 
-// A promoted Arch Mage is assigned exactly one bronze spell, it surfaces in the
+// A promoted Arch Mage is assigned exactly one bronze ability, it surfaces in the
 // ability snapshot, and it is castable end-to-end.
 func TestArchMageBronzePool_AssignedSpellIsCastable(t *testing.T) {
 	s := newProjectileTestState(t)
@@ -53,21 +53,21 @@ func TestArchMageBronzePool_AssignedSpellIsCastable(t *testing.T) {
 	caster.CurrentMana = 100
 	caster.MaxMana = 100
 
-	s.rollUnitPoolSpellsLocked(caster)
+	s.rollUnitPoolAbilitiesLocked(caster)
 	s.assignUnitPathAbilitiesLocked(caster)
 
-	pool := spellPoolFor("arch_mage", "bronze")
+	pool := abilityPoolFor("arch_mage", "bronze")
 	assigned := ""
 	for _, id := range pool {
 		if containsStr(caster.Abilities, id) {
 			if assigned != "" {
-				t.Fatalf("more than one bronze spell assigned: %v", caster.Abilities)
+				t.Fatalf("more than one bronze ability assigned: %v", caster.Abilities)
 			}
 			assigned = id
 		}
 	}
 	if assigned == "" {
-		t.Fatalf("no bronze spell assigned; Abilities=%v", caster.Abilities)
+		t.Fatalf("no bronze ability assigned; Abilities=%v", caster.Abilities)
 	}
 
 	// Surfaces in the ability snapshot with cooldown/autocast fields.
@@ -76,12 +76,12 @@ func TestArchMageBronzePool_AssignedSpellIsCastable(t *testing.T) {
 		if snap.ID == assigned {
 			found = true
 			if snap.DisplayName == "" {
-				t.Errorf("assigned spell %q snapshot missing display name", assigned)
+				t.Errorf("assigned ability %q snapshot missing display name", assigned)
 			}
 		}
 	}
 	if !found {
-		t.Errorf("assigned spell %q not in ability snapshot", assigned)
+		t.Errorf("assigned ability %q not in ability snapshot", assigned)
 	}
 
 	// Castable end-to-end. Point-targeted spells (arcane_orb) go through the

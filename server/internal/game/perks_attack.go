@@ -57,11 +57,10 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 				total += def.Config["attackSpeedBonus"]
 			}
 
-		case "hawk_spirit":
-			// Marksman bronze passive — flat attack-speed bonus added to the
-			// unit's effective attack speed. Stacks additively with any other
-			// AS sources (banner auras, momentum, etc.).
-			total += def.Config["attackSpeedBonus"]
+		// hawk_spirit's attack-speed bonus is now data-driven — see
+		// PerkDef.StatModifiers (catalog/perks/marksman/hawk_spirit) — and
+		// folds in below via unitPerkStatModifiersLocked instead of a case
+		// arm here.
 
 		// ── add cases for new attack-speed perks below this line ────────────
 		}
@@ -85,9 +84,17 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 	// canonical (base + add) × mul rule we return the bonus that makes that sum
 	// equal (unit.AttackSpeed + perkTotal + add) × mul. No active aura ⇒ (0, 1),
 	// which returns `total` unchanged.
+	//
+	// Data-driven perk stat modifiers (PerkStatModifier{Stat: "attackSpeed"})
+	// fold into the SAME merge (mergeZoneIntoBaseStage puts the zone pair into
+	// the "base" stage alongside any base-stage perk modifiers; a "final"-stage
+	// perk modifier applies after). No perk authors statModifiers today, so
+	// perkStages is always nil and this is byte-identical to the prior
+	// zone-only fold.
 	add, mul := s.playerStatModifierLocked(unit.OwnerID, statAttackSpeed)
-	if add != 0 || mul != 1 {
-		effective := (unit.AttackSpeed + total + add) * mul
+	perkStages := s.unitPerkStatModifiersLocked(unit, statAttackSpeed)
+	if add != 0 || mul != 1 || len(perkStages) > 0 {
+		effective := applyStatStages(unit.AttackSpeed+total, mergeZoneIntoBaseStage(perkStages, add, mul))
 		return effective - unit.AttackSpeed
 	}
 
@@ -439,10 +446,16 @@ func (s *GameState) perkBonusDamageMultiplierLocked(attacker, target *Unit) floa
 				}
 			}
 
-		case "hawk_spirit", "vulture_spirit":
-			// Marksman bronze passives — flat outgoing damage bonus, target-
-			// agnostic so it shows in the HUD via Snapshot()'s nil-target call.
-			total += def.Config["damageMultiplier"]
+		// hawk_spirit's and vulture_spirit's damage multipliers are now
+		// data-driven — see PerkDef.StatModifiers (catalog/perks/marksman/
+		// hawk_spirit, catalog/perks/marksman/vulture_spirit) — and fold in
+		// via unitPerkStatModifiersLocked's "intrinsic" stage
+		// (stat_modifiers.go) at state_combat.go's applyDelayedAttackLocked
+		// instead of a case arm here. "intrinsic" applies strictly BEFORE the
+		// zone-aura/perk stat-modifier "base"-stage (add, mul) pair, so the
+		// multiplier scales attacker.Damage only, never a zone aura's
+		// additive damage bonus (see TestHawkSpirit_WithZoneAura_Damage /
+		// TestVultureSpirit_WithZoneAura_Damage in perk_stat_migration_test.go).
 
 		// ── add cases for new damage-multiplier perks below this line ───────
 		}

@@ -1,0 +1,16 @@
+{
+  "id": "guardian_aura",
+  "displayName": "Guardian Aura",
+  "description": "Allies within radius gain bonus armor and percent armor. Nearby Vanguards with this perk form a formation, amplifying each other's auras.",
+  "tooltipTemplate": "Allies within {radius} units gain +{bonusArmor} armor and +{armorPercent%} percent armor. Each nearby Vanguard with this perk adds +{synergyRadiusBonus} radius, +{synergyArmorBonus} armor, and +{synergyArmorPercentBonus%} percent armor to your aura.",
+  "icon": "perk-guardian-aura",
+  "config": {
+    "armorPercent": 0.2,
+    "bonusArmor": 15,
+    "radius": 150,
+    "synergyArmorBonus": 5,
+    "synergyArmorPercentBonus": 0.05,
+    "synergyRadiusBonus": 30
+  },
+  "wired": false
+}

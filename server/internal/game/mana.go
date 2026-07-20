@@ -71,8 +71,15 @@ func (s *GameState) effectiveManaRegenLocked(unit *Unit) float64 {
 	rate := unit.ManaRegenPerSecond + s.manaConduitAuraBonusLocked(unit)
 	// Zone-aura mana regen, folded read-on-demand as (base + add) × mul. Applied
 	// at this shared chokepoint so the regen tick and the HUD stat row agree.
-	if add, mul := s.playerStatModifierLocked(unit.OwnerID, statManaRegen); add != 0 || mul != 1 {
-		rate = (rate + add) * mul
+	//
+	// Data-driven perk stat modifiers (PerkStatModifier{Stat: "manaRegen"})
+	// fold into the same merge via mergeZoneIntoBaseStage/applyStatStages. No
+	// perk authors statModifiers today, so this is byte-identical to the
+	// prior zone-only fold.
+	add, mul := s.playerStatModifierLocked(unit.OwnerID, statManaRegen)
+	perkStages := s.unitPerkStatModifiersLocked(unit, statManaRegen)
+	if add != 0 || mul != 1 || len(perkStages) > 0 {
+		rate = applyStatStages(rate, mergeZoneIntoBaseStage(perkStages, add, mul))
 	}
 	return rate
 }

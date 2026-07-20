@@ -12,6 +12,11 @@
   "damageType": "holy",
   "projectileScale": 1.0,
   "abilities": ["greater_heal"],
+  "perksByRank": {
+    "bronze": ["battle_prayer", "bolstering_prayer", "mana_conduit", "sanctuary"],
+    "silver": ["divine_aegis", "divine_healer", "restoration_aura", "zealous_march"],
+    "gold": ["beacon_of_life", "divine_intervention", "divine_judgement"]
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,

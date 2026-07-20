@@ -1036,110 +1036,26 @@ func TestDarkRenewal_ShieldPersistsUntilDepleted(t *testing.T) {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // shared_suffering
+//
+// MIGRATED to a data-driven ability rider (see
+// docs/superpowers/plans/2026-07-19-perk-ability-riders-tier-b.md Task 4);
+// the bespoke applySharedSufferingLocked helper these tests used to call
+// directly is deleted. Coverage now lives in
+// perks_siphoner_shared_suffering_migration_test.go, driven through the real
+// production channel-tick call site instead of the deleted helper:
+//   - in-range/out-of-range/ally/invisible target-set + exact echo damage:
+//     TestSharedSufferingMigration_BaseCase_ExactTargetSetAndDamage
+//   - proportional scaling off an already-boosted primary tick (soul_leech):
+//     TestSharedSufferingMigration_EchoScalesWithAlreadyScaledPrimaryDamage
+//   - Gold ascended_corruption overlay now inert (accepted, documented delta):
+//     TestSharedSufferingMigration_GoldCombo_AscendedCorruptionOverlayIsInert
+// The old minor-popup-split assertion (TestSharedSuffering_EmitsMinorDamagePopupPerEcho)
+// has no equivalent post-migration — the generic deal_damage action doesn't
+// route through recordMinorDamageHitLocked, so the echo now renders as an
+// ordinary shadow-tinted floating-up hit instead of a side-falling minor
+// popup. This is one of the explicitly accepted cosmetic deltas (see
+// perks_siphoner.go's shared_suffering doc comment). "No perk owned -> no
+// echo" is covered generically by gatherOwnedRiderFragmentsLocked's tests in
+// ability_riders_test.go (a caster with no matching perk contributes zero
+// fragments, so the rider runner is a clean no-op).
 // ═════════════════════════════════════════════════════════════════════════════
-
-func TestSharedSuffering_EchoesToEveryEnemyInRange(t *testing.T) {
-	s, siphoner, primary := newSiphonerSilverState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	siphoner.PerkIDs = append(siphoner.PerkIDs, "shared_suffering")
-	def := perkDefByID("shared_suffering")
-	radius := def.Config["radius"]
-	sharePct := def.Config["damageSharePercent"]
-
-	// Spawn two extra enemies in range: neither carries any Siphoner
-	// affliction. Both must still take echo damage — the perk no longer
-	// requires afflicted neighbors, it just sprays the percent of primary
-	// damage onto every visible hostile in radius.
-	clean1 := spawnEnemyAt(s, primary.X+radius*0.4, primary.Y)
-	clean2 := spawnEnemyAt(s, primary.X+radius*0.5, primary.Y)
-
-	start1 := clean1.HP
-	start2 := clean2.HP
-
-	primaryDamage := 20
-	s.applySharedSufferingLocked(siphoner, primary, primaryDamage, "")
-
-	expectedEcho := int(math.Round(float64(primaryDamage) * sharePct))
-	if got := start1 - clean1.HP; got != expectedEcho {
-		t.Errorf("clean1 echo damage = %d, want %d", got, expectedEcho)
-	}
-	if got := start2 - clean2.HP; got != expectedEcho {
-		t.Errorf("clean2 echo damage = %d, want %d", got, expectedEcho)
-	}
-}
-
-func TestSharedSuffering_OutOfRangeEnemyNotEchoed(t *testing.T) {
-	s, siphoner, primary := newSiphonerSilverState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	siphoner.PerkIDs = append(siphoner.PerkIDs, "shared_suffering")
-	def := perkDefByID("shared_suffering")
-	radius := def.Config["radius"]
-
-	far := spawnEnemyAt(s, primary.X+radius*2, primary.Y)
-	start := far.HP
-
-	s.applySharedSufferingLocked(siphoner, primary, 30, "")
-	if far.HP != start {
-		t.Errorf("out-of-range enemy took echo damage: %d -> %d", start, far.HP)
-	}
-}
-
-func TestSharedSuffering_EmitsMinorDamagePopupPerEcho(t *testing.T) {
-	s, siphoner, primary := newSiphonerSilverState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	siphoner.PerkIDs = append(siphoner.PerkIDs, "shared_suffering")
-	def := perkDefByID("shared_suffering")
-	radius := def.Config["radius"]
-	sharePct := def.Config["damageSharePercent"]
-
-	v1 := spawnEnemyAt(s, primary.X+radius*0.3, primary.Y)
-	v2 := spawnEnemyAt(s, primary.X+radius*0.4, primary.Y+10)
-
-	primaryDamage := 20
-	expectedEcho := int(math.Round(float64(primaryDamage) * sharePct))
-
-	// Snapshot the minor-damage queue before/after so we can verify each
-	// echo target gets a "shadow" minor entry that the client can peel into
-	// a side-falling popup.
-	beforeQueue := len(s.minorDamageEventsThisTick)
-	s.applySharedSufferingLocked(siphoner, primary, primaryDamage, "")
-	added := s.minorDamageEventsThisTick[beforeQueue:]
-
-	gotIDs := make(map[int]int) // unitID → count of shadow entries
-	for _, evt := range added {
-		if evt.Variant != "shadow" {
-			t.Errorf("minor event variant = %q, want %q", evt.Variant, "shadow")
-		}
-		if evt.Damage != expectedEcho {
-			t.Errorf("minor event damage = %d, want %d", evt.Damage, expectedEcho)
-		}
-		gotIDs[evt.UnitID]++
-	}
-	if gotIDs[v1.ID] != 1 {
-		t.Errorf("expected 1 minor event for v1 (id=%d), got %d", v1.ID, gotIDs[v1.ID])
-	}
-	if gotIDs[v2.ID] != 1 {
-		t.Errorf("expected 1 minor event for v2 (id=%d), got %d", v2.ID, gotIDs[v2.ID])
-	}
-}
-
-func TestSharedSuffering_NoOpWithoutPerk(t *testing.T) {
-	s, siphoner, primary := newSiphonerSilverState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	bystander := spawnEnemyAt(s, primary.X+50, primary.Y)
-	start := bystander.HP
-
-	// No perk — call must be a clean no-op.
-	s.applySharedSufferingLocked(siphoner, primary, 30, "")
-	if bystander.HP != start {
-		t.Errorf("echo fired despite no perk; HP %d -> %d", start, bystander.HP)
-	}
-}

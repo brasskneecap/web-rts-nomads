@@ -21,10 +21,12 @@ import (
 func TestAssignUnitPerkLocked_EmptyPerkPool_NoPanicNoGrant(t *testing.T) {
 	const emptyPath = "no_perks_test_path"
 
-	// Sanity: no catalog perk targets this synthetic path, so the pool is
-	// genuinely empty for a unit on it.
-	if got := countPerkDefsAt("acolyte", emptyPath, unitRankBronze); got != 0 {
-		t.Fatalf("setup: %d perks target acolyte/%s/bronze, want 0", got, emptyPath)
+	// Sanity: eligiblePerksForUnitAtRank — the authoritative pool source — has
+	// no perksByRank entry for this synthetic path, so the pool is genuinely
+	// empty for a unit on it.
+	sanityUnit := &Unit{UnitType: "acolyte", ProgressionPath: emptyPath}
+	if got := len(eligiblePerksForUnitAtRank(sanityUnit, unitRankBronze)); got != 0 {
+		t.Fatalf("setup: %d perks eligible for acolyte/%s/bronze, want 0", got, emptyPath)
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
@@ -74,16 +76,4 @@ func TestAssignUnitPerkLocked_EmptyPerkPool_NoPanicNoGrant(t *testing.T) {
 	if len(unit.PerkIDs) != 0 {
 		t.Errorf("PerkIDs = %v after maybeAssignExtraPerkLocked on an empty pool, want still empty", unit.PerkIDs)
 	}
-}
-
-// countPerkDefsAt returns how many defs in the current registry resolve to the
-// given (unitType, pathName, rank), read from the registry itself.
-func countPerkDefsAt(unitType, pathName, rank string) int {
-	n := 0
-	for _, def := range snapshotPerkDefs() {
-		if def.UnitType == unitType && def.Path == pathName && def.Rank == rank {
-			n++
-		}
-	}
-	return n
 }

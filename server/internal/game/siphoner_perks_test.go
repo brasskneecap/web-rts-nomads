@@ -81,9 +81,9 @@ func TestSoulLeech_DamageAndHealMultipliers(t *testing.T) {
 	defer s.mu.Unlock()
 
 	// Baseline: no perk → (1.0, 1.0).
-	dMult, hMult := s.siphonLifeModifiersForCasterLocked(siphoner)
-	if dMult != 1.0 || hMult != 1.0 {
-		t.Fatalf("baseline multipliers expected (1.0,1.0), got (%.3f,%.3f)", dMult, hMult)
+	mods := s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
+	if mods.DamageMult != 1.0 || mods.HealMult != 1.0 {
+		t.Fatalf("baseline multipliers expected (1.0,1.0), got (%.3f,%.3f)", mods.DamageMult, mods.HealMult)
 	}
 
 	// With soul_leech: multipliers reflect the perk config.
@@ -94,9 +94,9 @@ func TestSoulLeech_DamageAndHealMultipliers(t *testing.T) {
 	}
 	wantD := def.Config["damageMultiplier"]
 	wantH := def.Config["healingMultiplier"]
-	dMult, hMult = s.siphonLifeModifiersForCasterLocked(siphoner)
-	if math.Abs(dMult-wantD) > 1e-9 || math.Abs(hMult-wantH) > 1e-9 {
-		t.Errorf("soul_leech multipliers: got (%.3f,%.3f), want (%.3f,%.3f)", dMult, hMult, wantD, wantH)
+	mods = s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
+	if math.Abs(mods.DamageMult-wantD) > 1e-9 || math.Abs(mods.HealMult-wantH) > 1e-9 {
+		t.Errorf("soul_leech multipliers: got (%.3f,%.3f), want (%.3f,%.3f)", mods.DamageMult, mods.HealMult, wantD, wantH)
 	}
 }
 

@@ -1,0 +1,10 @@
+{
+  "id": "hold_the_line",
+  "displayName": "Hold the Line",
+  "description": "Permanently increases maximum HP.",
+  "icon": "perk-hold-the-line",
+  "statModifiers": [
+    { "stat": "maxHp", "op": "add", "value": 90, "stage": "base" }
+  ],
+  "wired": false
+}

@@ -16,24 +16,15 @@ import type { Unit } from './GameState'
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Returns the effective config for the perk at its own rank, mirroring the
- * server's ConfigForRank semantics:
- *   base config  ← def.config
- *   merged with  ← def.configByRank[def.rank]  (when present)
- *
- * The rank used here is the perk's own tier (e.g. "bronze"), NOT the unit's
- * current rank — this matches the server-side ConfigForRank call.
+ * Returns the effective config for a perk tooltip. Perks no longer carry an
+ * innate rank (rank is decided by which bucket a path assigns the perk to), and
+ * this static perk-def context has no unit rank to key configByRank by, so we
+ * use the base config. Any per-rank scaling that matters for display is
+ * server-computed and delivered through other channels (e.g. effectiveTrap
+ * tokens), not resolved here.
  */
 function resolveConfig(def: PerkDef): Record<string, number> {
-  const rank = def.rank
-  if (!rank || !def.configByRank) {
-    return def.config
-  }
-  const override = def.configByRank[rank]
-  if (!override || Object.keys(override).length === 0) {
-    return def.config
-  }
-  return { ...def.config, ...override }
+  return def.config
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,9 +131,16 @@ function pickOwnedPerkBranch(def: PerkDef, unit: Unit): string | undefined {
 /**
  * Formats a perk's tooltip body for display in the HUD.
  *
- * - When `def.tooltipTemplate` is absent, returns `def.description ?? ''` as
- *   a safe rollout path — no template means fall through to the static string.
- * - When the template is present, each `{token}` is replaced with the resolved
+ * Resolution order:
+ *   1. `def.tooltipTemplate` (or its trap-/owned-perk-branched variants) when
+ *      non-empty — interpolated as below. No behavior change for any perk
+ *      that has a template (today, all of them do).
+ *   2. `def.generatedDescription` — server-computed prose derived from the
+ *      perk's typed data (statModifiers/abilityModifiers/riders), used
+ *      verbatim (no token interpolation — it's already resolved numbers).
+ *   3. `def.description ?? ''` — final fallback.
+ *
+ * - When a template is present, each `{token}` is replaced with the resolved
  *   numeric value from the perk's effective config or the unit's effectiveTrap.
  * - Missing keys in dev: console.error + render the literal token.
  * - Missing keys in prod: render the literal token silently.
@@ -160,7 +158,7 @@ export function formatPerkTooltip(def: PerkDef, unit: Unit): string {
   const ownedBranch = pickOwnedPerkBranch(def, unit)
   const template = trapBranch ?? ownedBranch ?? def.tooltipTemplate
   if (!template) {
-    return def.description ?? ''
+    return def.generatedDescription || def.description || ''
   }
 
   const config = resolveConfig(def)

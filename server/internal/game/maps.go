@@ -188,13 +188,12 @@ func filterKnownItemIDs(ids []string) []string {
 	return out
 }
 
-// filterKnownPerkIDsForUnit drops any perk id absent from the perk catalog,
-// or authored for a different unit type. Mirrors the UnitType eligibility
-// check in eligiblePerksForUnitAtRank (perk_defs.go) — an empty PerkDef.UnitType
-// is a wildcard. Path/Rank eligibility is deliberately NOT enforced here:
-// placed-unit authoring is allowed to grant perks out of the normal
-// progression order, the same freedom the debug-spawn tool has (see
-// debug_spawn.go). Never fatal.
+// filterKnownPerkIDsForUnit drops any perk id absent from the catalog, or whose
+// folder association belongs to a DIFFERENT unit type. A generic perk (empty
+// association, PerkDef.Path == "") is a wildcard and always kept. Rank/path
+// progression order is deliberately NOT enforced here — placed-unit authoring
+// may grant perks out of normal order, same freedom as debug-spawn
+// (debug_spawn.go). Never fatal.
 func filterKnownPerkIDsForUnit(unitType string, ids []string) []string {
 	out := ids[:0:0]
 	for _, id := range ids {
@@ -203,8 +202,9 @@ func filterKnownPerkIDsForUnit(unitType string, ids []string) []string {
 			slog.Warn("hydratePlacedUnits: dropping unknown perk", "unitType", unitType, "perk", id)
 			continue
 		}
-		if def.UnitType != "" && def.UnitType != unitType {
-			slog.Warn("hydratePlacedUnits: dropping perk not valid for unitType", "unitType", unitType, "perk", id, "perkUnitType", def.UnitType)
+		if def.Path != "" && unitTypeForPath(def.Path) != unitType {
+			slog.Warn("hydratePlacedUnits: dropping perk not valid for unitType",
+				"unitType", unitType, "perk", id, "perkPath", def.Path)
 			continue
 		}
 		out = append(out, id)

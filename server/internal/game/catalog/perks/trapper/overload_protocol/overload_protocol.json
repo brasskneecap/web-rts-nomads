@@ -1,0 +1,28 @@
+{
+  "id": "overload_protocol",
+  "displayName": "Overload Protocol",
+  "description": "Your traps gain a powerful final effect (Spike Surge, Flame Collapse, Cataclysm Blast, or Final Exposure).",
+  "tooltipTemplate": "Traps gain a powerful final effect on expiry. Own a Bronze trap perk to see the specific payoff.",
+  "tooltipTemplateByTrap": {
+    "caltrops": "Spike Surge: on expiry, bursts for {spikeSurgeBurstDamage} damage and slows to {spikeSurgeSlowMultiplier%} of base speed for {spikeSurgeSlowDurationSeconds:1}s.",
+    "explosive_trap": "Cataclysm: each detonation triggers a secondary explosion at {cataclysmRadiusMultiplier+%} radius after {cataclysmSecondaryDelaySeconds:1}s — pairs with Aftershock for 4 total blasts.",
+    "fire_pit": "Flame Collapse: on expiry, collapses ({flameCollapseRadiusMultiplier+%} radius) for {flameCollapseDamage} damage and {flameCollapseBurnDamagePerSecond:1} burn DPS for {flameCollapseBurnDurationSeconds:1}s.",
+    "marker_trap": "Final Exposure: when a marked enemy leaves the zone, deal {finalExposureBurstDamage} damage to them and to every other enemy still carrying a mark from the same trap."
+  },
+  "icon": "perk-overload-protocol",
+  "config": {
+    "cataclysmExplosionSpriteScale": 3.5,
+    "cataclysmRadiusMultiplier": 3.5,
+    "cataclysmSecondaryDelaySeconds": 2,
+    "cataclysmSpriteScale": 2.5,
+    "finalExposureBurstDamage": 10,
+    "flameCollapseBurnDamagePerSecond": 6,
+    "flameCollapseBurnDurationSeconds": 3,
+    "flameCollapseDamage": 20,
+    "flameCollapseRadiusMultiplier": 1.25,
+    "spikeSurgeBurstDamage": 25,
+    "spikeSurgeSlowDurationSeconds": 2.5,
+    "spikeSurgeSlowMultiplier": 0.1
+  },
+  "wired": false
+}

@@ -39,7 +39,7 @@ var (
 	runtimePathUnit = map[string]string{}
 )
 
-// rebuildDerivedPathMaps rebuilds all 12 derived path-catalog maps
+// rebuildDerivedPathMaps rebuilds all 13 derived path-catalog maps
 // (pathModifiersByKey, pathBoundsByPath, ... pathsByUnitType — see
 // path_defs.go) from embeddedPathFiles/embeddedPathUnit merged with the
 // current runtimePaths overlay. An overlay id WINS over an embedded id of
@@ -124,6 +124,7 @@ func rebuildDerivedPathMaps() {
 	pathProjectileScaleByPath = fresh.projectileScaleByPath
 	pathAbilitiesByPath = fresh.abilitiesByPath
 	pathPerkRefsByPath = fresh.perkRefsByPath
+	pathAbilityPoolsByPath = fresh.abilityPoolsByPath
 	pathChannelLoopByPath = fresh.channelLoopByPath
 	pathsByUnitType = fresh.pathsByUnitType
 	pathCatalogMu.Unlock()

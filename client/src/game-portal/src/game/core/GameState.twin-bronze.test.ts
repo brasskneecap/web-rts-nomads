@@ -30,21 +30,29 @@
 
 import { describe, expect, it, beforeEach } from 'vitest'
 import { GameState, type Unit, type ActionItem } from './GameState'
-import { initPerkDefs } from '../maps/perkDefs'
+import { initPerkDefs, initPerkRanksFromPaths } from '../maps/perkDefs'
 import type { PerkDef } from '../maps/perkDefs'
 
 // Minimal perk defs — only the fields getPerkActionItems / buildPerkSlot read.
-// `rank` mirrors the server (PerkDef.Rank, always set from the perk's catalog
-// path): the standard 3-cell layout places each perk in the cell matching its
-// def rank, so these ranks are the perks' positional ranks in these fixtures
-// (retaliation/hold_the_line = bronze, last_stand = silver, guardian_aura =
-// gold). The Twin Bronze branch places by index and ignores rank.
+// Perks carry no innate rank field anymore; the standard 3-cell layout
+// instead resolves each perk's cell via PERK_RANK_BY_ID_MAP (built from a
+// promotion path's perksByRank — see initPerkRanksFromPaths below), matching
+// production's server-driven association model. The Twin Bronze branch
+// places by fixed index and doesn't consult rank at all.
 const STUB_PERK_DEFS: PerkDef[] = [
-  { id: 'retaliation', displayName: 'Retaliation', icon: 'perk-retaliation', rank: 'bronze', config: {} },
-  { id: 'hold_the_line', displayName: 'Hold the Line', icon: 'perk-hold-the-line', rank: 'bronze', config: {} },
-  { id: 'last_stand', displayName: 'Last Stand', icon: 'perk-last-stand', rank: 'silver', config: {} },
-  { id: 'guardian_aura', displayName: 'Guardian Aura', icon: 'perk-guardian-aura', rank: 'gold', config: {} },
+  { id: 'retaliation', displayName: 'Retaliation', icon: 'perk-retaliation', config: {} },
+  { id: 'hold_the_line', displayName: 'Hold the Line', icon: 'perk-hold-the-line', config: {} },
+  { id: 'last_stand', displayName: 'Last Stand', icon: 'perk-last-stand', config: {} },
+  { id: 'guardian_aura', displayName: 'Guardian Aura', icon: 'perk-guardian-aura', config: {} },
 ]
+
+// vanguard bronze holds BOTH bronze perks (Twin Bronze grants two), matching
+// the "vanguard bronze: retaliation, hold_the_line, ..." doc note below.
+const STUB_PERKS_BY_RANK: Record<string, string[]> = {
+  bronze: ['retaliation', 'hold_the_line'],
+  silver: ['last_stand'],
+  gold: ['guardian_aura'],
+}
 
 // Twin Bronze marker — what the server sends on the snapshot for a Soldier
 // whose owner has soldier_twin_bronze acquired.
@@ -83,6 +91,7 @@ function perkItems(actions: ActionItem[]): ActionItem[] {
 
 beforeEach(() => {
   initPerkDefs(STUB_PERK_DEFS)
+  initPerkRanksFromPaths([STUB_PERKS_BY_RANK])
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

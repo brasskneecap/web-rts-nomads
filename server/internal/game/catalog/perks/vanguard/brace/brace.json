@@ -1,0 +1,13 @@
+{
+  "id": "brace",
+  "displayName": "Brace",
+  "description": "Gain bonus armor when surrounded by two or more enemies.",
+  "tooltipTemplate": "When {enemyThreshold} or more enemies are within {radius} units: gain +{bonusArmor} armor.",
+  "icon": "perk-brace",
+  "config": {
+    "bonusArmor": 100,
+    "enemyThreshold": 2,
+    "radius": 100
+  },
+  "wired": false
+}

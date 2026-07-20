@@ -10,7 +10,7 @@ import "fmt"
 var allActionTypes = []ActionType{
 	ActionSelectTargets, ActionStoreTargets, ActionFilterTargets, ActionDealDamage,
 	ActionRestoreHealth, ActionApplyStatus, ActionRemoveStatus, ActionCreateZone,
-	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionMoveUnit, ActionApplyForce,
+	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionPlaceTrap, ActionMoveUnit, ActionApplyForce,
 	ActionModifyResource, ActionTriggerEvent, ActionPlayPresentation, ActionPlaySound,
 	ActionChangeRenderLayer, ActionCameraShake, ActionWait, ActionConditional,
 	ActionRepeat, ActionSetContext, ActionLoop, ActionCustom,
@@ -32,6 +32,35 @@ var knownActionTypes = func() map[ActionType]bool {
 // been registered for it.
 func isKnownActionType(t ActionType) bool {
 	return knownActionTypes[t]
+}
+
+// allTriggerTypes is the canonical list of every TriggerType. isKnownTriggerType
+// derives from it so the two cannot drift (guarded by
+// TestProgramEnumsMatchSourceConsts, which checks ProgramEnums()'s
+// "triggerTypes" entry — reused from this slice, mirroring how ProgramEnums()
+// reuses allActionTypes for "actionTypes"). Also the target of
+// AbilityRider.Trigger validation (perk_defs.go): a rider grafts its actions
+// onto an existing TriggerType, so its trigger must be one of these.
+var allTriggerTypes = []TriggerType{
+	TriggerOnCastStart, TriggerOnCastComplete, TriggerOnAnimationMarker,
+	TriggerOnProjectileImpact, TriggerOnProjectileTick, TriggerOnBeamImpact, TriggerOnBeamTick,
+	TriggerOnZoneTick, TriggerOnZoneEnter, TriggerOnZoneExit, TriggerOnStatusTick, TriggerOnStatusExpire,
+	TriggerOnDamageDealt, TriggerOnUnitDeath, TriggerOnActionComplete, TriggerOnChargeFull, TriggerCustom,
+}
+
+// knownTriggerTypes is the lookup set derived from allTriggerTypes.
+var knownTriggerTypes = func() map[TriggerType]bool {
+	m := make(map[TriggerType]bool, len(allTriggerTypes))
+	for _, t := range allTriggerTypes {
+		m[t] = true
+	}
+	return m
+}()
+
+// isKnownTriggerType reports whether t is one of the TriggerType enum consts
+// defined on the data model. Used by AbilityRider validation (perk_defs.go).
+func isKnownTriggerType(t TriggerType) bool {
+	return knownTriggerTypes[t]
 }
 
 // validationWalker accumulates issues and duplicate-id tracking state while

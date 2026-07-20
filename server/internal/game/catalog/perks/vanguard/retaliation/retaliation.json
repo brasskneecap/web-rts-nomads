@@ -1,0 +1,11 @@
+{
+  "id": "retaliation",
+  "displayName": "Retaliation",
+  "description": "Reflect damage equal to a percentage of this unit's armor back to the attacker on each hit.",
+  "tooltipTemplate": "Reflect damage equal to {armorPercent%} of your armor back to each attacker on every hit.",
+  "icon": "perk-retaliation",
+  "config": {
+    "armorPercent": 0.1
+  },
+  "wired": false
+}

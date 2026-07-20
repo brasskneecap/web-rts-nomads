@@ -50,7 +50,7 @@ const (
 //
 // ADD NEW SELF-PERK CRIT-CHANCE SOURCES HERE.
 func (s *GameState) perkCritChanceBonusLocked(attacker *Unit) float64 {
-	if attacker == nil || len(attacker.PerkIDs) == 0 {
+	if attacker == nil {
 		return 0
 	}
 	total := 0.0
@@ -62,12 +62,31 @@ func (s *GameState) perkCritChanceBonusLocked(attacker *Unit) float64 {
 		switch perkID {
 		case "eagle_spirit":
 			total += def.Config["critChanceBonus"]
-		case "vulture_spirit":
-			total += def.Config["critChanceBonus"]
 		case "bullseye":
 			total += def.Config["critChanceBonus"]
+
+		// vulture_spirit's crit-chance bonus is now data-driven — see
+		// PerkDef.StatModifiers (catalog/perks/marksman/vulture_spirit) —
+		// and folds in below via unitPerkStatModifiersLocked instead of a
+		// case arm here.
 		}
 	}
+
+	// Zone-aura crit chance AND data-driven perk stat modifiers (e.g.
+	// vulture_spirit's StatModifier{Stat:"critChance", Op:"add"}). Folded the
+	// same way as attackSpeed's total (perkAttackSpeedBonusLocked): the
+	// caller adds this to defaultCritChance, so we compose against that same
+	// constant baseline (there is no per-unit base field for crit chance) and
+	// return the bonus that, added to defaultCritChance, reproduces the
+	// canonical applyStatStages result. No active aura and no perk
+	// StatModifiers on this stat ⇒ returns `total` unchanged.
+	add, mul := s.playerStatModifierLocked(attacker.OwnerID, statCritChance)
+	perkStages := s.unitPerkStatModifiersLocked(attacker, statCritChance)
+	if add != 0 || mul != 1 || len(perkStages) > 0 {
+		effective := applyStatStages(defaultCritChance+total, mergeZoneIntoBaseStage(perkStages, add, mul))
+		return effective - defaultCritChance
+	}
+
 	return total
 }
 
@@ -78,7 +97,7 @@ func (s *GameState) perkCritChanceBonusLocked(attacker *Unit) float64 {
 //
 // ADD NEW CRIT-MULTIPLIER OVERRIDES HERE.
 func (s *GameState) perkCritMultiplierBonusLocked(attacker *Unit) float64 {
-	if attacker == nil || len(attacker.PerkIDs) == 0 {
+	if attacker == nil {
 		return 0
 	}
 	best := 0.0
@@ -96,6 +115,20 @@ func (s *GameState) perkCritMultiplierBonusLocked(attacker *Unit) float64 {
 			}
 		}
 	}
+
+	// Zone-aura crit multiplier. Composed against defaultCritMultiplier (the
+	// same baseline unitCritMultiplierLocked starts from) via the canonical
+	// (base + add) × mul rule, then folded into the existing "largest wins"
+	// rule so it can only raise the multiplier — never stack with a perk
+	// override. No active aura ⇒ (0, 1) ⇒ effective == defaultCritMultiplier,
+	// which never beats a real perk override and leaves `best` unchanged.
+	add, mul := s.playerStatModifierLocked(attacker.OwnerID, statCritMult)
+	if add != 0 || mul != 1 {
+		if effective := (defaultCritMultiplier + add) * mul; effective > best {
+			best = effective
+		}
+	}
+
 	return best
 }
 

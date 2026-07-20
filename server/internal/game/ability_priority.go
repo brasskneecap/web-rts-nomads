@@ -55,23 +55,23 @@ var abilityCategoryWeights = map[AbilityCategory]float64{
 	AbilityCategorySummon:    3.0,
 }
 
-// spellSlotRankAutoCastPriority is a small additive priority so that when a
-// caster has more than one auto-cast POOL spell ready in the same tick, the
-// higher-rank spell is preferred — for the Arch Mage, Silver over Bronze. Pool
-// spells commonly share a selector (closest_enemy_in_range) and thus resolve the
-// same target and score identically, so this is what actually breaks that tie.
-// Bounded and applied only above the activation floor (see caller), so it never
-// lifts a "not useful" (0-scored) buff/summon into a cast. Returns 0 for a
-// Bronze spell or any ability that isn't a learned pool spell (leaving prior
-// behaviour unchanged for single-spell casters).
-func spellSlotRankAutoCastPriority(unit *Unit, abilityID string) float64 {
-	switch spellSlotRankForAbilityLocked(unit, abilityID) {
+// abilitySlotRankAutoCastPriority is a small additive priority so that when a
+// caster has more than one auto-cast POOL ability ready in the same tick, the
+// higher-rank ability is preferred — for the Arch Mage, Silver over Bronze.
+// Pool abilities commonly share a selector (closest_enemy_in_range) and thus
+// resolve the same target and score identically, so this is what actually
+// breaks that tie. Bounded and applied only above the activation floor (see
+// caller), so it never lifts a "not useful" (0-scored) buff/summon into a
+// cast. Returns 0 for a Bronze ability or any ability that isn't a learned
+// pool ability (leaving prior behaviour unchanged for single-spell casters).
+func abilitySlotRankAutoCastPriority(unit *Unit, abilityID string) float64 {
+	switch abilitySlotRankLocked(unit, abilityID) {
 	case unitRankGold:
 		return 1.0
 	case unitRankSilver:
 		return 0.5
 	default:
-		return 0 // Bronze, or not a learned pool spell.
+		return 0 // Bronze, or not a learned pool ability.
 	}
 }
 
@@ -98,12 +98,12 @@ func (s *GameState) scoreAutoCastCandidateLocked(unit *Unit, def AbilityDef, tar
 		// an uncategorised autocast ability behaves exactly as first-ready did.
 		score = candidateBaseScore
 	}
-	// Higher-rank pool spells win when several are ready at once (Silver over
-	// Bronze). Only applied above the activation floor so a "not useful"
+	// Higher-rank pool abilities win when several are ready at once (Silver
+	// over Bronze). Only applied above the activation floor so a "not useful"
 	// buff_ally/summon (score 0) is never lifted into a cast, preserving the
 	// no-regression invariant.
 	if score > minActivationScore {
-		score += spellSlotRankAutoCastPriority(unit, def.ID)
+		score += abilitySlotRankAutoCastPriority(unit, def.ID)
 	}
 	return score
 }

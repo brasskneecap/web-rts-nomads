@@ -1,0 +1,24 @@
+{
+  "id": "zealous_march",
+  "displayName": "Zealous March",
+  "description": "Nearby allies gain bonus movement speed. Additional Clerics add a smaller stacking bonus.",
+  "icon": "perk-zealous-march",
+  "config": {
+    "moveSpeedMultiplier": 0.3,
+    "radiusPixels": 192,
+    "stackBonus": 0.05
+  },
+  "auras": [
+    {
+      "radius": 192,
+      "targets": "allies",
+      "includeSelf": true,
+      "stacking": "max",
+      "perAdditionalSource": 0.05,
+      "statModifiers": [
+        { "stat": "moveSpeed", "op": "add", "value": 0.3 }
+      ]
+    }
+  ],
+  "wired": false
+}

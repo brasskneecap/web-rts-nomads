@@ -225,19 +225,20 @@ func TestMeteor_ImpactQueuesLingeringCraterEffect(t *testing.T) {
 }
 
 // TestArchMageSpells_AutoCastOnByDefault guards the design rule that every
-// castable Arch Mage pool spell auto-casts by default — players shouldn't need
-// micro-management to start (they can still toggle it off). Passives are exempt.
+// castable Arch Mage pool ability auto-casts by default — players shouldn't
+// need micro-management to start (they can still toggle it off). Passives
+// are exempt.
 func TestArchMageSpells_AutoCastOnByDefault(t *testing.T) {
 	// "silver" resolves to the full shared pool (Bronze ∪ Silver); Gold grants
-	// no pool spell so it can't be used to enumerate the pool.
-	pool := spellPoolFor("arch_mage", "silver")
+	// no pool ability so it can't be used to enumerate the pool.
+	pool := abilityPoolFor("arch_mage", "silver")
 	if len(pool) == 0 {
 		t.Fatal("arch_mage pool is empty")
 	}
 	for _, id := range pool {
 		def, ok := getAbilityDef(id)
 		if !ok {
-			t.Errorf("pool spell %q has no AbilityDef", id)
+			t.Errorf("pool ability %q has no AbilityDef", id)
 			continue
 		}
 		if def.IsPassive() {
@@ -251,10 +252,10 @@ func TestArchMageSpells_AutoCastOnByDefault(t *testing.T) {
 }
 
 // TestArchMage_SilverAutoCastOutranksBronze verifies the auto-cast priority: an
-// Arch Mage with two ready pool spells (one earned at Bronze, one at Silver)
-// targeting the same enemy scores the SILVER spell strictly higher, so the
-// selection loop casts it first. Both spells share a category and selector, so
-// without the rank priority they would tie.
+// Arch Mage with two ready pool abilities (one earned at Bronze, one at
+// Silver) targeting the same enemy scores the SILVER ability strictly higher,
+// so the selection loop casts it first. Both abilities share a category and
+// selector, so without the rank priority they would tie.
 func TestArchMage_SilverAutoCastOutranksBronze(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
@@ -262,8 +263,8 @@ func TestArchMage_SilverAutoCastOutranksBronze(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 300, Y: 300})
 	caster.Visible = true
-	// Two offensive pool spells learned at different ranks (same target/selector).
-	caster.PoolSpellsByRank = map[string]string{"bronze": "fireball", "silver": "shatter"}
+	// Two offensive pool abilities learned at different ranks (same target/selector).
+	caster.PoolAbilitiesByRank = map[string]string{"bronze": "fireball", "silver": "shatter"}
 	enemy := spawnEnemy(t, s, 360, 300)
 
 	bronzeDef, ok := getAbilityDef("fireball")

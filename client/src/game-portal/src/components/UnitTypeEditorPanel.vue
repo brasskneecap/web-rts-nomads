@@ -622,12 +622,40 @@
               </div>
             </SectionCard>
 
-            <!-- Perk References: per-rank explicit grants of standalone perk
-                 defs (union'd server-side with a path's own perk pools). -->
-            <SectionCard v-show="activePathTab === pathSectionTab('perks')" title="Perk References" :index="pathSectionIndex('perks')" class="unit-editor__combat-perks">
-              <div class="unit-editor__perk-ranks">
-                <div v-for="rank in PERK_RANK_ORDER" :key="rank" class="unit-editor__perk-rank">
-                  <h4 class="unit-editor__perk-rank-label">{{ rank }}</h4>
+            <!-- Rank Slots: per-rank choice between a Perk slot (explicit
+                 grants of standalone perk defs, union'd server-side with a
+                 path's own perk pools) and an Ability slot (one ability
+                 rolled from abilityPoolsByRank). A rank is one or the other,
+                 never both. -->
+            <div v-show="activePathTab === pathSectionTab('perks')" class="unit-editor__rank-slot-stack">
+              <SectionCard
+                v-for="(rank, i) in PERK_RANK_ORDER"
+                :key="rank"
+                :title="rank.charAt(0).toUpperCase() + rank.slice(1)"
+                :index="i + 1"
+              >
+                <div class="unit-editor__slot-type" :data-test="`slot-type-${rank}`">
+                  <label class="unit-editor__slot-type-option">
+                    <input
+                      type="radio"
+                      :name="`slot-type-${rank}`"
+                      value="perk"
+                      :checked="rankSlotType(rank) === 'perk'"
+                      @change="setRankSlotType(rank, 'perk')"
+                    /> Perk slot
+                  </label>
+                  <label class="unit-editor__slot-type-option">
+                    <input
+                      type="radio"
+                      :name="`slot-type-${rank}`"
+                      value="ability"
+                      :checked="rankSlotType(rank) === 'ability'"
+                      @change="setRankSlotType(rank, 'ability')"
+                    /> Ability slot
+                  </label>
+                </div>
+
+                <div v-if="rankSlotType(rank) === 'perk'" :key="`${rank}-perk`">
                   <ul class="unit-editor__perk-list">
                     <li v-for="perkId in perksForRank(rank)" :key="perkId" class="unit-editor__perk-row">
                       <span class="unit-editor__perk-name">{{ perkLabel(perkId) }}</span>
@@ -651,8 +679,33 @@
                     <option v-for="opt in availablePerkOptionsForRank(rank)" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
                   </select>
                 </div>
-              </div>
-            </SectionCard>
+
+                <div v-else :key="`${rank}-ability`">
+                  <ul class="unit-editor__perk-list">
+                    <li v-for="abilityId in abilitiesForRank(rank)" :key="abilityId" class="unit-editor__perk-row">
+                      <span class="unit-editor__perk-name">{{ abilityLabel(abilityId) }}</span>
+                      <button
+                        type="button"
+                        class="unit-editor__row-del"
+                        :title="`Remove ${abilityId}`"
+                        @click="removeAbilityFromRank(rank, abilityId)"
+                      >✕</button>
+                    </li>
+                    <li v-if="abilitiesForRank(rank).length === 0" class="unit-hint">No abilities in pool.</li>
+                  </ul>
+                  <select
+                    class="unit-editor__perk-add"
+                    :aria-label="`Add ability to ${rank}`"
+                    :data-test="`ability-add-${rank}`"
+                    value=""
+                    @change="onAbilityAddChange(rank, $event)"
+                  >
+                    <option value="">Add ability…</option>
+                    <option v-for="opt in availableAbilityOptionsForRank(rank)" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+                  </select>
+                </div>
+              </SectionCard>
+            </div>
 
             <SectionCard
               v-if="selectedPath === null"
@@ -835,12 +888,15 @@ function isPerkInert(id: string): boolean {
   return !perkDefsById.value.get(id)?.wired
 }
 
-// Catalog perks not already referenced at this rank, sorted alphabetically —
-// mirrors abilityOptions' {id, label} + localeCompare idiom.
+// Catalog perks eligible for THIS path's picker: association matches the path
+// being edited, or the perk is generic (empty association). Already-referenced
+// perks at this rank are excluded. Sorted alphabetically — mirrors abilityOptions.
 function availablePerkOptionsForRank(rank: string): FilterableOption[] {
   const taken = new Set(perksForRank(rank))
+  const activePath = pathForm.value?.path ?? ''
   return perkDefs.value
     .filter((d) => !taken.has(d.id))
+    .filter((d) => !d.path || d.path === activePath) // generic OR associated
     .map((d) => ({ id: d.id, label: d.displayName || d.id }))
     .sort((a, b) => a.label.localeCompare(b.label))
 }
@@ -867,6 +923,102 @@ function removePerkFromRank(rank: string, id: string) {
 function onPerkAddChange(rank: string, event: Event) {
   const select = event.target as HTMLSelectElement
   addPerkToRank(rank, select.value)
+  select.value = ''
+}
+
+// Rank slot type: a rank is an Ability slot when its key is PRESENT on
+// abilityPoolsByRank (even with an empty array) — key presence, not array
+// length, is the discriminator, mirroring how perksByRank ranks are keyed by
+// presence in the rank grid. Absent => Perk slot (the pre-existing default).
+function rankSlotType(rank: string): 'perk' | 'ability' {
+  return pathForm.value?.abilityPoolsByRank?.[rank] !== undefined ? 'ability' : 'perk'
+}
+
+// Stashes the list from the slot a rank is LEAVING so toggling back restores
+// it (ability→perk→ability brings the abilities back, and vice versa) instead
+// of wiping them. Session-local: only the ACTIVE slot is persisted on save, so
+// the stashed inactive list is not restored across a full editor reload.
+const rankSlotStash = ref<Record<string, { perks: string[]; abilities: string[] }>>({})
+
+// Switching a rank's slot type: a rank is one or the other, never both, so the
+// PERSISTED data only ever carries the active slot's list. But the inactive
+// slot's list is stashed (above) and restored on switch-back, so experimenting
+// with the other slot type never destroys what you'd populated.
+function setRankSlotType(rank: string, type: 'perk' | 'ability') {
+  if (!pathForm.value) return
+  const stash = { ...(rankSlotStash.value[rank] ?? { perks: [], abilities: [] }) }
+  if (type === 'ability') {
+    // Stash the perks we're leaving; restore any previously-stashed abilities.
+    const curPerks = pathForm.value.perksByRank?.[rank]
+    if (curPerks !== undefined) stash.perks = [...curPerks]
+    if (pathForm.value.perksByRank?.[rank] !== undefined) {
+      const perks = { ...pathForm.value.perksByRank }
+      delete perks[rank]
+      pathForm.value.perksByRank = perks
+    }
+    const pools = { ...(pathForm.value.abilityPoolsByRank ?? {}) }
+    pools[rank] = [...stash.abilities]
+    pathForm.value.abilityPoolsByRank = pools
+  } else {
+    // Stash the abilities we're leaving; restore any previously-stashed perks.
+    const curAbilities = pathForm.value.abilityPoolsByRank?.[rank]
+    if (curAbilities !== undefined) stash.abilities = [...curAbilities]
+    if (pathForm.value.abilityPoolsByRank?.[rank] !== undefined) {
+      const pools = { ...pathForm.value.abilityPoolsByRank }
+      delete pools[rank]
+      pathForm.value.abilityPoolsByRank = pools
+    }
+    if (stash.perks.length) {
+      const perks = { ...(pathForm.value.perksByRank ?? {}) }
+      perks[rank] = [...stash.perks]
+      pathForm.value.perksByRank = perks
+    }
+  }
+  rankSlotStash.value = { ...rankSlotStash.value, [rank]: stash }
+}
+
+// Ability Pool: per-rank list of ability ids to roll a random grant from,
+// mirroring the Perk References helpers above. Dedup rule (matches the
+// server): exclude the path's always-granted base abilities and ids already
+// in THIS rank's pool. Do NOT exclude other ranks' pools — the same ability
+// may legitimately appear in multiple ranks' pools (e.g. shared bronze+silver
+// pools); the runtime de-dupes the actual grant per-unit.
+function abilitiesForRank(rank: string): string[] {
+  return pathForm.value?.abilityPoolsByRank?.[rank] ?? []
+}
+
+function abilityLabel(id: string): string {
+  return abilityDefsById.value.get(id)?.displayName || id
+}
+
+function availableAbilityOptionsForRank(rank: string): FilterableOption[] {
+  const taken = new Set<string>([...(pathForm.value?.abilities ?? []), ...abilitiesForRank(rank)])
+  return abilityDefs.value
+    .filter((d) => !taken.has(d.id))
+    .map((d) => ({ id: d.id, label: d.displayName || d.id }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+}
+
+function addAbilityToRank(rank: string, id: string) {
+  if (!pathForm.value || !id) return
+  const pools = { ...(pathForm.value.abilityPoolsByRank ?? {}) }
+  const current = pools[rank] ?? []
+  if (current.includes(id)) return
+  pools[rank] = [...current, id]
+  pathForm.value.abilityPoolsByRank = pools
+}
+
+function removeAbilityFromRank(rank: string, id: string) {
+  if (!pathForm.value?.abilityPoolsByRank) return
+  const pools = { ...pathForm.value.abilityPoolsByRank }
+  pools[rank] = (pools[rank] ?? []).filter((x) => x !== id)
+  pathForm.value.abilityPoolsByRank = pools
+}
+
+// Same reset-after-pick idiom as onPerkAddChange.
+function onAbilityAddChange(rank: string, event: Event) {
+  const select = event.target as HTMLSelectElement
+  addAbilityToRank(rank, select.value)
   select.value = ''
 }
 
@@ -1157,7 +1309,8 @@ function sectionIndex(key: string): number {
 // Identity tab so it stays reachable without a dedicated (now-empty) tab.
 const PATH_TABS: { id: string; label: string; sections: string[] }[] = [
   { id: 'identity', label: 'Identity', sections: ['identity', 'preview', 'membership'] },
-  { id: 'combat', label: 'Combat', sections: ['combat', 'abilities', 'ranks', 'perks'] },
+  { id: 'combat', label: 'Combat', sections: ['combat', 'abilities', 'ranks'] },
+  { id: 'rankSlots', label: 'Rank Slots', sections: ['perks'] },
 ]
 const activePathTab = ref<string>(PATH_TABS[0].id)
 function pathSectionTab(key: string): string {
@@ -1966,24 +2119,13 @@ onBeforeUnmount(() => {
   }
 }
 
-/* Perk References: full-width row below Combat/Abilities/Rank Stats, one
-   column per rank. */
-.unit-editor__combat-perks {
+/* Rank Slots: one card per rank (Bronze/Silver/Gold), stacked vertically and
+   spanning the full editor grid width. */
+.unit-editor__rank-slot-stack {
   grid-column: 1 / -1;
-}
-
-.unit-editor__perk-ranks {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: var(--ed-gap);
-}
-
-.unit-editor__perk-rank-label {
-  margin: 0 0 6px;
-  text-transform: capitalize;
-  font-size: 0.78rem;
-  letter-spacing: 0.03em;
-  color: var(--ed-text-dim);
 }
 
 .unit-editor__perk-list {
@@ -2012,10 +2154,18 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
-@media (max-width: 700px) {
-  .unit-editor__perk-ranks {
-    grid-template-columns: 1fr;
-  }
+.unit-editor__slot-type {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  color: var(--ed-text-dim);
+}
+
+.unit-editor__slot-type-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 @media (max-width: 1500px) {

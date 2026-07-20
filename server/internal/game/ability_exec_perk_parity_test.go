@@ -187,9 +187,9 @@ func TestAbilityCompileGolden_Heal_BattlePrayerFiresOnExecutorPath(t *testing.T)
 // "shatter" ability (optionally compiled to SchemaVersion 2), spawns a caster
 // carrying unstable_magic (rolled elsewhere; this test calls
 // fireUnstableMagicLocked directly to avoid RNG-driven flakiness — see the
-// call site) with abilityID as its ONLY learned pool spell (so
-// randomLearnedSpellLocked deterministically picks it regardless of the perk
-// RNG), and a lone enemy standing at the point the proc will target. Lock
+// call site) with abilityID as its ONLY learned pool ability (so
+// randomLearnedAbilityLocked deterministically picks it regardless of the
+// perk RNG), and a lone enemy standing at the point the proc will target. Lock
 // held on return; caller must s.mu.Unlock().
 func buildUnstableMagicShatterScene(t *testing.T, abilityID string, v2 bool) (s *GameState, caster, enemy *Unit) {
 	t.Helper()
@@ -214,7 +214,7 @@ func buildUnstableMagicShatterScene(t *testing.T, abilityID string, v2 bool) (s 
 	caster = teamCombatUnit(t, s, "p1", 0, 0)
 	caster.MaxMana, caster.CurrentMana = 100, 100
 	grantPerk(caster, "unstable_magic")
-	caster.PoolSpellsByRank = map[string]string{"1": abilityID}
+	caster.PoolAbilitiesByRank = map[string]string{"1": abilityID}
 
 	enemy = teamCombatUnit(t, s, "p2", 150, 0) // within shatter's burst radius of itself
 	enemy.HP, enemy.MaxHP = 500, 500
@@ -370,7 +370,7 @@ func buildUnstableMagicFireballScene(t *testing.T, abilityID string, v2 bool) (s
 	caster = teamCombatUnit(t, s, "p1", 0, 0)
 	caster.MaxMana, caster.CurrentMana = 100, 100
 	grantPerk(caster, "unstable_magic")
-	caster.PoolSpellsByRank = map[string]string{"1": abilityID}
+	caster.PoolAbilitiesByRank = map[string]string{"1": abilityID}
 
 	enemy = teamCombatUnit(t, s, "p2", 150, 0) // within fireball's cast range
 	enemy.HP, enemy.MaxHP = 500, 500

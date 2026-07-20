@@ -344,6 +344,17 @@ type dealDamageConfig struct {
 	// (every deal_damage authored before this field existed, and the primary
 	// hit's own dmg action) is a no-op.
 	FlatOffset int `json:"flatOffset,omitempty"`
+	// AmountRef, when non-empty, names a ctxScalar in ctx.Named whose value is the
+	// damage amount (e.g. "trigger_damage", bound by the rider runner to the
+	// triggering tick's damage). AmountMult scales it (default 1 when 0/unset).
+	// Used for riders like shared_suffering that deal a fraction of the event that
+	// fired them. When AmountRef is set the value is applied RAW — NOT re-folded
+	// through effectiveAbilityDamageLocked / effectiveDamageMultiplier — because
+	// the referenced scalar is already a final, folded number (the tick's actual
+	// damage). FlatOffset still applies last, as usual. When AmountRef is empty,
+	// Amount is used exactly as before (100% unchanged path).
+	AmountRef  string  `json:"amountRef,omitempty"`
+	AmountMult float64 `json:"amountMult,omitempty"`
 }
 
 func (dealDamageConfig) actionConfig() {}
@@ -375,8 +386,11 @@ func init() {
 		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue {
 			c := cfg.(dealDamageConfig)
 			var out []ValidationIssue
-			if c.Amount <= 0 {
-				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "deal_damage requires amount > 0", Severity: "error"})
+			// A non-empty AmountRef supplies the amount at runtime (from a bound
+			// ctxScalar), so Amount == 0 is valid alongside it — only require
+			// Amount > 0 when there is no ref to fall back on.
+			if c.Amount <= 0 && c.AmountRef == "" {
+				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "deal_damage requires amount > 0 or amountRef", Severity: "error"})
 			}
 			if c.Type != "" && !IsValidDamageType(c.Type) {
 				out = append(out, ValidationIssue{Code: "invalid_damage_type", Message: "unknown damage type " + string(c.Type), Severity: "error"})
@@ -386,6 +400,8 @@ func init() {
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "amount", Label: "Amount", Control: "number", Section: "Properties"},
 			{Key: "type", Label: "Damage Type", Control: "enum", Section: "Properties"},
+			{Key: "amountRef", Label: "Amount From (context)", Control: "text", Section: "Properties"},
+			{Key: "amountMult", Label: "Amount ×", Control: "number", Section: "Properties"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(dealDamageConfig)
@@ -395,21 +411,41 @@ func init() {
 			// burn/DoT is applied raw; zone-tick ctx has abilityDef==nil so burn
 			// stays raw — parity.
 			caster := s.getUnitByIDLocked(ctx.CasterID)
-			amount := c.Amount
-			if caster != nil && ctx.abilityDef != nil {
-				amount = s.effectiveAbilityDamageLocked(caster, *ctx.abilityDef, c.Amount)
-			}
-			// Honour a caller-supplied reduced/boosted-effectiveness cast (e.g.
-			// unstable_magic's free proc — see EffectiveSpell.DamageEffectivenessMultiplier
-			// / resolveAbilityProgramCastLocked). A multiplier of 1.0 (the default
-			// for every ordinary cast) is a no-op.
-			if m := ctx.effectiveDamageMultiplier(); m != 1.0 {
-				amount = int(math.Round(float64(amount) * m))
+			var amount int
+			if c.AmountRef != "" {
+				// AmountRef path (see the field's doc comment): the bound scalar
+				// is already a final, folded damage number, so it is applied RAW —
+				// deliberately SKIPPING both effectiveAbilityDamageLocked's
+				// spell-modifier fold and effectiveDamageMultiplier below. A ref
+				// that isn't bound (missing, or bound to a non-scalar) resolves to
+				// amount 0 (a no-op hit) rather than falling back to Amount — an
+				// author who set AmountRef meant "the runtime value," not "the
+				// static Amount as a fallback."
+				mult := c.AmountMult
+				if mult == 0 {
+					mult = 1
+				}
+				if v, ok := ctx.Named[c.AmountRef]; ok && v.Kind == ctxScalar {
+					amount = int(math.Round(v.Scalar * mult))
+				}
+			} else {
+				amount = c.Amount
+				if caster != nil && ctx.abilityDef != nil {
+					amount = s.effectiveAbilityDamageLocked(caster, *ctx.abilityDef, c.Amount)
+				}
+				// Honour a caller-supplied reduced/boosted-effectiveness cast (e.g.
+				// unstable_magic's free proc — see EffectiveSpell.DamageEffectivenessMultiplier
+				// / resolveAbilityProgramCastLocked). A multiplier of 1.0 (the default
+				// for every ordinary cast) is a no-op.
+				if m := ctx.effectiveDamageMultiplier(); m != 1.0 {
+					amount = int(math.Round(float64(amount) * m))
+				}
 			}
 			// FlatOffset (see the field's doc comment) applies LAST, after
-			// both scaling steps, and is itself never scaled. Per-hop decay is now
-			// expressed with a loop variable (deal_damage amount: "a") rather than
-			// a bespoke ref field — see ability_exec_loop.go.
+			// both scaling steps (or the AmountRef path above), and is itself
+			// never scaled. Per-hop decay is now expressed with a loop variable
+			// (deal_damage amount: "a") rather than a bespoke ref field — see
+			// ability_exec_loop.go.
 			amount += c.FlatOffset
 			// lastAppliedDamage is reset here (start of this Execute) and
 			// accumulated below so a 0-hit run reports 0 rather than leaking a

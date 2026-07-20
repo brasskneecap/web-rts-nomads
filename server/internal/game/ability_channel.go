@@ -432,12 +432,13 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 		}
 		safetyCounter++
 
-		// Aggregate every Siphon Life channel modifier (Soul Leech / Beam
-		// Mastery): damage, healing, mana cost, and range scalers all in
-		// one struct. Defaults to identity for non-Siphoners. Mana cost is
-		// computed from the scaled value with a floor of 0 — a heavy
-		// beam_mastery discount could in theory floor mana cost.
-		mods := s.siphonLifeChannelModifiersForCasterLocked(unit)
+		// Aggregate every perk-authored abilityModifiers entry targeting this
+		// channel ability (e.g. Soul Leech / Beam Mastery on siphon_life):
+		// damage, healing, mana cost, and range scalers all in one struct.
+		// Defaults to identity when the caster owns no matching perk. Mana
+		// cost is computed from the scaled value with a floor of 0 — a heavy
+		// discount could in theory floor mana cost.
+		mods := s.abilityScalarModifiersForCasterLocked(unit, def.ID)
 		tickManaCost := int(math.Round(float64(spec.ManaCostPerTick) * mods.ManaCostMult))
 		if tickManaCost < 0 {
 			tickManaCost = 0
@@ -507,12 +508,20 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 		// keeping the client's per-ability beam dispatch consistent.
 		s.applyChainSiphonBeamsLocked(unit, target, tickDamage, healAmount, spec.AllyHealRadius, unit.ChannelAbilityID)
 
-		// Shared Suffering: echo a fraction of the primary tick damage to
-		// every nearby enemy that already carries any Siphoner affliction.
-		// No-op when the perk isn't owned or when no afflicted neighbor is
-		// in range. Echo damage is tagged Kind="shared_suffering" and the
-		// caster-side recursion guard prevents re-entry within a tick.
-		s.applySharedSufferingLocked(unit, target, tickDamage, unit.ChannelAbilityID)
+		// Shared Suffering (and any FUTURE rider on siphon_life's on_beam_tick
+		// trigger) — data-driven via PerkDef.AbilityRiders, migrated off the
+		// bespoke applySharedSufferingLocked helper (see
+		// docs/superpowers/plans/2026-07-19-perk-ability-riders-tier-b.md
+		// Task 4). No-op when the caster owns no matching rider. The rider's
+		// own select_targets query reproduces the old helper's target set
+		// (visible hostiles within radius of the primary target, primary
+		// excluded) and deal_damage echoes a fraction of tickDamage (bound as
+		// ctx.Named["trigger_damage"]) tagged DamageSource.Kind="ability"
+		// (was "shared_suffering" — a debug-label-only change, see the perk
+		// JSON and the migration characterization test for the accepted
+		// deltas: no VFX, no minor-popup split, ascended_corruption's overlay
+		// temporarily inert).
+		s.runAbilityRidersForCasterLocked(unit, target, unit.ChannelAbilityID, TriggerOnBeamTick, tickDamage)
 
 		// Withering Beam — accrue continuous-siphon time and stamp stacks
 		// on the target every secondsPerStack. Runs after damage so a
@@ -559,21 +568,18 @@ func (s *GameState) isValidChannelTargetLocked(caster *Unit, def AbilityDef, tar
 }
 
 // channelRangeMultiplierForCasterLocked returns the cast-range scaler the
-// caster's perks apply to this channel ability. Defaults to 1.0; only
-// siphon_life is scaled today via beam_mastery's rangeMultiplier. Add a
-// branch here when a future channel ability picks up its own range
-// modifier — keep the per-ability gating explicit so an unrelated channel
-// doesn't accidentally inherit beam_mastery's reach.
+// caster's perks apply to this channel ability, via the generic
+// abilityModifiers aggregator (e.g. beam_mastery's rangeMult on
+// siphon_life). An ability whose caster has no matching modifiers returns
+// 1.0, so this is safe and generic across any channel ability — no
+// per-ability gating needed here.
 //
 // Caller holds s.mu (read or write).
 func (s *GameState) channelRangeMultiplierForCasterLocked(caster *Unit, def AbilityDef) float64 {
 	if caster == nil {
 		return 1.0
 	}
-	if def.ID == siphonLifeAbilityID {
-		return s.siphonLifeChannelModifiersForCasterLocked(caster).RangeMult
-	}
-	return 1.0
+	return s.abilityScalarModifiersForCasterLocked(caster, def.ID).RangeMult
 }
 
 // stopUnitChannelLocked records reason on the unit (for async/UI surfacing),

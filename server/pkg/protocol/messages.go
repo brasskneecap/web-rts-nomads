@@ -524,11 +524,11 @@ type AbilitySnapshot struct {
 	// The client hides it from the castable action row (it may surface it as a
 	// passive/charge indicator instead).
 	Passive bool `json:"passive,omitempty"`
-	// SpellSlotRank, when set (bronze/silver/gold), marks this ability as a
-	// learnable spell-slot spell the unit gained at that rank
+	// AbilitySlotRank, when set (bronze/silver/gold), marks this ability as a
+	// learnable ability-slot ability the unit gained at that rank
 	// (arch-mage-spell-system). The client renders it in the matching perk cell
 	// as a CASTABLE slot instead of in the normal ability row.
-	SpellSlotRank string `json:"spellSlotRank,omitempty"`
+	AbilitySlotRank string `json:"abilitySlotRank,omitempty"`
 	// ChargeCurrent / ChargeRequired surface a charge-fire passive's progress
 	// (arcane_missiles) so the client can draw a charge meter. Both 0 for
 	// non-charge abilities.

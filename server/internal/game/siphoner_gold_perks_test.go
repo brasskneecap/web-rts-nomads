@@ -69,7 +69,7 @@ func TestBeamMastery_ChannelModifiersComposeMultiplicatively(t *testing.T) {
 	defer s.mu.Unlock()
 
 	// Baseline: no perks → identity modifiers.
-	mods := s.siphonLifeChannelModifiersForCasterLocked(siphoner)
+	mods := s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
 	if mods.DamageMult != 1.0 || mods.HealMult != 1.0 || mods.ManaCostMult != 1.0 || mods.RangeMult != 1.0 {
 		t.Fatalf("baseline modifiers should all be 1.0, got %+v", mods)
 	}
@@ -82,7 +82,7 @@ func TestBeamMastery_ChannelModifiersComposeMultiplicatively(t *testing.T) {
 	wantMana := bm.Config["manaCostMultiplier"]
 	wantRange := bm.Config["rangeMultiplier"]
 
-	mods = s.siphonLifeChannelModifiersForCasterLocked(siphoner)
+	mods = s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
 	if math.Abs(mods.DamageMult-wantDmg) > 1e-9 {
 		t.Errorf("beam_mastery damage mult: got %.3f, want %.3f", mods.DamageMult, wantDmg)
 	}
@@ -99,7 +99,7 @@ func TestBeamMastery_ChannelModifiersComposeMultiplicatively(t *testing.T) {
 	// Stacked with soul_leech: damage and heal multipliers compose multiplicatively.
 	siphoner.PerkIDs = append(siphoner.PerkIDs, "soul_leech")
 	sl := perkDefByID("soul_leech")
-	mods = s.siphonLifeChannelModifiersForCasterLocked(siphoner)
+	mods = s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
 	wantStackedDmg := wantDmg * sl.Config["damageMultiplier"]
 	if math.Abs(mods.DamageMult-wantStackedDmg) > 1e-9 {
 		t.Errorf("beam_mastery × soul_leech damage mult: got %.3f, want %.3f", mods.DamageMult, wantStackedDmg)

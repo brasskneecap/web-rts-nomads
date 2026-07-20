@@ -1,0 +1,12 @@
+{
+  "id": "sanctuary",
+  "displayName": "Sanctuary",
+  "description": "Nearby allies take reduced damage from projectiles.",
+  "tooltipTemplate": "Allies within {radiusPixels} of this Cleric take {damageReductionPercent%} less projectile damage.",
+  "icon": "perk-sanctuary",
+  "config": {
+    "damageReductionPercent": 0.25,
+    "radiusPixels": 192
+  },
+  "wired": false
+}

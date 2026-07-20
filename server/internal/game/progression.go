@@ -278,15 +278,15 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 		// correct ProgressionPath. Must run before applyRankModifiersLocked in case
 		// a future perk modifies base stats at assignment time.
 		//
-		// Perk definitions: catalog/perks/<unit>/<path>/<rank>.json
+		// Perk definitions: catalog/perks/<path>/<id>/<id>.json (or generic/<id>/<id>.json)
 		// Perk runtime/handlers + assignment rules: perks.go
 		s.assignUnitPerkLocked(unit)
-		// Roll this unit's archetype spell-pool pick for the new rank (§11)
+		// Roll this unit's archetype ability-pool pick for the new rank (§11)
 		// BEFORE the ability recompute reads it. This is the one-time RNG draw;
-		// it records onto unit.PoolSpellsByRank. No-op for units whose archetype
-		// has no pool for the rank (draws no RNG), so non-caster progression is
-		// byte-for-byte unchanged.
-		s.rollUnitPoolSpellsLocked(unit)
+		// it records onto unit.PoolAbilitiesByRank. No-op for units whose
+		// archetype has no pool for the rank (draws no RNG), so non-caster
+		// progression is byte-for-byte unchanged.
+		s.rollUnitPoolAbilitiesLocked(unit)
 		// Grant path-specific abilities for the new (path, rank) after the perk
 		// (same ordering rationale: path is already assigned). Idempotent,
 		// ordered, RNG-free — see assignUnitPathAbilitiesLocked (reads the pick
@@ -419,12 +419,13 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	}
 
 	unit.MaxHP = maxInt(1, int(math.Round(float64(unit.BaseMaxHP)*pathDef.MaxHPMultiplier)))
-	// Apply flat max HP bonus from hold_the_line (and any future flat-HP perks).
-	// Called after path multipliers so the bonus is always the authored value.
-	// Tuning point: bonusMaxHP in perk-defs.json → hold_the_line.config.
-	if bonus := s.perkFlatMaxHPBonusLocked(unit); bonus > 0 {
-		unit.MaxHP += bonus
-	}
+	// Flat max-HP perks (hold_the_line) used to add here, between the path
+	// multiplier and the zone-aura/perk stat-modifier fold below. That perk
+	// is now data-driven (PerkStatModifier{Stat:"maxHp", Op:"add", Stage:
+	// "base"}) and folds in at the hpPerkStages merge a few lines down —
+	// same arithmetic position (added before the zone-aura ×mul), so this is
+	// byte-identical to the old perkFlatMaxHPBonusLocked add. See
+	// perk_stat_migration_test.go for the characterization proof.
 	unit.Damage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*pathDef.DamageMultiplier)))
 	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*pathDef.AttackSpeedMultiplier)
 	unit.MoveSpeed = math.Max(1.0, unit.BaseMoveSpeed*pathDef.MoveSpeedMultiplier)
@@ -558,8 +559,16 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// so it is re-baked here as (current MaxHP + add) × mul. recomputeAllZone
 	// AuraModifiersLocked re-runs this with preserveHealthPercent=true on any
 	// ownership flip, so the cap tracks zone control. Identity (0,1) ⇒ unchanged.
-	if hpAdd, hpMul := s.playerStatModifierLocked(unit.OwnerID, statMaxHealth); hpAdd != 0 || hpMul != 1 {
-		unit.MaxHP = maxInt(1, int(math.Round((float64(unit.MaxHP)+hpAdd)*hpMul)))
+	//
+	// Data-driven perk stat modifiers (PerkStatModifier{Stat: "maxHp"}) fold
+	// into the same merge via mergeZoneIntoBaseStage/applyStatStages. No perk
+	// authors statModifiers today, so this is byte-identical to the prior
+	// zone-only fold.
+	hpAdd, hpMul := s.playerStatModifierLocked(unit.OwnerID, statMaxHp)
+	hpPerkStages := s.unitPerkStatModifiersLocked(unit, statMaxHp)
+	if hpAdd != 0 || hpMul != 1 || len(hpPerkStages) > 0 {
+		effectiveHP := applyStatStages(float64(unit.MaxHP), mergeZoneIntoBaseStage(hpPerkStages, hpAdd, hpMul))
+		unit.MaxHP = maxInt(1, int(math.Round(effectiveHP)))
 	}
 
 	// Zone-aura max mana: only for units with a mana pool. Always recomputed from
@@ -567,10 +576,18 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// zone reverts the pool; mana fraction is preserved across the change.
 	if def, ok := getUnitDef(unit.UnitType); ok && def.MaxMana > 0 {
 		mnAdd, mnMul := s.playerStatModifierLocked(unit.OwnerID, statMaxMana)
+		mnPerkStages := s.unitPerkStatModifiersLocked(unit, statMaxMana)
 		// Path/rank max-mana multiplier scales the catalog base first (mirrors the
-		// MaxHP path multiplier above), then zone-aura add/mul apply on top.
+		// MaxHP path multiplier above), then zone-aura add/mul (and any base-stage
+		// perk stat modifiers, merged with mergeZoneIntoBaseStage) apply on top.
+		// No perk authors statModifiers today, so this is byte-identical to the
+		// prior zone-only fold.
 		baseMana := float64(def.MaxMana) * pathDef.MaxMPMultiplier
-		newMaxMana := maxInt(0, int(math.Round((baseMana+mnAdd)*mnMul)))
+		effectiveMana := baseMana
+		if mnAdd != 0 || mnMul != 1 || len(mnPerkStages) > 0 {
+			effectiveMana = applyStatStages(baseMana, mergeZoneIntoBaseStage(mnPerkStages, mnAdd, mnMul))
+		}
+		newMaxMana := maxInt(0, int(math.Round(effectiveMana)))
 		if newMaxMana != unit.MaxMana {
 			manaFraction := 1.0
 			if unit.MaxMana > 0 {

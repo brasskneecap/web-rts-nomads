@@ -527,7 +527,7 @@ func newExplosiveChainState(t *testing.T) (s *GameState, owner *Unit, trap *Trap
 	if def == nil {
 		t.Fatal("explosive_trap perk def not found")
 	}
-	s.plantTrapLocked(owner, def)
+	s.plantTrapLocked(owner, trapConfigFromPerkLocked(def, owner.Rank))
 
 	if len(s.Traps) == 0 {
 		t.Fatal("plantTrapLocked did not create a trap")
@@ -711,7 +711,7 @@ func TestExplosiveChain_NoAftershockWithoutPerk(t *testing.T) {
 	if def == nil {
 		t.Fatal("explosive_trap perk def not found")
 	}
-	s.plantTrapLocked(owner, def)
+	s.plantTrapLocked(owner, trapConfigFromPerkLocked(def, owner.Rank))
 	trap := s.Traps[len(s.Traps)-1]
 
 	if trap.AftershockDelaySeconds != 0 {

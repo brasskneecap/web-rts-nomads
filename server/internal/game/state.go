@@ -345,14 +345,14 @@ type Unit struct {
 	// from UnitDef.Abilities). Per-instance auto-cast / cooldown state is
 	// layered on in the action-bar part. Nil for non-caster units.
 	Abilities []string
-	// PoolSpellsByRank records the spell rolled from this unit's archetype spell
-	// pool at each rank (arch-mage-spell-system §11), keyed by rank slug
+	// PoolAbilitiesByRank records the ability rolled from this unit's archetype
+	// ability pool at each rank (arch-mage-spell-system §11), keyed by rank slug
 	// (bronze/silver/gold). The roll is RNG and happens ONCE at rank-up
-	// (rollUnitPoolSpellsLocked); assignUnitPathAbilitiesLocked then READS this
-	// map to include the pick in unit.Abilities, keeping that recompute
+	// (rollUnitPoolAbilitiesLocked); assignUnitPathAbilitiesLocked then READS
+	// this map to include the pick in unit.Abilities, keeping that recompute
 	// idempotent and RNG-free (the split mirrors how ProgressionPath records the
 	// path roll). Stores ability id strings, never pointers. Nil ⇒ no pool picks.
-	PoolSpellsByRank map[string]string
+	PoolAbilitiesByRank map[string]string
 	// SpellModifiers are active per-unit spell modifiers (spell_modifier.go) —
 	// the concrete attachment point buffs / items / future perks use to tune a
 	// unit's spells. They are FOLDED at cast time into an EffectiveSpell and
@@ -1182,6 +1182,13 @@ type GameState struct {
 	// Zero value (absent key) = no aura.
 	guardianAuraCache map[int]guardianAuraValue
 
+	// auraStatCache maps (recipient unit ID, stat id) to the aggregated
+	// contribution every covering PerkAura emitter grants that stat this
+	// tick — the generic, data-driven sibling of guardianAuraCache. Rebuilt
+	// once per tick in rebuildAuraStatCacheLocked (perk_aura_stat_cache.go).
+	// Absent key = no covering aura for that stat.
+	auraStatCache map[auraStatCacheKey]auraStatContribution
+
 	// pendingDeaths is the per-tick queue of units that hit HP<=0 inside
 	// applyUnitDamageWithSourceLocked. Drained at end of each Update() tick by
 	// drainPendingDeathsLocked, which runs kill bookkeeping then calls
@@ -1396,6 +1403,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		buildingsByID:             map[string]*protocol.BuildingTile{},
 		obstaclesByID:             map[string]*protocol.ObstacleTile{},
 		guardianAuraCache:         map[int]guardianAuraValue{},
+		auraStatCache:             map[auraStatCacheKey]auraStatContribution{},
 		objectiveUnreachableUntil: map[string]int{},
 		pendingDeathsSet:          map[int]bool{},
 		itemCatalog:               newMatchItemCatalog(),
@@ -2355,7 +2363,7 @@ func (s *GameState) recomputeUnitSnapshotCacheLocked() {
 		if unit == nil {
 			continue
 		}
-		unit.SnapshotCache.EffectiveDamage = int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil))))
+		unit.SnapshotCache.EffectiveDamage = int(math.Round(s.effectiveDamageRawLocked(unit, 0)))
 		unit.SnapshotCache.EffectiveAttackSpeed = math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
 		unit.SnapshotCache.EffectiveMoveSpeed = unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
 		unit.SnapshotCache.EffectiveArmor = s.effectiveArmorLocked(unit)
@@ -2376,6 +2384,28 @@ func (s *GameState) recomputeUnitSnapshotCacheLocked() {
 	}
 }
 
+// effectiveDamageRawLocked computes the HUD-facing effective damage for unit
+// as a float (pre-rounding), for a nil-target context (Snapshot() has no
+// live combat target). extraMult is an additional additive bonus folded into
+// the same (1 + …) pool as perkBonusDamageMultiplierLocked's Go-handler
+// perks (executioner, berserk_state); pass 0 when there is none.
+//
+// Mirrors state_combat.go's applyDelayedAttackLocked pre-crit raw-damage
+// calc, minus the zone-aura fold (the HUD number has never included zone
+// auras — that is a pre-existing scope gap this task does not change, not a
+// regression introduced here). Data-driven perk stat modifiers on "damage"
+// (PerkStatModifier{Stat:"damage"}, e.g. hawk_spirit's/vulture_spirit's
+// intrinsic-stage multiplier) fold in via unitPerkStatModifiersLocked so the
+// HUD keeps reflecting them now that they no longer flow through
+// perkBonusDamageMultiplierLocked.
+func (s *GameState) effectiveDamageRawLocked(unit *Unit, extraMult float64) float64 {
+	raw := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)
+	if stages := s.unitPerkStatModifiersLocked(unit, statDamage); len(stages) > 0 {
+		raw = applyStatStages(raw, stages)
+	}
+	return raw
+}
+
 // effectiveDamageForSnapshotLocked returns the effective damage to display
 // for a unit, preferring the per-tick SnapshotCache when fresh. extraMult is
 // the global enemy-facing bonus that the cache already folded in; pass 0 to
@@ -2384,7 +2414,7 @@ func (s *GameState) effectiveDamageForSnapshotLocked(unit *Unit, extraMult float
 	if s.unitSnapshotCacheTick == s.Tick {
 		return unit.SnapshotCache.EffectiveDamage
 	}
-	return int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
+	return int(math.Round(s.effectiveDamageRawLocked(unit, extraMult)))
 }
 
 // effectiveAttackSpeedForSnapshotLocked mirrors effectiveDamageForSnapshotLocked.
@@ -2863,6 +2893,7 @@ func (s *GameState) Update(dt float64) {
 	profileSection("neutralCamps", func() { s.tickNeutralCampsLocked() })
 	profileSection("shopReroll", func() { s.tickShopRerollLocked() })
 	profileSection("guardianAuraCache", func() { s.rebuildGuardianAuraCacheLocked() })
+	profileSection("auraStatCache", func() { s.rebuildAuraStatCacheLocked() })
 	profileSection("combatAI", func() { s.tickCombatAILocked(dt, blocked) })
 	profileSection("unitCombat", func() { s.tickUnitCombatLocked(dt, blocked) })
 	// Arcane Missiles: auto-fire from accumulated Arcane Charge. After combat so
@@ -3084,8 +3115,14 @@ func (s *GameState) Update(dt float64) {
 		// an aura can grant regen to a unit whose base rate is 0. Identity (0,1)
 		// ⇒ exactly unit.HealthRegenPerSecond.
 		effectiveHealthRegen := unit.HealthRegenPerSecond
-		if add, mul := s.playerStatModifierLocked(unit.OwnerID, statHealthRegen); add != 0 || mul != 1 {
-			effectiveHealthRegen = (effectiveHealthRegen + add) * mul
+		// Data-driven perk stat modifiers (PerkStatModifier{Stat: "healthRegen"})
+		// fold into the same merge via mergeZoneIntoBaseStage/applyStatStages.
+		// No perk authors statModifiers today, so this is byte-identical to
+		// the prior zone-only fold.
+		hrAdd, hrMul := s.playerStatModifierLocked(unit.OwnerID, statHealthRegen)
+		hrPerkStages := s.unitPerkStatModifiersLocked(unit, statHealthRegen)
+		if hrAdd != 0 || hrMul != 1 || len(hrPerkStages) > 0 {
+			effectiveHealthRegen = applyStatStages(effectiveHealthRegen, mergeZoneIntoBaseStage(hrPerkStages, hrAdd, hrMul))
 		}
 		if unit.HP > 0 && effectiveHealthRegen > 0 {
 			if unit.HP >= unit.MaxHP {

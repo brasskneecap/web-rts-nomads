@@ -1,0 +1,12 @@
+{
+  "id": "savage_strikes",
+  "displayName": "Savage Strikes",
+  "description": "Every 3rd attack deals a bonus hit for increased damage.",
+  "tooltipTemplate": "Every {everyNthAttack}rd attack fires a bonus hit dealing {bonusMultiplier+%} damage.",
+  "icon": "perk-savage-strikes",
+  "config": {
+    "bonusMultiplier": 1.5,
+    "everyNthAttack": 3
+  },
+  "wired": false
+}

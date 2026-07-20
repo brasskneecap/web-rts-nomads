@@ -1,0 +1,15 @@
+{
+  "id": "shield_bash",
+  "displayName": "Shield Bash",
+  "description": "Attacks have a chance to stun and slow the target, and taunt them into focusing on this Vanguard.",
+  "tooltipTemplate": "{procChance%} chance on hit to stun for {stunSeconds:1}s, slow to {slowMultiplier%} of their speed for {slowSeconds:1}s, and taunt the target for {tauntDurationSeconds:1}s.",
+  "icon": "perk-shield-bash",
+  "config": {
+    "procChance": 0.25,
+    "slowMultiplier": 0.7,
+    "slowSeconds": 1.5,
+    "stunSeconds": 1,
+    "tauntDurationSeconds": 2.5
+  },
+  "wired": false
+}

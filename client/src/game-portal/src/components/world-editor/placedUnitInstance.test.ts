@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyInstanceEdit, perksForUnitType, ranksForUnitType } from './placedUnitInstance'
 import type { PlacedUnit } from '@/game/network/protocol'
-import type { UnitDef } from '@/game/maps/unitDefs'
+import { initPathsByUnitType, type UnitDef } from '@/game/maps/unitDefs'
 
 const base: PlacedUnit = { id: 'u1', x: 1, y: 1, playerSlot: 'player1', unitType: 'soldier' }
 
@@ -18,13 +18,15 @@ describe('placed unit instance edits', () => {
     expect(cleared.perks).toBeUndefined()
   })
 
-  it('filters perks to the unit type using the real PerkDef.unitType field', () => {
+  it('filters perks to a unit type by path association (generic + owned paths)', () => {
+    initPathsByUnitType({ soldier: ['berserker', 'vanguard'], archer: ['marksman', 'trapper'] })
     const perkDefs = [
-      { id: 'p_a', unitType: 'soldier' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-      { id: 'p_b', unitType: 'archer' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-      { id: 'p_c' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any -- unitType absent = any unit
+      { id: 'p_berserker', path: 'berserker' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      { id: 'p_marksman', path: 'marksman' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      { id: 'p_generic' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any -- no association = any unit
     ]
-    expect(perksForUnitType(perkDefs, 'soldier').map((p) => p.id)).toEqual(['p_a', 'p_c'])
+    // soldier keeps its own path's perk + the generic one, drops the archer-path perk.
+    expect(perksForUnitType(perkDefs, 'soldier').map((p) => p.id)).toEqual(['p_berserker', 'p_generic'])
   })
 
   // Items are deliberately NOT filtered by unit type: any unit can equip any

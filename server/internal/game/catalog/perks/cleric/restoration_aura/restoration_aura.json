@@ -1,0 +1,13 @@
+{
+  "id": "restoration_aura",
+  "displayName": "Restoration Aura",
+  "description": "Periodically heals nearby allies.",
+  "tooltipTemplate": "Every {intervalSeconds:0}s, allies within {radiusPixels} are healed for {healAmount}. Fires even at full HP so future heal-trigger effects can react.",
+  "icon": "perk-restoration-aura",
+  "config": {
+    "healAmount": 3,
+    "intervalSeconds": 5,
+    "radiusPixels": 192
+  },
+  "wired": false
+}

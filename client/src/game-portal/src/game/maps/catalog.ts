@@ -210,6 +210,24 @@ export async function fetchPerkDefs(): Promise<PerkDef[]> {
   return data.perks
 }
 
+// fetchPathPerkRanks loads just the perksByRank bucket from every promotion
+// path (GET /catalog/paths — the same read-only route the path editor uses).
+// Gameplay needs this to resolve which rank cell a unit's owned perk belongs
+// in (see PERK_RANK_BY_ID_MAP / initPerkRanksFromPaths in maps/perkDefs.ts),
+// now that PerkDef carries no innate rank of its own. Only perksByRank is
+// pulled out of each path's def — the rest of the authored path shape is the
+// editor's concern (pathEditorApi.ts's fetchPaths), not gameplay's.
+export async function fetchPathPerkRanks(): Promise<Array<Record<string, string[]> | undefined>> {
+  const response = await fetch(`${API_BASE}/catalog/paths`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to load path defs: ${response.status}`)
+  }
+
+  const data = (await response.json()) as { paths: Array<{ def?: { perksByRank?: Record<string, string[]> } }> }
+  return data.paths.map((p) => p.def?.perksByRank)
+}
+
 export async function fetchActionIcons(): Promise<ActionIconDef[]> {
   const response = await fetch(`${API_BASE}/catalog/action-icons`)
 

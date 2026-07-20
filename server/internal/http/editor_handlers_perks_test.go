@@ -11,7 +11,10 @@ func TestPostPerksValidationFails(t *testing.T) {
 	t.Setenv("PERK_CATALOG_DIR", t.TempDir())
 	mux := http.NewServeMux()
 	registerEditorRoutes(mux)
-	req := httptest.NewRequest(http.MethodPost, "/perks", strings.NewReader(`{"perk":{"id":"x","rank":"platinum"}}`))
+	// "rank" is no longer a PerkDef field (perk association/rank-up eligibility
+	// is folder-derived / perksByRank-driven now), so an invalid effect.target
+	// is the remaining validatePerkDef gate this exercises.
+	req := httptest.NewRequest(http.MethodPost, "/perks", strings.NewReader(`{"perk":{"id":"x","effect":{"name":"foo","target":"everyone"}}}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "validation_failed") {
@@ -23,7 +26,7 @@ func TestPostPerksSavesThenDeletes(t *testing.T) {
 	t.Setenv("PERK_CATALOG_DIR", t.TempDir())
 	mux := http.NewServeMux()
 	registerEditorRoutes(mux)
-	post := httptest.NewRequest(http.MethodPost, "/perks", strings.NewReader(`{"perk":{"id":"post_perk","displayName":"Post Perk","rank":"bronze"}}`))
+	post := httptest.NewRequest(http.MethodPost, "/perks", strings.NewReader(`{"perk":{"id":"post_perk","displayName":"Post Perk"}}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, post)
 	if rec.Code != http.StatusCreated {
@@ -46,7 +49,7 @@ func TestDeletePerksResetsEmbedded(t *testing.T) {
 	registerEditorRoutes(mux)
 
 	post := httptest.NewRequest(http.MethodPost, "/perks", strings.NewReader(
-		`{"perk":{"id":"savage_strikes","displayName":"Edited","unitType":"soldier","path":"berserker","rank":"bronze"}}`))
+		`{"perk":{"id":"savage_strikes","displayName":"Edited","path":"berserker"}}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, post)
 	if rec.Code != http.StatusCreated {

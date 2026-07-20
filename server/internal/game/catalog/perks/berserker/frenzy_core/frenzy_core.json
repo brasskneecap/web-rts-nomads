@@ -1,0 +1,11 @@
+{
+  "id": "frenzy_core",
+  "displayName": "Frenzy Core",
+  "description": "Attack speed increases as HP decreases. Full bonus at near-death.",
+  "tooltipTemplate": "Attack speed scales from 0 to +{maxBonus%} as HP drops from full to 0.",
+  "icon": "perk-frenzy-core",
+  "config": {
+    "maxBonus": 0.6
+  },
+  "wired": false
+}

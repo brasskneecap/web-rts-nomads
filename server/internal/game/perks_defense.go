@@ -836,8 +836,16 @@ func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 	// zones, folded as (existing + add) × mul. No active aura ⇒ (0, 1) identity,
 	// so this is exactly the prior result. Reuses this single armor formula —
 	// no second percent path (AI_RULES: avoid duplicate stat calculation).
+	//
+	// Data-driven perk stat modifiers (PerkStatModifier{Stat: "armor"}) fold
+	// into the same merge via mergeZoneIntoBaseStage/applyStatStages. No perk
+	// authors statModifiers today, so this is byte-identical to the prior
+	// zone-only fold.
 	auraAdd, auraMul := s.playerStatModifierLocked(unit.OwnerID, statArmor)
-	core = (core + auraAdd) * auraMul
+	armorPerkStages := s.unitPerkStatModifiersLocked(unit, statArmor)
+	if auraAdd != 0 || auraMul != 1 || len(armorPerkStages) > 0 {
+		core = applyStatStages(core, mergeZoneIntoBaseStage(armorPerkStages, auraAdd, auraMul))
+	}
 	result := int(math.Floor(core))
 	result -= markOfWeaknessArmorReductionLocked(unit)
 	if result < 0 {
@@ -871,34 +879,9 @@ func (s *GameState) perkBonusArmorFromBuffsLocked(unit *Unit) int {
 	return total
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hook 10 — flat max HP bonus query (passive stat modifier)
-//
-// perkFlatMaxHPBonusLocked returns the total flat max HP bonus granted by the
-// unit's perks. Applied additively on top of rank × path multipliers inside
-// applyRankModifiersLocked (progression.go) so it is always included when stats
-// are recalculated. Returns 0 for units with no relevant perk.
-//
-// Called from progression.go applyRankModifiersLocked.
-//
-// ADD NEW FLAT-MAX-HP PERKS HERE.
-// ─────────────────────────────────────────────────────────────────────────────
-func (s *GameState) perkFlatMaxHPBonusLocked(unit *Unit) int {
-	if unit == nil || len(unit.PerkIDs) == 0 {
-		return 0
-	}
-	total := 0
-	for _, perkID := range unit.PerkIDs {
-		def := perkDefByID(perkID)
-		if def == nil {
-			continue
-		}
-		switch perkID {
-		case "hold_the_line":
-			// Tuning point: bonusMaxHP in perk-defs.json → hold_the_line.config.
-			total += int(def.Config["bonusMaxHP"])
-		// ── add cases for new flat max HP perks below this line ──────────────
-		}
-	}
-	return total
-}
+// Hook 10 (flat max HP bonus query) was removed: its sole perk,
+// hold_the_line, is now data-driven via PerkDef.StatModifiers
+// (PerkStatModifier{Stat:"maxHp", Op:"add", Stage:"base"}), folded in by
+// unitPerkStatModifiersLocked at the same arithmetic position
+// perkFlatMaxHPBonusLocked used to occupy in applyRankModifiersLocked
+// (progression.go). See perk_stat_migration_test.go.

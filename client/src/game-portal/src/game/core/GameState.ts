@@ -44,7 +44,7 @@ import { getShopPOIs, type ShopPOI } from '../rendering/minimapLayers'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP, getUpgradeChain, townHallTierName } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { playSfx } from '../../composables/useSfx'
-import { PERK_DEF_MAP } from '../maps/perkDefs'
+import { PERK_DEF_MAP, PERK_RANK_BY_ID_MAP } from '../maps/perkDefs'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { LIST_DEF_MAP, listItemIds } from '../maps/listDefs'
 import { buildItemTooltipBody } from '../items/itemRules'
@@ -3830,10 +3830,10 @@ function getAbilityActionItems(
 ): ActionItem[] {
   if (!unit.abilities || unit.abilities.length === 0) return []
   return unit.abilities
-    // Spell-slot spells render in their rank's perk cell (see
+    // Ability-slot abilities render in their rank's perk cell (see
     // getPerkActionItems), so they never appear in the ability row. Passives
     // DO appear here — as a non-castable info cell (see buildPassiveAbilityCell).
-    .filter((a) => !a.spellSlotRank)
+    .filter((a) => !a.abilitySlotRank)
     .map((a) => {
       if (a.passive) return buildPassiveAbilityCell(a)
       const name = a.displayName ?? a.id
@@ -3922,12 +3922,12 @@ function buildPerkSlot(
   }
 }
 
-// buildSpellSlotCell renders a learned spell-slot spell (arch-mage-spell-system)
+// buildAbilitySlotCell renders a learned ability-slot ability (arch-mage-spell-system)
 // in its rank's bottom-row cell. Unlike a perk cell it is a CASTABLE 'ability'
 // cell (clickable, autocast, cooldown) — the Arch Mage learns spells in place of
 // passive perks. It carries perkRank so it sits in the perk row with the
 // rank-colored border.
-function buildSpellSlotCell(
+function buildAbilitySlotCell(
   ability: AbilitySnapshot,
   rank: 'bronze' | 'silver' | 'gold',
   activeMode: UnitTargetingMode | null,
@@ -3951,12 +3951,12 @@ function buildSpellSlotCell(
   }
 }
 
-// spellSlotByRank indexes the unit's learned spell-slot spells by the rank they
-// were learned at (from AbilitySnapshot.spellSlotRank).
-function spellSlotByRank(unit: Unit): Map<string, AbilitySnapshot> {
+// abilitySlotByRank indexes the unit's learned ability-slot abilities by the
+// rank they were learned at (from AbilitySnapshot.abilitySlotRank).
+function abilitySlotByRank(unit: Unit): Map<string, AbilitySnapshot> {
   const m = new Map<string, AbilitySnapshot>()
   for (const a of unit.abilities ?? []) {
-    if (a.spellSlotRank) m.set(a.spellSlotRank, a)
+    if (a.abilitySlotRank) m.set(a.abilitySlotRank, a)
   }
   return m
 }
@@ -3966,10 +3966,10 @@ function getPerkActionItems(
   activeMode: UnitTargetingMode | null,
   castAbilityId: string | null,
 ): ActionItem[] {
-  // Spell-slot spells (Arch Mage) replace the perk cell at their rank with a
-  // castable slot. A rank with no learned slot spell falls back to the normal
+  // Ability-slot abilities (Arch Mage) replace the perk cell at their rank with a
+  // castable slot. A rank with no learned slot ability falls back to the normal
   // perk-slot rendering.
-  const slots = spellSlotByRank(unit)
+  const slots = abilitySlotByRank(unit)
   // The 4th cell (slot 12, right of gold) is an EXTRA perk slot reserved by
   // an advancement on the unit's owner (e.g. Twin Bronze). It exists as a
   // locked placeholder from the moment the advancement is owned, mirroring
@@ -3980,19 +3980,23 @@ function getPerkActionItems(
 
   if (extraBronze === 0) {
     // Standard 3-cell layout: bronze, silver, gold. A rank with a learned
-    // spell-slot spell shows that castable spell; otherwise the granted perk
-    // for that rank, or a locked placeholder.
+    // ability-slot ability shows that castable ability; otherwise the granted
+    // perk for that rank, or a locked placeholder.
     //
-    // The perk for a cell is found by its DEFINITION rank, not by slot index:
-    // a unit whose earlier tiers grant no perk (e.g. the Arch Mage, whose
-    // bronze/silver tiers are spell slots and only gold grants a perk) has that
-    // perk appended at perkIds[0], not perkIds[2]. Matching by rank keeps the
-    // perk in its correct cell regardless of how many earlier tiers were empty,
-    // and is consistent with how spell slots are placed (spellSlotByRank).
+    // The perk for a cell is found by which rank bucket its promotion path
+    // assigns it to (PERK_RANK_BY_ID_MAP, built from every path's
+    // perksByRank — see initPerkRanksFromPaths), NOT by slot index: a unit
+    // whose earlier tiers grant no perk (e.g. the Arch Mage, whose
+    // bronze/silver tiers are ability slots — and silver's spell pool is
+    // additionally empty, granting nothing at all) has its only perk
+    // appended at perkIds[0], not perkIds[2]. Perks carry no innate rank of
+    // their own anymore (PerkDef.rank was removed), so a positional cursor
+    // over perkIds cannot distinguish "rank not yet reached" from "rank
+    // grants nothing" — the explicit bucket lookup is required.
     return PERK_RANKS.map((rank) => {
       const slot = slots.get(rank)
-      if (slot) return buildSpellSlotCell(slot, rank, activeMode, castAbilityId)
-      const perkId = unit.perkIds?.find((id) => PERK_DEF_MAP.get(id)?.rank === rank)
+      if (slot) return buildAbilitySlotCell(slot, rank, activeMode, castAbilityId)
+      const perkId = unit.perkIds?.find((id) => PERK_RANK_BY_ID_MAP.get(id) === rank)
       return buildPerkSlot(unit, perkId, rank, rank)
     })
   }

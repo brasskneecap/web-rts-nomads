@@ -259,6 +259,45 @@ type Trap struct {
 	UnitsInZone map[int]bool
 }
 
+// TrapConfig is the resolved, rank-scaled stat set needed to plant a trap,
+// decoupled from where those stats come from (a bronze trap PerkDef today, a
+// trap ability's place_trap action tomorrow). plantOneTrapLocked reads only
+// these fields — never a *PerkDef — so any source that can populate a
+// TrapConfig can plant a trap.
+type TrapConfig struct {
+	TrapType             string
+	DurationSeconds      float64
+	PlaceIntervalSeconds float64
+	Radius               float64 // caltrops/fire_pit/marker_trap "radius"
+	ExplosionRadius      float64 // explosive_trap "explosionRadius"
+	TriggerRadius        float64 // explosive_trap "triggerRadius"
+	DamagePerSecond      float64
+	SlowMultiplier       float64
+	BurstDamage          float64 // explosive_trap "burstDamage" (int-cast at use)
+	MarkMultiplier       float64
+	MarkDuration         float64
+}
+
+// trapConfigFromPerkLocked builds a TrapConfig from a bronze trap PerkDef at a
+// unit's rank — the config source used by the perk-driven placement path. It
+// reproduces exactly the ConfigForRank reads plantOneTrapLocked did inline.
+func trapConfigFromPerkLocked(def *PerkDef, rank string) TrapConfig {
+	cfg := def.ConfigForRank(rank)
+	return TrapConfig{
+		TrapType:             def.ID,
+		DurationSeconds:      cfg["durationSeconds"],
+		PlaceIntervalSeconds: cfg["placeIntervalSeconds"],
+		Radius:               cfg["radius"],
+		ExplosionRadius:      cfg["explosionRadius"],
+		TriggerRadius:        cfg["triggerRadius"],
+		DamagePerSecond:      cfg["damagePerSecond"],
+		SlowMultiplier:       cfg["slowMultiplier"],
+		BurstDamage:          cfg["burstDamage"],
+		MarkMultiplier:       cfg["markMultiplier"],
+		MarkDuration:         cfg["markDuration"],
+	}
+}
+
 // tickTrapsLocked advances all active trap lifetimes by dt seconds, removing
 // expired traps and traps that have already triggered.
 //
@@ -932,19 +971,19 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 	}
 }
 
-// plantTrapLocked constructs a new Trap at the unit's current position from the
-// perk's config snapshot and appends it to s.Traps. When the unit owns
+// plantTrapLocked constructs a new Trap at the unit's current position from
+// the given TrapConfig snapshot and appends it to s.Traps. When the unit owns
 // increased_deployment (gold), additional bonus traps are planted at
 // perpendicular offsets using the same snapshotted stats — count is driven by
 // that perk's bonusTrapCount config key. The bonus plants are NOT recursive —
 // only the outer plant call reads increased_deployment.
 //
 // Must be called under s.mu write lock.
-func (s *GameState) plantTrapLocked(unit *Unit, def *PerkDef) {
-	if unit == nil || def == nil {
+func (s *GameState) plantTrapLocked(unit *Unit, cfg TrapConfig) {
+	if unit == nil {
 		return
 	}
-	s.plantOneTrapLocked(unit, def, 0)
+	s.plantOneTrapLocked(unit, cfg, 0)
 	if !containsString(unit.PerkIDs, "increased_deployment") {
 		return
 	}
@@ -955,7 +994,7 @@ func (s *GameState) plantTrapLocked(unit *Unit, def *PerkDef) {
 		}
 	}
 	for i := 1; i <= bonusCount; i++ {
-		s.plantOneTrapLocked(unit, def, i)
+		s.plantOneTrapLocked(unit, cfg, i)
 	}
 }
 
@@ -966,12 +1005,12 @@ func (s *GameState) plantTrapLocked(unit *Unit, def *PerkDef) {
 // magnitude so multiple bonuses fan out to alternating sides of the primary.
 //
 // Must be called under s.mu write lock.
-func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int) {
+func (s *GameState) plantOneTrapLocked(unit *Unit, cfg TrapConfig, bonusIndex int) {
 	isBonus := bonusIndex > 0
 	id := s.nextTrapID
 	s.nextTrapID++
 
-	trapType := def.ID // perk ID == trap type string ("caltrops", "fire_pit", etc.)
+	trapType := cfg.TrapType // perk ID == trap type string ("caltrops", "fire_pit", etc.)
 
 	// Resolve effective modifiers from this unit's perks. Identity (all 1.0)
 	// if the unit owns no Silver/Gold trap-modifying perks. Trap-specific
@@ -980,18 +1019,13 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 	// trapSpecificModifiersForUnitLocked.
 	mods := s.trapModifiersForUnitLocked(unit)
 
-	// Rank-scoped tuning: bronze trap perks persist through silver/gold, so
-	// base values in the JSON are overridden by the matching rank block when
-	// present. See PerkDef.ConfigForRank.
-	cfg := def.ConfigForRank(unit.Rank)
-
 	// Position is assigned AFTER the switch so the trap's final Radius is
 	// available for the "edge-touching-archer" offset in trapPlacementOffsetLocked.
 	trap := &Trap{
 		ID:                trapIDString(id),
 		OwnerUnitID:       unit.ID,
 		OwnerPlayerID:     unit.OwnerID,
-		RemainingSeconds:  cfg["durationSeconds"] * mods.DurationMultiplier,
+		RemainingSeconds:  cfg.DurationSeconds * mods.DurationMultiplier,
 		TrapType:          trapType,
 		IsBonusDeployment: isBonus,
 	}
@@ -1004,9 +1038,9 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 
 	switch trapType {
 	case "caltrops":
-		trap.Radius = cfg["radius"] * mods.RadiusMultiplier
-		trap.DamagePerSecond = cfg["damagePerSecond"] * mods.EffectMultiplier
-		trap.SlowMultiplier = amplifySlow(cfg["slowMultiplier"], mods.EffectMultiplier)
+		trap.Radius = cfg.Radius * mods.RadiusMultiplier
+		trap.DamagePerSecond = cfg.DamagePerSecond * mods.EffectMultiplier
+		trap.SlowMultiplier = amplifySlow(cfg.SlowMultiplier, mods.EffectMultiplier)
 		// barbed_field: ramp values scale with EffectMultiplier so amplified_effects
 		// stacks the way the player expects (more ramp, harder cap).
 		trap.BarbedFieldRampPerSec = specific.BarbedFieldRampPerSec * mods.EffectMultiplier
@@ -1026,8 +1060,8 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 		trap.OverloadSpikeSurgeSlowDuration = specific.OverloadSpikeSurgeSlowDuration * mods.DurationMultiplier
 
 	case "fire_pit":
-		trap.Radius = cfg["radius"] * mods.RadiusMultiplier
-		trap.DamagePerSecond = cfg["damagePerSecond"] * mods.EffectMultiplier
+		trap.Radius = cfg.Radius * mods.RadiusMultiplier
+		trap.DamagePerSecond = cfg.DamagePerSecond * mods.EffectMultiplier
 		// lasting_flames: set the burn duration so fire_pit switches into
 		// "damage-as-debuff" mode. The burn's DPS derives from the pit's own
 		// DamagePerSecond at tick time, so amplified_effects continues to
@@ -1056,9 +1090,9 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 		if specific.OverloadCataclysmRadiusMult > 0 {
 			cataclysmMult = specific.OverloadCataclysmRadiusMult
 		}
-		trap.Radius = cfg["explosionRadius"] * mods.RadiusMultiplier * cataclysmMult
-		trap.TriggerRadius = cfg["triggerRadius"] * mods.RadiusMultiplier
-		base := int(cfg["burstDamage"])
+		trap.Radius = cfg.ExplosionRadius * mods.RadiusMultiplier * cataclysmMult
+		trap.TriggerRadius = cfg.TriggerRadius * mods.RadiusMultiplier
+		base := int(cfg.BurstDamage)
 		trap.BurstDamage = int(float64(base)*mods.EffectMultiplier + 0.5)
 		// AftershockDelaySeconds drives explosive_chain's "second detonation
 		// of the trap" (a re-blast of the trap itself). Cataclysm's secondary
@@ -1077,13 +1111,13 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 		trap.InfusionScatterBombChildSeconds = specific.InfusionScatterBombChildSeconds * mods.DurationMultiplier
 
 	case "marker_trap":
-		trap.Radius = cfg["radius"] * mods.RadiusMultiplier
+		trap.Radius = cfg.Radius * mods.RadiusMultiplier
 		// MarkMultiplier and MarkDuration both scale with effect strength.
 		// DurationMultiplier is about trap-entity lifetime, not the post-effect
 		// debuff — EffectMultiplier governs both the strength and the window of
 		// the mark applied to enemies.
-		trap.MarkMultiplier = cfg["markMultiplier"] * mods.EffectMultiplier
-		trap.MarkDuration = cfg["markDuration"] * mods.EffectMultiplier
+		trap.MarkMultiplier = cfg.MarkMultiplier * mods.EffectMultiplier
+		trap.MarkDuration = cfg.MarkDuration * mods.EffectMultiplier
 		// exposed_weakness: damage-reduction strength scales with EffectMultiplier
 		// so amplified_effects makes the debuff harsher. Duration aligns with
 		// MarkDuration (stamped together in tickTrapEffectsLocked).
@@ -1911,10 +1945,10 @@ func (s *GameState) tickTrapPlacementLocked(unit *Unit, def *PerkDef, dt float64
 	}
 
 	// Plant the trap and reset the cooldown.
-	s.plantTrapLocked(unit, def)
+	tc := trapConfigFromPerkLocked(def, unit.Rank)
+	s.plantTrapLocked(unit, tc)
 	mods := s.trapModifiersForUnitLocked(unit)
-	cfg := def.ConfigForRank(unit.Rank)
-	unit.PerkState.TrapPlaceCooldownRemaining = cfg["placeIntervalSeconds"] * mods.CooldownMultiplier
+	unit.PerkState.TrapPlaceCooldownRemaining = tc.PlaceIntervalSeconds * mods.CooldownMultiplier
 }
 
 // trapperHasHostileInRangeLocked is the "is a fight brewing" check that gates

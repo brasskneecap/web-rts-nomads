@@ -1,0 +1,17 @@
+{
+  "id": "lingering_hex",
+  "displayName": "Lingering Hex",
+  "description": "Periodically hex an area near the Siphoner's target, slowing enemy movement and attack speed.",
+  "tooltipTemplate": "While in combat, every {cooldownSeconds:1}s the Siphoner automatically hexes enemies within {radius:0} of its current foe. Hexed enemies move at {moveSpeedMultiplier%} speed and attack at {attackSpeedMultiplier%} speed for {durationSeconds:1}s. Costs {manaCost:0} mana per pulse.",
+  "icon": "perk-lingering-hex",
+  "config": {
+    "attackSpeedMultiplier": 0.8,
+    "castRange": 240,
+    "cooldownSeconds": 14,
+    "durationSeconds": 7,
+    "manaCost": 15,
+    "moveSpeedMultiplier": 0.75,
+    "radius": 90
+  },
+  "wired": false
+}

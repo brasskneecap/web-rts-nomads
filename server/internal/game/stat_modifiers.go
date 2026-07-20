@@ -33,6 +33,38 @@ const (
 	statOpMultiply = "multiply"
 )
 
+// Stat-modifier STAGES — the evaluation order a stat's accumulated
+// modifiers fold through (applyStatStages below).
+//
+//   - statStageIntrinsic — applied FIRST, strictly BEFORE any base-stage
+//     additive bonus (zone auras, base-stage perk modifiers) is folded in.
+//     Intended for perks that scale the unit's OWN base stat rather than
+//     competing with external additive bonuses — e.g. hawk_spirit's damage
+//     multiplier must scale attacker.Damage but must NOT scale a zone aura's
+//     flat damage add. Authoring a modifier at this stage with only a
+//     multiply (no add) collapses the stage to exactly `value = base × Πmul`
+//     because nothing has been added to the pool yet — see the worked
+//     example on applyStatStages.
+//   - statStageBase  — the default (an empty authored Stage means base). Folds
+//     into the SAME (base + Σadd) × Πmul pool zone auras already use
+//     (playerStatModifierLocked) — base-stage perk modifiers and zone auras
+//     are one pool, not two competing ones.
+//   - statStageFinal — applied strictly AFTER every base-stage contribution
+//     has already been folded in, for modifiers meant to scale the
+//     fully-computed stat rather than compete with base bonuses (e.g. "then
+//     double it").
+const (
+	statStageIntrinsic = "intrinsic" // scales the unit's OWN base stat, before any external additive bonus
+	statStageBase      = "base"
+	statStageFinal     = "final"
+)
+
+// statStages is the ordered stage list applyStatStages folds through.
+// DETERMINISM: this fixed authored order — never a map's iteration order —
+// is what makes "final" reliably mean "after everything else," and
+// "intrinsic" reliably mean "before everything else."
+var statStages = []string{statStageIntrinsic, statStageBase, statStageFinal}
+
 // Canonical stat identifiers. Adding a new stat is: (1) a const here, (2) an
 // entry in statRegistry, (3) one read-site wire-up where the stat is consumed.
 // Nothing in the aura code or the aggregation needs to change.
@@ -44,8 +76,11 @@ const (
 	statAttackSpeed = "attackSpeed"
 	statDamage      = "damage"
 	statArmor       = "armor"
-	statMaxHealth   = "maxHealth"
+	statMaxHp       = "maxHp"
 	statMaxMana     = "maxMana"
+	statAttackRange = "attackRange"
+	statCritChance  = "critChance"
+	statCritMult    = "critMultiplier"
 
 	// Economy / workers — these get NEW read sites (gather/production/construction).
 	statGoldGatherRate            = "goldGatherRate"
@@ -57,32 +92,82 @@ const (
 )
 
 // statDef describes a registered stat: its id, the human label the editor and
-// HUD show, and whether a multiply operation is meaningful for it. AllowMultiply
-// is advisory metadata for the editor/UI today (both operations are accepted by
-// validation); it documents intent and drives sensible editor defaults.
+// HUD show, whether a multiply operation is meaningful for it, and whether an
+// "add" delta should render as a percentage.
+//
+// AllowMultiply is advisory metadata for the editor/UI today (both operations
+// are accepted by validation); it documents intent and drives sensible editor
+// defaults.
+//
+// IsFraction is true when the stat's VALUE is itself a dimensionless 0-1-ish
+// fraction (a probability, or a ratio measured against a fixed,
+// context-independent baseline of 1.0) — so an authored "add" of 0.1 always
+// means "+10 percentage points" and the generator (describeStatModifierClause)
+// renders it as a percentage. It is false when the stat is a raw rate/value
+// with a PER-UNIT base that varies (attackSpeed, moveSpeed, damage, armor,
+// maxHp, healthRegen, manaRegen, attackRange, critMultiplier, and the
+// per-unit-type gather amounts) — there an "add" delta must render as a bare
+// number, because the percentage effect depends on which unit's base it lands
+// on and rendering it as a % would be a guess dressed up as a fact (this is
+// the exact class of bug this field exists to prevent — see hawk_spirit).
+// Conservative default: false. See stat_modifiers.go / perk_describe.go task
+// notes for the per-stat read-site evidence behind each determination below.
 type statDef struct {
 	ID            string
 	Label         string
 	AllowMultiply bool
+	IsFraction    bool
 }
 
 // statRegistry is the single source of truth for which stats exist. Ordered for
 // deterministic iteration and stable editor/UI lists. Keep combat then economy.
+//
+// IsFraction determinations (each verified against its read site, not
+// guessed):
+//   - healthRegen/manaRegen: raw HP or mana per second; base is
+//     unit.HealthRegenPerSecond / unit.ManaRegenPerSecond, which varies per
+//     unit. False.
+//   - moveSpeed/attackSpeed: raw rate; base is unit.MoveSpeed /
+//     unit.AttackSpeed, which varies per unit (this is the hawk_spirit bug:
+//     a +0.3 add on a 1.5 base archer is +20%, not +30%). False.
+//   - damage/armor/maxHp/maxMana/attackRange: raw amounts; base is a
+//     per-unit(-type) field. False.
+//   - critChance: a true 0-1 probability (defaultCritChance = 0.05); an add
+//     of 0.1 unambiguously means "+10 percentage points of chance to crit"
+//     regardless of the unit. True — this is vulture_spirit's case.
+//   - critMultiplier: a raw multiplier around a fixed-but->1 baseline
+//     (defaultCritMultiplier = 2.0, i.e. "2x", not a 0-1 fraction); an add
+//     delta's percentage effect depends on which baseline it lands on
+//     (bullseye's override is 2.5). False.
+//   - goldGatherRate/woodGatherRate: raw per-haul resource amount; base is
+//     def.GoldGatherAmount/WoodGatherAmount, which varies per unit type.
+//     False.
+//   - gatherSpeed/unitProductionSpeed/buildingConstructionSpeed: NOT a
+//     per-unit field at all — the read sites compute
+//     `speed := (1 + add) × mul` against a hardcoded identity baseline of
+//     1.0 ("100% speed"), so an add of 0.1 always means "+10% speed" with no
+//     unit-dependent ambiguity. True.
+//   - workerMoveSpeed: folds into the SAME add/mul pool as moveSpeed
+//     (perks_movement.go) and is applied against unit.MoveSpeed, a raw
+//     per-unit base — same reasoning as moveSpeed. False.
 var statRegistry = []statDef{
-	{statHealthRegen, "Health Regen", true},
-	{statManaRegen, "Mana Regen", true},
-	{statMoveSpeed, "Move Speed", true},
-	{statAttackSpeed, "Attack Speed", true},
-	{statDamage, "Damage", true},
-	{statArmor, "Armor", true},
-	{statMaxHealth, "Max Health", true},
-	{statMaxMana, "Max Mana", true},
-	{statGoldGatherRate, "Gold Gather Rate", true},
-	{statWoodGatherRate, "Wood Gather Rate", true},
-	{statGatherSpeed, "Gather Speed", true},
-	{statWorkerMoveSpeed, "Worker Move Speed", true},
-	{statUnitProductionSpeed, "Unit Production Speed", true},
-	{statBuildingConstructionSpeed, "Building Construction Speed", true},
+	{statHealthRegen, "Health Regen", true, false},
+	{statManaRegen, "Mana Regen", true, false},
+	{statMoveSpeed, "Move Speed", true, false},
+	{statAttackSpeed, "Attack Speed", true, false},
+	{statDamage, "Damage", true, false},
+	{statArmor, "Armor", true, false},
+	{statMaxHp, "Max Health", true, false},
+	{statMaxMana, "Max Mana", true, false},
+	{statAttackRange, "Attack Range", true, false},
+	{statCritChance, "Crit Chance", true, true},
+	{statCritMult, "Crit Multiplier", true, false},
+	{statGoldGatherRate, "Gold Gather Rate", true, false},
+	{statWoodGatherRate, "Wood Gather Rate", true, false},
+	{statGatherSpeed, "Gather Speed", true, true},
+	{statWorkerMoveSpeed, "Worker Move Speed", true, false},
+	{statUnitProductionSpeed, "Unit Production Speed", true, true},
+	{statBuildingConstructionSpeed, "Building Construction Speed", true, true},
 }
 
 // statRegistryByID is the O(1) lookup index built once at init.
@@ -106,6 +191,17 @@ func statLabel(id string) string {
 		return d.Label
 	}
 	return id
+}
+
+// isFractionStat reports whether id's value is itself a fraction (statDef.
+// IsFraction) — see that field's doc comment. An unknown id conservatively
+// returns false (bare-number rendering), matching statLabel's fallback
+// behavior for unregistered ids.
+func isFractionStat(id string) bool {
+	if d, ok := statRegistryByID[id]; ok {
+		return d.IsFraction
+	}
+	return false
 }
 
 // ListStatIDs returns the registered stat ids in a stable sorted order. Used by
@@ -193,6 +289,92 @@ func (set PlayerStatModifierSet) resolve(stat string) (add, mul float64) {
 // canonical rule: effective = (base + add) × mul. Convenience for read sites.
 func applyStatModifier(base, add, mul float64) float64 {
 	return (base + add) * mul
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stage evaluation — shared by zone auras AND perk stat modifiers
+// (perk_stat_modifiers.go). This is the ENGINE for PerkDef.StatModifiers: a
+// typed, validated (validatePerkDef), registry-backed (isKnownStat) stat
+// vocabulary that replaces the old freeform Config-map convention where a
+// perk's Go handler had to know an exact key string — a typo there silently
+// read 0 forever. StatModifiers is rejected at catalog load instead.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// statStageAccum holds the (add, mul) pool for ONE stage. Identity is
+// {Add: 0, Mul: 1} — a caller building one of these MUST seed Mul at 1; the
+// Go zero value {0, 0} is NOT identity (an unseeded zero Mul would zero the
+// stat when applied). unitPerkStatModifiersLocked and mergeZoneIntoBaseStage
+// both seed correctly; do not construct a statStageAccum literal elsewhere
+// without the same care.
+type statStageAccum struct {
+	Add float64
+	Mul float64
+}
+
+// applyStatStages folds base through each stage in statStages order
+// (intrinsic, then base, then final):
+//
+//	value := base
+//	for each stage in statStages: value = (value + stage.Add) * stage.Mul
+//
+// This subsumes the pre-existing single-pool zone-aura rule as the "base"
+// stage, and gives "final" strict after-everything semantics — e.g. base=10,
+// a base-stage +10 add, a base-stage ×2 multiply, and a final-stage ×2
+// multiply yields ((10+10)×2)×2 = 80, not 10+10×2×2.
+//
+// Adding "intrinsic" ahead of "base": base=10, an intrinsic-stage ×2
+// multiply (no add authored at that stage), a base-stage +10 add, a
+// base-stage ×2 multiply, and a final-stage ×2 multiply yields
+// ((10×2 + 10) × 2) × 2 = 120 — the intrinsic multiply scales ONLY the
+// unit's own base value, never the base stage's additive term.
+//
+// A stage absent from stages is a no-op for that stage — there is no
+// implicit identity lookup, the map is trusted to only contain stages that
+// actually contribute. Safe on a nil stages map (returns base unchanged),
+// which is what every stat-read site relies on before any perk or aura
+// modifies that stat.
+func applyStatStages(base float64, stages map[string]statStageAccum) float64 {
+	value := base
+	for _, stage := range statStages {
+		acc, ok := stages[stage]
+		if !ok {
+			continue
+		}
+		value = (value + acc.Add) * acc.Mul
+	}
+	return value
+}
+
+// mergeZoneIntoBaseStage merges a zone-aura (add, mul) pair — already
+// resolved by the caller via playerStatModifierLocked — into the "base"
+// stage of a perk stat-modifier pool (unitPerkStatModifiersLocked). Zone
+// auras and base-stage perk StatModifiers are the same pool by design (see
+// the package doc above), so this is the ONE merge point every stat-read
+// fold site uses to combine the two sources before calling
+// applyStatStages — do not re-derive this merge inline at a call site.
+//
+// Mutates and returns stages in place: stages is always a fresh, single-use
+// map freshly built by unitPerkStatModifiersLocked for this one call, never
+// a value retained or shared elsewhere, so in-place mutation is safe.
+// Allocates a new map only when stages is nil and there is something to
+// merge. No-op (returns stages, possibly nil, completely unchanged) when the
+// zone pair is already identity — keeps the common "no aura active" path
+// allocation-free.
+func mergeZoneIntoBaseStage(stages map[string]statStageAccum, zoneAdd, zoneMul float64) map[string]statStageAccum {
+	if zoneAdd == 0 && zoneMul == 1 {
+		return stages
+	}
+	if stages == nil {
+		stages = make(map[string]statStageAccum, 1)
+	}
+	base, ok := stages[statStageBase]
+	if !ok {
+		base = statStageAccum{Add: 0, Mul: 1}
+	}
+	base.Add += zoneAdd
+	base.Mul *= zoneMul
+	stages[statStageBase] = base
+	return stages
 }
 
 // playerStatModifierLocked resolves the (add, mul) a player's aggregated zone

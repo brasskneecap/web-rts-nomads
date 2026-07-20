@@ -176,7 +176,7 @@ func TestArchMage_IdentityAfterPromotion(t *testing.T) {
 	mage.ProgressionPath = "arch_mage"
 	mage.Rank = "bronze"
 	mage.Abilities = nil
-	s.rollUnitPoolSpellsLocked(mage)
+	s.rollUnitPoolAbilitiesLocked(mage)
 	s.assignUnitPathAbilitiesLocked(mage)
 
 	if !containsStr(mage.Abilities, "arcane_missiles") {
@@ -185,9 +185,9 @@ func TestArchMage_IdentityAfterPromotion(t *testing.T) {
 	if containsStr(mage.Abilities, "arcane_bolt") {
 		t.Errorf("Arch Mage still has arcane_bolt (should be replaced); Abilities=%v", mage.Abilities)
 	}
-	slot := mage.PoolSpellsByRank["bronze"]
+	slot := mage.PoolAbilitiesByRank["bronze"]
 	if slot == "" || !containsStr(mage.Abilities, slot) {
-		t.Errorf("Arch Mage missing its bronze slot spell %q; Abilities=%v", slot, mage.Abilities)
+		t.Errorf("Arch Mage missing its bronze slot ability %q; Abilities=%v", slot, mage.Abilities)
 	}
 }
 

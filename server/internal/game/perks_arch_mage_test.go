@@ -20,18 +20,26 @@ func spawnArchMageCasterLocked(s *GameState, perkIDs ...string) *Unit {
 }
 
 // TestArchMageGoldPerks_Defined verifies the three Gold perks load from the
-// catalog with the correct path-derived eligibility, an icon, and sane config.
+// catalog with the correct folder-derived association, are actually reachable
+// in the adept/arch_mage gold rank-up pool, and have an icon + sane config.
 // Values are asserted as invariants (ranges), never pinned to exact balance
 // numbers, so tuning gold.json can't silently break this.
 func TestArchMageGoldPerks_Defined(t *testing.T) {
+	unit := &Unit{UnitType: "adept", ProgressionPath: "arch_mage"}
+	goldPool := make(map[string]bool)
+	for _, def := range eligiblePerksForUnitAtRank(unit, "gold") {
+		goldPool[def.ID] = true
+	}
 	for _, id := range []string{"arcane_feedback", "arcane_conduit", "unstable_magic"} {
 		def := perkDefByID(id)
 		if def == nil {
 			t.Fatalf("%s: perk def missing from catalog", id)
 		}
-		if def.UnitType != "adept" || def.Path != "arch_mage" || def.Rank != "gold" {
-			t.Errorf("%s: eligibility = %s/%s/%s; want adept/arch_mage/gold",
-				id, def.UnitType, def.Path, def.Rank)
+		if def.Path != "arch_mage" {
+			t.Errorf("%s: association (folder) = %q; want arch_mage", id, def.Path)
+		}
+		if !goldPool[id] {
+			t.Errorf("%s: not eligible for an adept/arch_mage unit at gold rank", id)
 		}
 		if def.Icon == "" {
 			t.Errorf("%s: missing icon", id)
@@ -52,9 +60,11 @@ func TestArchMageGoldPerks_Defined(t *testing.T) {
 // arch_mage) at gold rank has exactly the three new Gold perks in its eligible
 // pool — so a gold rank-up (assignUnitPerkLocked) grants one of them. This is
 // the server half of the "gold perk shows up" flow; the client then renders the
-// granted perk in its gold cell. The expected set is derived from the catalog
-// (all adept/arch_mage/gold PerkDefs), not hardcoded, so adding a fourth gold
-// perk won't break it.
+// granted perk in its gold cell. The expected set is derived from the path's
+// authored perksByRank (pathPerkRefsForRank — the authoritative source), not
+// hardcoded, so adding a fourth gold perk to arch_mage's gold.json won't break
+// it, and this also proves eligiblePerksForUnitAtRank resolves/dedupes exactly
+// what was authored: no more, no less.
 func TestArchMageGoldPerks_EligibleAtGoldRank(t *testing.T) {
 	unit := &Unit{UnitType: "adept", ProgressionPath: "arch_mage"}
 	pool := eligiblePerksForUnitAtRank(unit, "gold")
@@ -63,16 +73,12 @@ func TestArchMageGoldPerks_EligibleAtGoldRank(t *testing.T) {
 	for _, def := range pool {
 		got[def.ID] = true
 	}
-	// Cross-check against the catalog: every adept/arch_mage/gold perk must be
-	// eligible, and nothing else.
 	want := make(map[string]bool)
-	for _, def := range ListPerkDefs() {
-		if def.UnitType == "adept" && def.Path == "arch_mage" && def.Rank == "gold" {
-			want[def.ID] = true
-		}
+	for _, id := range pathPerkRefsForRank("arch_mage", "gold") {
+		want[id] = true
 	}
 	if len(want) == 0 {
-		t.Fatal("no adept/arch_mage/gold perks in the catalog")
+		t.Fatal("arch_mage path has no authored gold perksByRank refs")
 	}
 	if len(got) != len(want) {
 		t.Errorf("eligible gold pool size = %d; want %d (%v vs %v)", len(got), len(want), got, want)
@@ -221,7 +227,7 @@ func TestUnstableMagic_CastsLearnedSpellAtReducedEffectiveness(t *testing.T) {
 	defer s.mu.Unlock()
 	caster := spawnArchMageCasterLocked(s, "unstable_magic")
 	caster.CurrentMana = 0 // prove the proc is free — a normal cast would fail here
-	caster.PoolSpellsByRank = map[string]string{"bronze": "fireball"}
+	caster.PoolAbilitiesByRank = map[string]string{"bronze": "fireball"}
 	target := spawnEnemy(t, s, 360, 300)
 
 	target.Armor = 0
@@ -296,19 +302,19 @@ func TestArcaneFeedback_EndToEndMissileLand(t *testing.T) {
 }
 
 // TestUnstableMagic_NoLearnedSpellsIsNoop verifies the cast helper is inert when
-// the caster has learned no pool spells (nothing to unleash, no panic).
+// the caster has learned no pool abilities (nothing to unleash, no panic).
 func TestUnstableMagic_NoLearnedSpellsIsNoop(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	caster := spawnArchMageCasterLocked(s, "unstable_magic")
-	caster.PoolSpellsByRank = nil
+	caster.PoolAbilitiesByRank = nil
 	target := spawnEnemy(t, s, 360, 300)
 
 	before := len(s.Projectiles)
 	s.fireUnstableMagicLocked(caster, target, 0.4)
 	if len(s.Projectiles) != before {
-		t.Errorf("Unstable Magic with no learned spells should do nothing: projectiles %d -> %d",
+		t.Errorf("Unstable Magic with no learned abilities should do nothing: projectiles %d -> %d",
 			before, len(s.Projectiles))
 	}
 }

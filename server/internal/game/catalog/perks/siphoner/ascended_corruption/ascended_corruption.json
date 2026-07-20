@@ -1,0 +1,28 @@
+{
+  "id": "ascended_corruption",
+  "displayName": "Ascended Corruption",
+  "description": "Enhances whichever Silver Siphoner perk you own — chains reach further, afflictions cut deeper, shields stretch wider, suffering spreads thicker.",
+  "tooltipTemplate": "Enhances your Silver Siphoner perk. Pick a Silver perk to see its specific bonus.",
+  "tooltipTemplateByOwnedPerk": {
+    "amplify_damage": "Amplify Damage: {amplifyRadiusMultiplier:1}× radius, {amplifyDurationMultiplier:1}× duration, +{amplifyDamageTakenMultiplierBonus%} damage amplification.",
+    "chain_siphon": "Chain Siphon: +{chainAdditionalTargetCountBonus:0} target, {chainRangeMultiplier:1}× range, +{chainSecondaryDamageMultiplierBonus%} secondary damage, +{chainSecondaryHealingMultiplierBonus%} secondary healing.",
+    "dark_renewal": "Dark Renewal: +{darkMaxSelfShieldBonus:0} self shield cap, +{darkMaxAllyShieldBonus:0} ally shield cap, +{darkAdditionalAllyShieldTargets:0} additional ally targets for overflow shielding.",
+    "shared_suffering": "Shared Suffering: {sharedRadiusMultiplier:1}× radius, +{sharedDamageSharePercentBonus%} damage share."
+  },
+  "icon": "perk-ascended-corruption",
+  "config": {
+    "amplifyDamageTakenMultiplierBonus": 0.25,
+    "amplifyDurationMultiplier": 1.5,
+    "amplifyRadiusMultiplier": 1.5,
+    "chainAdditionalTargetCountBonus": 1,
+    "chainRangeMultiplier": 1.5,
+    "chainSecondaryDamageMultiplierBonus": 0.25,
+    "chainSecondaryHealingMultiplierBonus": 0.25,
+    "darkAdditionalAllyShieldTargets": 2,
+    "darkMaxAllyShieldBonus": 40,
+    "darkMaxSelfShieldBonus": 40,
+    "sharedDamageSharePercentBonus": 0.2,
+    "sharedRadiusMultiplier": 1.5
+  },
+  "wired": false
+}

@@ -1,0 +1,14 @@
+{
+  "id": "withering_beam",
+  "displayName": "Withering Beam",
+  "description": "Channeling Siphon Life weakens the target, reducing its outgoing damage.",
+  "tooltipTemplate": "Every {secondsPerStack:1}s of continuous Siphon Life applies a stack of Withering ({damageReductionPerStack%} less damage dealt per stack, up to {maxStacks:0} stacks). Stacks linger {lingerSeconds:1}s after the beam breaks.",
+  "icon": "perk-withering-beam",
+  "config": {
+    "damageReductionPerStack": 0.1,
+    "lingerSeconds": 1.5,
+    "maxStacks": 3,
+    "secondsPerStack": 1
+  },
+  "wired": false
+}

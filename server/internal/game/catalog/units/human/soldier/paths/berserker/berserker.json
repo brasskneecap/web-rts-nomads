@@ -9,6 +9,11 @@
     "ringOffsetX": 0,
     "ringOffsetY": -16
   },
+  "perksByRank": {
+    "bronze": ["bloodlust", "cleaving_rage", "frenzy_core", "relentless", "savage_strikes"],
+    "silver": ["blood_sustain", "executioner", "momentum"],
+    "gold": ["berserk_state", "blood_engine", "whirlwind_core"]
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.2,

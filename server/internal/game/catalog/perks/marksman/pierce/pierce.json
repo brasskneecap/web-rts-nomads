@@ -1,0 +1,13 @@
+{
+  "id": "pierce",
+  "displayName": "Pierce",
+  "description": "Arrows tear through enemies along the entire shot line, dealing reduced damage to anyone caught in the path.",
+  "tooltipTemplate": "Arrows pierce through enemies along the full shot line (out to attack range), hitting up to {maxSecondaryTargets} extra enemies for {secondaryDamageMultiplier%} damage each.",
+  "icon": "perk-pierce",
+  "config": {
+    "corridorWidth": 36,
+    "maxSecondaryTargets": 20,
+    "secondaryDamageMultiplier": 1.5
+  },
+  "wired": false
+}

@@ -50,103 +50,6 @@ const siphonLifeAbilityID = "siphon_life"
 //                          fields where possible and put helpers in this file.
 // ═════════════════════════════════════════════════════════════════════════════
 
-// SiphonLifeChannelModifiers bundles every multiplicative scaler the
-// caster's perks apply to a single Siphon Life channel tick. All four
-// fields default to 1.0 so the tick math (raw * mult) is a clean no-op for
-// units without any modifier perks.
-//
-//	DamageMult    — scales damagePerTick (Soul Leech, Beam Mastery).
-//	HealMult      — scales healing generated per tick (same sources).
-//	ManaCostMult  — scales the mana cost paid per tick (Beam Mastery; <= 1
-//	                means cheaper, > 1 means more expensive). Applied to
-//	                def.ManaCostPerTick at consumption time.
-//	RangeMult     — scales the effective cast range used by
-//	                isValidChannelTargetLocked (Beam Mastery; > 1 means
-//	                farther reach).
-//
-// Add new scalers as fields here when a future perk needs to scale another
-// Siphon Life attribute; the channel tick consumes them all in one place.
-type SiphonLifeChannelModifiers struct {
-	DamageMult   float64
-	HealMult     float64
-	ManaCostMult float64
-	RangeMult    float64
-}
-
-// defaultSiphonLifeChannelModifiers is the no-op identity — every field set
-// to 1.0. Used as the starting point in siphonLifeChannelModifiersForCaster-
-// Locked and as a safe return value for nil casters.
-func defaultSiphonLifeChannelModifiers() SiphonLifeChannelModifiers {
-	return SiphonLifeChannelModifiers{
-		DamageMult:   1.0,
-		HealMult:     1.0,
-		ManaCostMult: 1.0,
-		RangeMult:    1.0,
-	}
-}
-
-// siphonLifeChannelModifiersForCasterLocked aggregates every perk on the
-// caster that scales a Siphon Life channel tick — damage, healing, mana
-// cost per tick, and cast range. Multiplicative composition: two scalers
-// for the same field multiply (so a 2× damage Bronze with a 1.5× damage
-// Gold yields a 3× tick).
-//
-// Currently consumes:
-//   - soul_leech (Bronze)  → damage + healing
-//   - beam_mastery (Gold) → damage + healing + mana cost + range
-//
-// Safe to call on a nil caster (returns the identity modifiers).
-//
-// Caller holds s.mu (read or write).
-func (s *GameState) siphonLifeChannelModifiersForCasterLocked(caster *Unit) SiphonLifeChannelModifiers {
-	mods := defaultSiphonLifeChannelModifiers()
-	if caster == nil {
-		return mods
-	}
-	for _, perkID := range caster.PerkIDs {
-		def := perkDefByID(perkID)
-		if def == nil {
-			continue
-		}
-		switch perkID {
-		case "soul_leech":
-			cfg := def.ConfigForRank(caster.Rank)
-			if m := cfg["damageMultiplier"]; m > 0 {
-				mods.DamageMult *= m
-			}
-			if m := cfg["healingMultiplier"]; m > 0 {
-				mods.HealMult *= m
-			}
-		case "beam_mastery":
-			cfg := def.ConfigForRank(caster.Rank)
-			if m := cfg["damageMultiplier"]; m > 0 {
-				mods.DamageMult *= m
-			}
-			if m := cfg["healingMultiplier"]; m > 0 {
-				mods.HealMult *= m
-			}
-			if m := cfg["manaCostMultiplier"]; m > 0 {
-				mods.ManaCostMult *= m
-			}
-			if m := cfg["rangeMultiplier"]; m > 0 {
-				mods.RangeMult *= m
-			}
-		}
-	}
-	return mods
-}
-
-// siphonLifeModifiersForCasterLocked is the legacy two-return shim around
-// siphonLifeChannelModifiersForCasterLocked, kept for any external callers
-// that only care about damage + healing. New code should call the full
-// helper above so it can read the mana / range scalers too.
-//
-// Caller holds s.mu (read or write).
-func (s *GameState) siphonLifeModifiersForCasterLocked(caster *Unit) (damageMult, healMult float64) {
-	mods := s.siphonLifeChannelModifiersForCasterLocked(caster)
-	return mods.DamageMult, mods.HealMult
-}
-
 // tickWitheringBeamChannelLocked advances the caster's continuous-siphon
 // accumulator and stamps a Withering Beam stack on the current target every
 // `secondsPerStack` of contact. Called once per Siphon Life channel tick
@@ -1206,94 +1109,28 @@ func (s *GameState) darkRenewalAllyRecipientLockedExcluding(siphoner *Unit, radi
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared Suffering — damage echo to nearby enemies
 //
-// When the Siphoner's primary Siphon Life tick damages an enemy, a
-// percentage of that damage is also dealt to every other visible hostile
-// within `radius` of the primary target. No affliction prerequisite — the
-// echo fires on every nearby enemy so the perk stands on its own without
-// requiring another Siphoner affliction perk to seed the field.
-//
-// Echo damage is rendered as a minor (side-falling, smaller) shadow popup
-// on each recipient — a true secondary effect, visually distinct from the
-// primary Siphon Life tick on the original target.
-//
-// Recursion safety:
-//
-//   - The echo damage carries DamageSource.Kind = "shared_suffering" so any
-//     future on-damage perk that reads Kind can filter it out.
-//   - PerkState.SharedSufferingActive on the CASTER acts as a recursion
-//     guard so this helper cannot re-enter itself within a single tick
-//     (defensive — there's no current code path that would trigger this,
-//     but the guard makes the invariant explicit and self-documenting).
+// MIGRATED to a data-driven ability rider (see
+// docs/superpowers/plans/2026-07-19-perk-ability-riders-tier-b.md Task 4):
+// catalog/perks/siphoner/shared_suffering/shared_suffering.json's
+// abilityRiders entry (target "siphon_life", trigger "on_beam_tick") now
+// carries the select_targets + deal_damage actions that used to live in
+// applySharedSufferingLocked below, run generically by
+// runAbilityRidersForCasterLocked (ability_riders.go) from the same call
+// site in ability_channel.go. Base-value behavior (radius 120, share 0.4)
+// is byte-identical to the old Go helper — proven by
+// perks_siphoner_shared_suffering_migration_test.go. Two accepted deltas:
+//   - The Gold ascended_corruption overlay (radius×1.5, share+0.2) is
+//     temporarily INERT (perk-modifies-perk, deferred to Tier B.5) — see
+//     sharedSufferingEffectiveConfigLocked below, still exercised on its
+//     own by TestAscendedCorruption_SharedSufferingLayering but no longer
+//     consulted by the live echo path.
+//   - The echo's DamageSource.Kind changed from "shared_suffering" to
+//     "ability" (the generic deal_damage action's tag), and the old
+//     shadowburst VFX + minor-popup (side-falling) split are gone — the
+//     echo now renders as an ordinary shadow-tinted floating-up hit like
+//     the primary tick. Both are debug-label/cosmetic-only; grepped clean
+//     of any downstream reader keyed on Kind=="shared_suffering".
 // ─────────────────────────────────────────────────────────────────────────────
-
-// applySharedSufferingLocked echoes a fraction of `primaryDamage` to every
-// visible hostile within `radius` of `primary`. Fires no-op when the caster
-// doesn't own the perk. abilityID (the channel ability that produced
-// primaryDamage — unit.ChannelAbilityID at the call site) is stamped onto
-// each echo's DamageSource.SourceAbilityID, mirroring applyChainSiphonBeamsLocked's
-// abilityID threading, so an echo kill attributes to the same ability.
-//
-// Caller holds s.mu write lock.
-func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDamage int, abilityID string) {
-	if caster == nil || primary == nil || primaryDamage <= 0 {
-		return
-	}
-	if !containsString(caster.PerkIDs, "shared_suffering") {
-		return
-	}
-	if caster.PerkState.SharedSufferingActive {
-		return // recursion guard
-	}
-	// Effective config layers ascended_corruption modifiers (radius, share%)
-	// on top of the base when the caster owns the Gold perk.
-	cfg := s.sharedSufferingEffectiveConfigLocked(caster)
-	if cfg == nil {
-		return
-	}
-	radius := cfg["radius"]
-	sharePct := cfg["damageSharePercent"]
-	if radius <= 0 || sharePct <= 0 {
-		return
-	}
-	echoDamage := int(math.Round(float64(primaryDamage) * sharePct))
-	if echoDamage <= 0 {
-		return
-	}
-	radiusSq := radius * radius
-	caster.PerkState.SharedSufferingActive = true
-	defer func() { caster.PerkState.SharedSufferingActive = false }()
-
-	for _, u := range s.Units {
-		if u == nil || u.ID == primary.ID || u.HP <= 0 || !u.Visible {
-			continue
-		}
-		if !s.playersAreHostileLocked(caster.OwnerID, u.OwnerID) {
-			continue
-		}
-		dx := u.X - primary.X
-		dy := u.Y - primary.Y
-		if dx*dx+dy*dy > radiusSq {
-			continue
-		}
-		// Visual placeholder: shadowburst on each echo victim. A dedicated
-		// "shared suffering" arc VFX can replace this later.
-		s.queueEffectLocked("shadowburst", u.ID, u.X, u.Y, 0.6, 0.4, "")
-		// Echo damage is a true secondary/splash effect, not a direct hit —
-		// queue a MINOR damage event so the popup drifts sideways in dark
-		// purple, distinguishing it from the primary Siphon Life tick's
-		// floating-up popup. The minor pool peels the matching portion off
-		// the HP-diff before the major popup is emitted; the auto-emitted
-		// shadow damage-type hint that would otherwise color the major
-		// popup is naturally consumed when no remainder is left.
-		s.recordMinorDamageHitLocked(u, echoDamage, "shadow")
-		s.applyUnitDamageWithSourceLocked(u, echoDamage, DamageSource{
-			AttackerUnitID:  caster.ID,
-			Kind:            "shared_suffering",
-			DamageType:      DamageShadow,
-			SourceAbilityID: abilityID,
-		})
-	}
-}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SIPHONER GOLD PERKS
@@ -1305,10 +1142,12 @@ func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDam
 //                         which Silver perk the unit already owns.
 //
 //   beam_mastery       — global Siphon Life buff. Scales damage / healing /
-//                         range / mana cost via siphonLifeChannelModifiers-
-//                         ForCasterLocked, and bumps Chain Siphon's target
-//                         count via chainSiphonEffectiveConfigLocked when
-//                         the unit also owns Chain Siphon.
+//                         range / mana cost via its data-driven
+//                         abilityModifiers entry (consumed by the generic
+//                         abilityScalarModifiersForCasterLocked aggregator
+//                         in ability_modifiers.go), and bumps Chain Siphon's
+//                         target count via chainSiphonEffectiveConfigLocked
+//                         when the unit also owns Chain Siphon.
 //
 //   repurposed_life    — on-death mana support. Fires when an enemy
 //                         actively being drained by a Siphoner with the

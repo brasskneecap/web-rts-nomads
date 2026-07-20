@@ -290,13 +290,13 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 			// Channeling is true when this ability is the unit's active channel.
 			// The action bar uses this to render the "channeling in progress" state.
 			Channeling: unit.ChannelAbilityID == id,
-			// Passive / spell-slot metadata (arch-mage-spell-system): the client
-			// hides passives from the castable row and renders spell-slot spells
-			// in their rank's perk cell.
-			Passive:       def.IsPassive(),
-			SpellSlotRank: spellSlotRankForAbilityLocked(unit, id),
-			Projectile:    def.Projectile,
-			TargetsPoint:  def.TargetsPoint,
+			// Passive / ability-slot metadata (arch-mage-spell-system): the client
+			// hides passives from the castable row and renders ability-slot
+			// abilities in their rank's perk cell.
+			Passive:         def.IsPassive(),
+			AbilitySlotRank: abilitySlotRankLocked(unit, id),
+			Projectile:      def.Projectile,
+			TargetsPoint:    def.TargetsPoint,
 		}
 		// chargeFireSpecFor (not a raw def.ChargeRequired read) so a converted
 		// (SchemaVersion>=2) charge-fire ability still reports its real

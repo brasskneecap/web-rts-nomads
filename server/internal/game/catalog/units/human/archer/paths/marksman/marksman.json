@@ -9,6 +9,11 @@
     "ringOffsetX": 0,
     "ringOffsetY": -12
   },
+  "perksByRank": {
+    "bronze": ["eagle_spirit", "hawk_spirit", "vulture_spirit"],
+    "silver": ["hunters_mark", "pierce", "split_shot"],
+    "gold": ["bullseye", "double_shot", "explosive_tips"]
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,

@@ -1,0 +1,11 @@
+{
+  "id": "blood_sustain",
+  "displayName": "Blood Sustain",
+  "description": "Heal for a percentage of damage dealt on every attack.",
+  "tooltipTemplate": "Heal for {lifestealPercent%} of damage dealt on each hit.",
+  "icon": "perk-blood-sustain",
+  "config": {
+    "lifestealPercent": 0.2
+  },
+  "wired": false
+}

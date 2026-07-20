@@ -1,0 +1,14 @@
+{
+  "id": "hunters_mark",
+  "displayName": "Hunter's Mark",
+  "description": "Attacks brand the target with Hunter's Mark, granting all attackers increased crit chance against marked enemies. Multiple Marksmen stack the mark with diminishing returns.",
+  "tooltipTemplate": "Attacks apply Hunter's Mark for {durationSeconds:1}s. Marked enemies grant +{critChanceBonus%} crit chance to all attackers; each additional source adds +{additionalStackBonus%}. Stacks up to {maxStacks}× from distinct attackers.",
+  "icon": "perk-hunters-mark",
+  "config": {
+    "additionalStackBonus": 0.1,
+    "critChanceBonus": 0.15,
+    "durationSeconds": 5,
+    "maxStacks": 3
+  },
+  "wired": false
+}

@@ -40,6 +40,11 @@
   "abilities": [
     "siphon_life"
   ],
+  "perksByRank": {
+    "bronze": ["lingering_hex", "mark_of_weakness", "soul_leech", "withering_beam"],
+    "silver": ["amplify_damage", "chain_siphon", "dark_renewal", "shared_suffering"],
+    "gold": ["ascended_corruption", "beam_mastery", "repurposed_life"]
+  },
   "channelLoop": {
     "start": 3,
     "end": 4

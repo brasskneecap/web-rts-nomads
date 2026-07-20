@@ -1,0 +1,9 @@
+{
+  "id": "arcane_conduit",
+  "displayName": "Arcane Conduit",
+  "description": "Your Arcane Missiles can trigger your equipped items' on-hit effects.",
+  "tooltipTemplate": "Arcane Missiles can trigger your items' on-hit effects.",
+  "icon": "perk-arcane-conduit",
+  "config": null,
+  "wired": false
+}

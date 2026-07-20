@@ -1,0 +1,15 @@
+{
+  "id": "caltrops",
+  "displayName": "Caltrops",
+  "description": "Periodically scatter caltrops at your feet during combat. Enemies in the zone are slowed and take light damage over time.",
+  "tooltipTemplate": "Scatter caltrops every {trap.placeInterval:1}s. Enemies in the zone ({trap.radius} radius) are slowed to {trap.slowMultiplier%} of their speed and take {trap.damagePerSecond:1} DPS for {trap.durationSeconds:1}s.",
+  "icon": "perk-caltrops",
+  "config": {
+    "damagePerSecond": 6,
+    "durationSeconds": 12,
+    "placeIntervalSeconds": 6,
+    "radius": 60,
+    "slowMultiplier": 0.35
+  },
+  "wired": false
+}

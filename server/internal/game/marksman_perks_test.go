@@ -123,22 +123,32 @@ func TestMarksman_EagleSpirit_BoostsRangeAndCrit(t *testing.T) {
 }
 
 func TestMarksman_HawkSpirit_BoostsAttackSpeedAndDamage(t *testing.T) {
-	s, attacker, target := newMarksmanState(t, 2)
+	s, attacker, _ := newMarksmanState(t, 2)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	baseAS := attacker.AttackSpeed
 	grantPerk(attacker, "hawk_spirit")
 
-	hawkCfg := perkDefByID("hawk_spirit").Config
+	hawkDef := requirePerkDef(t, "hawk_spirit")
 
 	// Attack-speed bonus shows in perkAttackSpeedBonusLocked.
-	if got, want := s.perkAttackSpeedBonusLocked(attacker), hawkCfg["attackSpeedBonus"]; math.Abs(got-want) > 1e-6 {
-		t.Errorf("AS bonus = %.3f, want %.3f", got, want)
+	wantAS := statModifierValue(t, hawkDef, statAttackSpeed, statOpAdd)
+	if got := s.perkAttackSpeedBonusLocked(attacker); math.Abs(got-wantAS) > 1e-6 {
+		t.Errorf("AS bonus = %.3f, want %.3f", got, wantAS)
 	}
-	// Damage multiplier folds in via perkBonusDamageMultiplierLocked.
-	if got, want := s.perkBonusDamageMultiplierLocked(attacker, target), hawkCfg["damageMultiplier"]; math.Abs(got-want) > 1e-6 {
-		t.Errorf("damage bonus = %.3f, want %.3f", got, want)
+	// Damage multiplier is now data-driven (task 1e): it folds in via
+	// unitPerkStatModifiersLocked's "intrinsic" stage instead of
+	// perkBonusDamageMultiplierLocked (see perks_attack.go — the
+	// hawk_spirit/vulture_spirit arm was deleted from that hook). Assert
+	// against the intrinsic-stage Mul directly. Note the representation
+	// difference from the old (deleted) config key: StatModifiers' multiply
+	// entry IS the factor itself (1.15), not a bonus fraction to add to 1
+	// (the old damageMultiplier=0.15 was "1 + bonus" shorthand).
+	stages := s.unitPerkStatModifiersLocked(attacker, statDamage)
+	wantMul := statModifierValue(t, hawkDef, statDamage, statOpMultiply)
+	if got := stages[statStageIntrinsic].Mul; math.Abs(got-wantMul) > 1e-6 {
+		t.Errorf("intrinsic damage mul = %.3f, want %.3f", got, wantMul)
 	}
 	if attacker.AttackSpeed != baseAS {
 		t.Errorf("attack speed mutated unexpectedly: %.3f vs base %.3f", attacker.AttackSpeed, baseAS)
@@ -146,20 +156,26 @@ func TestMarksman_HawkSpirit_BoostsAttackSpeedAndDamage(t *testing.T) {
 }
 
 func TestMarksman_VultureSpirit_BoostsCritAndDamage(t *testing.T) {
-	s, attacker, target := newMarksmanState(t, 3)
+	s, attacker, _ := newMarksmanState(t, 3)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	grantPerk(attacker, "vulture_spirit")
 
-	vultureCfg := perkDefByID("vulture_spirit").Config
+	vultureDef := requirePerkDef(t, "vulture_spirit")
 
-	wantCrit := defaultCritChance + vultureCfg["critChanceBonus"]
+	wantCrit := defaultCritChance + statModifierValue(t, vultureDef, statCritChance, statOpAdd)
 	if got := s.unitCritChanceLocked(attacker, nil); math.Abs(got-wantCrit) > 1e-6 {
 		t.Errorf("CritChance = %.3f, want %.3f", got, wantCrit)
 	}
-	if got, want := s.perkBonusDamageMultiplierLocked(attacker, target), vultureCfg["damageMultiplier"]; math.Abs(got-want) > 1e-6 {
-		t.Errorf("damage bonus = %.3f, want %.3f", got, want)
+	// Damage multiplier is now data-driven (task 1e) — see the hawk_spirit
+	// test above for why this reads unitPerkStatModifiersLocked's
+	// "intrinsic" stage instead of perkBonusDamageMultiplierLocked, and for
+	// the multiply-entry-IS-the-factor representation note.
+	stages := s.unitPerkStatModifiersLocked(attacker, statDamage)
+	wantMul := statModifierValue(t, vultureDef, statDamage, statOpMultiply)
+	if got := stages[statStageIntrinsic].Mul; math.Abs(got-wantMul) > 1e-6 {
+		t.Errorf("intrinsic damage mul = %.3f, want %.3f", got, wantMul)
 	}
 }
 

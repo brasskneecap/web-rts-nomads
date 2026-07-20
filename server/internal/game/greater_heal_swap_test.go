@@ -115,17 +115,10 @@ func TestGreaterHeal_PathOverrideIsIdempotent(t *testing.T) {
 //
 // The four Cleric Bronze perks are read from the catalog (no hardcoded list).
 func TestGreaterHeal_GrantedRegardlessOfBronzePerkRoll(t *testing.T) {
-	// Pull the Bronze pool from the catalog so this stays in sync with any
-	// re-tunings of the perks/bronze.json file.
-	var pool []string
-	for id, def := range perkDefsByID {
-		if def == nil {
-			continue
-		}
-		if def.Path == "cleric" && def.Rank == unitRankBronze {
-			pool = append(pool, id)
-		}
-	}
+	// Pull the Bronze pool from the path's authored perksByRank (the
+	// authoritative source) so this stays in sync with any re-tunings of the
+	// cleric path's bronze rank refs.
+	pool := append([]string(nil), pathPerkRefsForRank("cleric", unitRankBronze)...)
 	sort.Strings(pool) // deterministic subtest order
 	if len(pool) == 0 {
 		t.Fatal("Cleric Bronze pool is empty; cannot exercise per-perk grants")

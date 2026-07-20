@@ -60,10 +60,12 @@
 
       <!-- Perk rows, one per rank slot the chosen rank unlocks. Selecting a
            perk for a slot is optional (empty = no perk in that slot). Perks
-           are filtered by matching unit type + path + rank (eligibility), but
-           the server accepts any ID — a mis-matched pick still lands so you
-           can intentionally test perk/unit combinations the rank-up pool
-           would never have produced. -->
+           are filtered by path association (generic, or owned by the selected
+           unit type's promotion paths); all three slots share that same
+           candidate list now that perks carry no innate rank. The server
+           accepts any ID — a mis-matched pick still lands so you can
+           intentionally test perk/unit combinations the rank-up pool would
+           never have produced. -->
       <div v-for="slot in perkSlots" :key="slot.rank" class="ds-row">
         <span class="ds-label">{{ slot.label }}</span>
         <select v-model="perkSelections[slot.rank]" class="ds-select">
@@ -180,26 +182,25 @@ const pathOptions = computed(() => {
 const perkSlots = computed(() => {
   const slots: { rank: 'bronze' | 'silver' | 'gold'; label: string; options: PerkDef[] }[] = []
   if (rank.value === 'bronze' || rank.value === 'silver' || rank.value === 'gold') {
-    slots.push({ rank: 'bronze', label: 'Bronze Perk', options: filterPerks('bronze') })
+    slots.push({ rank: 'bronze', label: 'Bronze Perk', options: filterPerks() })
   }
   if (rank.value === 'silver' || rank.value === 'gold') {
-    slots.push({ rank: 'silver', label: 'Silver Perk', options: filterPerks('silver') })
+    slots.push({ rank: 'silver', label: 'Silver Perk', options: filterPerks() })
   }
   if (rank.value === 'gold') {
-    slots.push({ rank: 'gold', label: 'Gold Perk', options: filterPerks('gold') })
+    slots.push({ rank: 'gold', label: 'Gold Perk', options: filterPerks() })
   }
   return slots
 })
 
-// filterPerks returns all perks with matching (unitType, path, rank). Wildcard
-// matches (empty string on the perk side) are treated as "applies to any".
-function filterPerks(slotRank: string): PerkDef[] {
-  return PERK_DEFS.filter((p) => {
-    if (p.rank && p.rank !== slotRank) return false
-    if (p.unitType && p.unitType !== unitType.value) return false
-    if (p.path && p.path !== path.value) return false
-    return true
-  }).sort((a, b) => a.displayName.localeCompare(b.displayName))
+// filterPerks returns all perks valid for the selected unit type by path
+// association: generic (no path) or owned by one of the unit type's
+// promotion paths (PATHS_BY_UNIT_TYPE_MAP). Perks carry no innate rank
+// anymore, so this list is the same across all three rank slots.
+function filterPerks(): PerkDef[] {
+  const paths = PATHS_BY_UNIT_TYPE_MAP.get(unitType.value) ?? []
+  return PERK_DEFS.filter((p) => !p.path || paths.includes(p.path))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName))
 }
 
 // gatedWarning appends an "(!)" marker to perks that are selectable but whose

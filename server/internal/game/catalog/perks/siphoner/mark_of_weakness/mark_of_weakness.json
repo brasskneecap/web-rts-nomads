@@ -1,0 +1,17 @@
+{
+  "id": "mark_of_weakness",
+  "displayName": "Mark of Weakness",
+  "description": "Periodically mark an area near the Siphoner's target, exposing enemies to armor loss and reduced healing.",
+  "tooltipTemplate": "While in combat, every {cooldownSeconds:1}s the Siphoner automatically marks enemies within {radius:0} of its current foe. Marked enemies lose {armorReduction:0} armor and receive {healingReceivedMultiplier%} of incoming healing for {durationSeconds:1}s. Costs {manaCost:0} mana per pulse.",
+  "icon": "perk-mark-of-weakness",
+  "config": {
+    "armorReduction": 50,
+    "castRange": 240,
+    "cooldownSeconds": 14,
+    "durationSeconds": 6,
+    "healingReceivedMultiplier": 0.7,
+    "manaCost": 15,
+    "radius": 90
+  },
+  "wired": false
+}

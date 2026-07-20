@@ -1,0 +1,14 @@
+{
+  "id": "divine_intervention",
+  "displayName": "Divine Intervention",
+  "description": "Prevents nearby allied deaths on a cooldown. Saved allies are briefly invulnerable.",
+  "tooltipTemplate": "When a nearby ally within {triggerRadius} would die, restore {healAmount} HP and grant {protectionDurationSeconds:1}s of invulnerability. {cooldownSeconds:0}s cooldown.",
+  "icon": "perk-divine-intervention",
+  "config": {
+    "cooldownSeconds": 20,
+    "healAmount": 20,
+    "protectionDurationSeconds": 1.5,
+    "triggerRadius": 120
+  },
+  "wired": false
+}

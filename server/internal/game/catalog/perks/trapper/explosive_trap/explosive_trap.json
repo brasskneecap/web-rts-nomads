@@ -1,0 +1,15 @@
+{
+  "id": "explosive_trap",
+  "displayName": "Explosive Trap",
+  "description": "Periodically arm an explosive trap at your feet. The first enemy to step on it detonates a damaging blast.",
+  "tooltipTemplate": "Arm an explosive trap every {trap.placeInterval:1}s (lasts {trap.durationSeconds:1}s). Trigger radius {trap.triggerRadius}, blast radius {trap.radius}. Deals {trap.burstDamage} burst damage.",
+  "icon": "perk-explosive-trap",
+  "config": {
+    "burstDamage": 75,
+    "durationSeconds": 20,
+    "explosionRadius": 100,
+    "placeIntervalSeconds": 10,
+    "triggerRadius": 50
+  },
+  "wired": false
+}

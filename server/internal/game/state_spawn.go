@@ -319,9 +319,9 @@ func (s *GameState) spawnPlacedUnitsForPlayerLocked(playerID, color string) {
 // Order: rank first, then items, then perks.
 //
 //   - Rank: mirrors the "set rank directly, no XP" pipeline debug_spawn.go
-//     uses (assignUnitPathOnRankUpLocked -> rollUnitPoolSpellsLocked ->
+//     uses (assignUnitPathOnRankUpLocked -> rollUnitPoolAbilitiesLocked ->
 //     assignUnitPathAbilitiesLocked -> applyRankModifiersLocked), so a
-//     placed Silver Cleric gets the same path roll / spell pool / path
+//     placed Silver Cleric gets the same path roll / ability pool / path
 //     abilities a naturally-promoted Silver Cleric would, not just the raw
 //     stat multipliers. applyRankModifiersLocked does NOT resize
 //     InventorySize/Equipped (that's setInventorySizeForRankLocked, normally
@@ -348,7 +348,7 @@ func (s *GameState) applyPlacedUnitInstanceLocked(unit *Unit, entry protocol.Pla
 	if entry.Rank != "" && entry.Rank != unit.Rank {
 		unit.Rank = entry.Rank
 		s.assignUnitPathOnRankUpLocked(unit)
-		s.rollUnitPoolSpellsLocked(unit)
+		s.rollUnitPoolAbilitiesLocked(unit)
 		s.assignUnitPathAbilitiesLocked(unit)
 		s.applyRankModifiersLocked(unit, false)
 		s.setInventorySizeForRankLocked(unit)
@@ -455,7 +455,7 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 		// Verified none of applyPlacedUnitInstanceLocked's callees
 		// (applyRankModifiersLocked, setInventorySizeForRankLocked,
 		// recomputeUnitEquipmentBonusLocked, assignUnitPathOnRankUpLocked,
-		// rollUnitPoolSpellsLocked, assignUnitPathAbilitiesLocked,
+		// rollUnitPoolAbilitiesLocked, assignUnitPathAbilitiesLocked,
 		// applyPerkGrantedHooksLocked) touch GuardMode/GuardAnchor*/
 		// GuardAggroRange/GuardLeashRange/Order/OrderID/CombatAnchor*/Status/
 		// IgnoreWaveClear, so this ordering is not load-bearing for

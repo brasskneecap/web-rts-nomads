@@ -2,11 +2,16 @@ package game
 
 // ProgramEnums returns the string value sets the editor's enum/multiselect controls
 // draw from, sourced from the composable-model enum consts. actionTypes reuses
-// allActionTypes directly (no parallel list to drift).
+// allActionTypes directly and triggerTypes reuses allTriggerTypes directly
+// (no parallel lists to drift).
 func ProgramEnums() map[string][]string {
 	actionTypeStrs := make([]string, len(allActionTypes))
 	for i, t := range allActionTypes {
 		actionTypeStrs[i] = string(t)
+	}
+	triggerTypeStrs := make([]string, len(allTriggerTypes))
+	for i, t := range allTriggerTypes {
+		triggerTypeStrs[i] = string(t)
 	}
 	return map[string][]string{
 		"entryTypes": {
@@ -16,15 +21,8 @@ func ProgramEnums() map[string][]string {
 		"relations": {
 			string(RelSelf), string(RelAlly), string(RelEnemy), string(RelNeutral),
 		},
-		"triggerTypes": {
-			string(TriggerOnCastStart), string(TriggerOnCastComplete), string(TriggerOnAnimationMarker),
-			string(TriggerOnProjectileImpact), string(TriggerOnProjectileTick), string(TriggerOnBeamImpact), string(TriggerOnBeamTick),
-			string(TriggerOnZoneTick), string(TriggerOnZoneEnter),
-			string(TriggerOnZoneExit), string(TriggerOnStatusTick), string(TriggerOnStatusExpire),
-			string(TriggerOnDamageDealt), string(TriggerOnUnitDeath),
-			string(TriggerOnActionComplete), string(TriggerOnChargeFull), string(TriggerCustom),
-		},
-		"actionTypes": actionTypeStrs,
+		"triggerTypes": triggerTypeStrs,
+		"actionTypes":  actionTypeStrs,
 		"targetSources": {
 			string(SrcCaster), string(SrcInitialTarget), string(SrcPrevActionTargets),
 			string(SrcCurrentEvent), string(SrcNamedContext), string(SrcSourceObject), string(SrcAllInScene),

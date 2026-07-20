@@ -57,6 +57,11 @@ export interface AuthoredPathDef {
   // since saveRequestFromPathForm's overlay loop skips `undefined` values).
   attackOrigin?: UnitAttackOrigin
   perksByRank?: Record<string, string[]>
+  // Per-rank Ability slot: a rank whose key is present here (even with an
+  // empty array) grants one ability rolled from this pool instead of a perk
+  // (see perksByRank). Key presence, not array length, is what marks a rank
+  // as an Ability slot — see rankSlotType in UnitTypeEditorPanel.vue.
+  abilityPoolsByRank?: Record<string, string[]>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
@@ -68,6 +73,7 @@ export interface AuthoredPathDef {
 const MODELED_PATH_KEYS = [
   'path', 'description', 'visionRange', 'projectile', 'damageType', 'attackType',
   'projectileScale', 'abilities', 'channelLoop', 'bounds', 'ranks', 'attackOrigin', 'perksByRank',
+  'abilityPoolsByRank',
 ] as const
 
 export interface PathEditorForm extends AuthoredPathDef {

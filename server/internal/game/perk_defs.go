@@ -11,11 +11,13 @@ package game
 // │  WHERE THINGS LIVE                                                      │
 // │                                                                         │
 // │    PERK DEFINITIONS (data, tuning, eligibility)                         │
-// │      → catalog/perks/<id>/<id>.json                                     │
-// │        One directory per perk id (mirrors catalog/effects). Each file   │
-// │        is a single PerkDef carrying its own UnitType / Path / Rank      │
-// │        eligibility fields. Adding a perk means adding a new             │
-// │        catalog/perks/<newid>/<newid>.json.                              │
+// │      → catalog/perks/<path>/<id>/<id>.json                              │
+// │        One directory per perk id, nested under its owning promotion     │
+// │        path's folder (or catalog/perks/generic/ for path-agnostic       │
+// │        perks). The folder name is authoritative for PerkDef.Path — it   │
+// │        is DERIVED at load time, never read from the JSON body. Adding   │
+// │        a perk means adding a new                                       │
+// │        catalog/perks/<path-or-generic>/<newid>/<newid>.json.            │
 // │                                                                         │
 // │    PATH STAT MULTIPLIERS (per rank)                                     │
 // │      → catalog/units/<faction>/<unit>/paths/<path>/<path>.json          │
@@ -31,11 +33,15 @@ package game
 // │      → catalog/action-icons.json  (id: "perk-<name>")                   │
 // └─────────────────────────────────────────────────────────────────────────┘
 //
-// Eligibility fields (UnitType, Path, Rank) accept "" as a wildcard — a perk
-// with an empty Path applies to every path, etc. The assignment system in
-// perks.go calls eligiblePerksForUnitAtRank() (via perkPoolForRankLocked) to
-// build the pool automatically, so no assignment-side code needs to change
-// when new perks are added to the JSON.
+// A perk's association (PerkDef.Path) is derived from its folder under
+// catalog/perks/ at load time — "" for perks living in catalog/perks/generic/,
+// otherwise the folder name. It is editor filtering/display metadata only and
+// does NOT drive rank-up selection. A path's authored PerksByRank
+// (path_defs.go) is the SOLE source of its rank-up pool. The assignment
+// system in perks.go calls eligiblePerksForUnitAtRank() (via
+// perkPoolForRankLocked), which resolves only that list; a new perk JSON is
+// NOT automatically eligible until its id is added to the relevant path's
+// PerksByRank[rank].
 // ═════════════════════════════════════════════════════════════════════════════
 
 import (
@@ -45,13 +51,16 @@ import (
 	"io/fs"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 )
 
 // Embeds the standalone perk catalog tree so this file can load perk JSONs
-// from catalog/perks/<id>/<id>.json. Mirrors effect_defs.go's embed of
-// catalog/effects; each perk lives in its own id-named directory whose name
-// must equal the JSON's "id" field.
+// from catalog/perks/<path>/<id>/<id>.json (or catalog/perks/generic/<id>/
+// <id>.json for path-agnostic perks). Mirrors effect_defs.go's embed of
+// catalog/effects; each perk lives in its own id-named leaf directory,
+// nested under its association folder, whose name must equal the JSON's
+// "id" field.
 //
 //go:embed all:catalog/perks
 var perkDefsFS embed.FS
@@ -66,43 +75,61 @@ var perkIDPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 // merges the writable overlay on top of.
 var embeddedPerkDefs = loadPerkDefs()
 
-// loadPerkDefs reads every catalog/perks/<id>/<id>.json into an id-keyed map.
-// Mirrors loadEffectDefs: the directory name is authoritative for the id, and
-// any structural problem panics at startup (embedded data is a build-time bug
-// if malformed).
+// loadPerkDefs reads every catalog/perks/<path>/<id>/<id>.json into an
+// id-keyed map. Mirrors loadEffectDefs: the leaf directory name is
+// authoritative for the id, and the parent directory name is authoritative
+// for the perk's association (PerkDef.Path) — "generic" maps to "" (any
+// path). Any structural problem panics at startup (embedded data is a
+// build-time bug if malformed).
 func loadPerkDefs() map[string]PerkDef {
-	entries, err := fs.ReadDir(perkDefsFS, "catalog/perks")
+	assocDirs, err := fs.ReadDir(perkDefsFS, "catalog/perks")
 	if err != nil {
 		panic("catalog/perks: " + err.Error())
 	}
-	result := make(map[string]PerkDef, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	result := make(map[string]PerkDef)
+	for _, assocEntry := range assocDirs {
+		if !assocEntry.IsDir() {
 			continue
 		}
-		id := entry.Name()
-		rel := "catalog/perks/" + id + "/" + id + ".json"
-		data, err := perkDefsFS.ReadFile(rel)
+		assoc := assocEntry.Name() // "siphoner", "trapper", …, or "generic"
+		// "generic" is the wildcard bucket → empty association.
+		assocPath := assoc
+		if assoc == "generic" {
+			assocPath = ""
+		}
+		perkDirs, err := fs.ReadDir(perkDefsFS, "catalog/perks/"+assoc)
 		if err != nil {
-			panic(rel + ": " + err.Error())
+			panic("catalog/perks/" + assoc + ": " + err.Error())
 		}
-		var def PerkDef
-		if err := json.Unmarshal(data, &def); err != nil {
-			panic(rel + ": " + err.Error())
+		for _, entry := range perkDirs {
+			if !entry.IsDir() {
+				continue // skips .gitkeep and other loose files
+			}
+			id := entry.Name()
+			rel := "catalog/perks/" + assoc + "/" + id + "/" + id + ".json"
+			data, err := perkDefsFS.ReadFile(rel)
+			if err != nil {
+				panic(rel + ": " + err.Error())
+			}
+			var def PerkDef
+			if err := json.Unmarshal(data, &def); err != nil {
+				panic(rel + ": " + err.Error())
+			}
+			if def.ID == "" {
+				panic(rel + `: missing "id"`)
+			}
+			if def.ID != id {
+				panic(rel + ": id " + def.ID + " != dir " + id)
+			}
+			def.Path = assocPath // folder is authoritative for association
+			if err := validatePerkDef(&def); err != nil {
+				panic(rel + ": " + err.Error())
+			}
+			if _, dup := result[def.ID]; dup {
+				panic(rel + ": duplicate perk id " + def.ID)
+			}
+			result[def.ID] = def
 		}
-		if def.ID == "" {
-			panic(rel + `: missing "id"`)
-		}
-		if def.ID != id {
-			panic(rel + ": id " + def.ID + " != dir " + id)
-		}
-		if err := validatePerkDef(&def); err != nil {
-			panic(rel + ": " + err.Error())
-		}
-		if _, dup := result[def.ID]; dup {
-			panic(rel + ": duplicate perk id " + def.ID)
-		}
-		result[def.ID] = def
 	}
 	return result
 }
@@ -110,16 +137,84 @@ func loadPerkDefs() map[string]PerkDef {
 // validatePerkDef is the shared load + save content gate. Does NOT check id
 // (loader gates against dir name; editor against perkIDPattern).
 func validatePerkDef(def *PerkDef) error {
-	switch def.Rank {
-	case "", unitRankBronze, unitRankSilver, unitRankGold:
-	default:
-		return fmt.Errorf("rank %q must be \"\" | bronze | silver | gold", def.Rank)
-	}
 	if def.Effect != nil {
 		switch def.Effect.Target {
 		case "", "self", "enemies":
 		default:
 			return fmt.Errorf("effect.target %q must be \"self\" | \"enemies\"", def.Effect.Target)
+		}
+	}
+	for _, m := range def.AbilityModifiers {
+		if m.Target == "" {
+			return fmt.Errorf("abilityModifiers entry has empty target")
+		}
+	}
+	for _, sm := range def.StatModifiers {
+		if err := validatePerkStatModifier(sm); err != nil {
+			return fmt.Errorf("statModifiers: %w", err)
+		}
+	}
+	for i, aura := range def.Auras {
+		if aura.Radius <= 0 {
+			return fmt.Errorf("auras[%d]: radius must be > 0", i)
+		}
+		switch aura.Targets {
+		case "allies", "enemies":
+		default:
+			return fmt.Errorf("auras[%d]: targets %q must be \"allies\" or \"enemies\"", i, aura.Targets)
+		}
+		switch aura.Stacking {
+		case "", auraStackingMax:
+		default:
+			return fmt.Errorf("auras[%d]: stacking %q must be %q (or omit)", i, aura.Stacking, auraStackingMax)
+		}
+		for j, sm := range aura.StatModifiers {
+			if err := validatePerkStatModifier(sm); err != nil {
+				return fmt.Errorf("auras[%d].statModifiers[%d]: %w", i, j, err)
+			}
+			// Auras currently support only additive, base-stage stat
+			// contributions — see PerkAura.StatModifiers' doc comment and
+			// perk_aura_stat_cache.go's rebuildAuraStatCacheLocked, which
+			// reads sm.Value straight into an additive accumulator and never
+			// looks at sm.Op or sm.Stage at all. Authoring "multiply" or a
+			// non-base stage here would silently fall back to add-at-base
+			// behavior with no error anywhere — reject it at load time
+			// instead, per the standing "no inert authorable fields" rule
+			// (the same reasoning that removed cooldownMult/radiusMult/
+			// durationMult from AbilityModifier). Lift this once a real aura
+			// fold site consumes Op/Stage (see the doc comment for what that
+			// would take).
+			if sm.Op != statOpAdd {
+				return fmt.Errorf("auras[%d].statModifiers[%d]: op %q not supported for auras — auras currently support only additive (%q) stat contributions; %q and other ops are not implemented by any aura fold site yet", i, j, sm.Op, statOpAdd, sm.Op)
+			}
+			stage := sm.Stage
+			if stage == "" {
+				stage = statStageBase
+			}
+			if stage != statStageBase {
+				return fmt.Errorf("auras[%d].statModifiers[%d]: stage %q not supported for auras — auras currently support only base-stage stat contributions; %q and other stages are not implemented by any aura fold site yet", i, j, sm.Stage, statStageBase)
+			}
+		}
+	}
+	for _, r := range def.AbilityRiders {
+		if r.Target == "" {
+			return fmt.Errorf("abilityRiders entry has empty target")
+		}
+		if !isKnownTriggerType(r.Trigger) {
+			return fmt.Errorf("abilityRiders entry %q has unknown trigger %q", r.Target, r.Trigger)
+		}
+		// Route each rider action through the SAME structural validator the
+		// ability program itself uses (ability_program_validate.go), so a
+		// rider's actions are held to the identical bar as an authored
+		// ability's actions — one validator, not a parallel hand-rolled copy.
+		w := &validationWalker{seenIDs: map[string]bool{}}
+		for i, action := range r.Actions {
+			w.walkAction(action, fmt.Sprintf("abilityRiders[target=%s].actions[%d]", r.Target, i), false, nil)
+		}
+		for _, issue := range w.issues {
+			if issue.Severity == "error" {
+				return fmt.Errorf("abilityRiders %q: %s: %s", r.Target, issue.Path, issue.Message)
+			}
 		}
 	}
 	return nil
@@ -142,15 +237,171 @@ type PerkEffect struct {
 	Variant         string  `json:"variant,omitempty"`
 }
 
+// AbilityModifier is a scalar modification a perk applies to a target ability
+// (by id today; ability tags are the planned extension). A zero-valued mult
+// means "unset" (identity 1.0) — perks only set the fields they change.
+type AbilityModifier struct {
+	Target       string  `json:"target"` // ability id
+	DamageMult   float64 `json:"damageMult,omitempty"`
+	HealMult     float64 `json:"healMult,omitempty"`
+	ManaCostMult float64 `json:"manaCostMult,omitempty"`
+	RangeMult    float64 `json:"rangeMult,omitempty"`
+}
+
+// AbilityRider is a fragment of actions a perk grafts onto a target
+// ability's existing trigger — the second of two data-driven perk→ability
+// influence mechanisms alongside AbilityModifier (which only scales
+// existing numbers). Where AbilityModifier multiplies a scalar on the
+// target ability, a rider ADDS behavior: its Actions run whenever the
+// target ability's Trigger fires, as if authored directly into that
+// ability's program.
+//
+// This is schema + validation only (T1): nothing executes riders yet. The
+// runtime that grafts Actions onto the live ability program at Trigger and
+// runs them is a later task.
+type AbilityRider struct {
+	// Target is the id of the ability this rider attaches to.
+	Target string `json:"target"`
+	// Trigger is the TriggerType on the target ability's program that this
+	// rider's Actions run alongside. Must be one of the TriggerType consts
+	// (ability_program.go) — see isKnownTriggerType.
+	Trigger TriggerType `json:"trigger"`
+	// Actions are appended to whatever runs when Trigger fires. Validated
+	// with the same structural validator (walkAction,
+	// ability_program_validate.go) an authored ability's own actions go
+	// through, so a rider action is held to the identical bar.
+	Actions []AbilityActionDef `json:"actions,omitempty"`
+}
+
+// PerkStatModifier is one typed, validated unit-stat change contributed by a
+// perk — the data-driven replacement for the old freeform Config-map
+// convention, under which a perk's Go handler had to know the exact key
+// string to read; a typo there silently read 0 forever with no error
+// anywhere. Stat is checked against the registered stat vocabulary
+// (stat_modifiers.go's statRegistry / isKnownStat) at catalog load
+// (validatePerkDef), so an unknown stat is a build-time error instead of a
+// silent no-op.
+//
+//   - Stat  — a statRegistry id (e.g. "moveSpeed", "armor"). MUST satisfy
+//     isKnownStat; validatePerkDef rejects unknown ids with a designer-facing
+//     message listing the valid ones.
+//   - Op    — statOpAdd ("add") or statOpMultiply ("multiply").
+//   - Value — the operand for Op.
+//   - Stage — statStageIntrinsic ("intrinsic"), statStageBase ("base", the
+//     default when omitted), or statStageFinal ("final"). Base-stage
+//     modifiers fold into the same (base + Σadd) × Πmul pool zone auras
+//     already use; intrinsic-stage modifiers apply strictly BEFORE that pool
+//     (for scaling the unit's own base stat without also scaling an external
+//     additive bonus); final-stage modifiers apply strictly AFTER every
+//     base-stage contribution. See applyStatStages (stat_modifiers.go) for
+//     the exact fold order.
+//
+// Resolved per-unit by unitPerkStatModifiersLocked (perk_stat_modifiers.go)
+// and folded in at each stat's existing zone-aura fold site.
+type PerkStatModifier struct {
+	Stat  string  `json:"stat"`
+	Op    string  `json:"op"`
+	Value float64 `json:"value"`
+	Stage string  `json:"stage,omitempty"`
+}
+
+// validatePerkStatModifier checks one PerkStatModifier's fields against the
+// shared stat vocabulary (stat_modifiers.go). Shared by both validation call
+// sites — a top-level PerkDef.StatModifiers entry and a nested
+// PerkAura.StatModifiers entry — so a designer authoring either one gets the
+// identical bar and the identical error message shape. Returns an unwrapped
+// error; callers add their own positional context (e.g. "statModifiers:" or
+// "auras[0].statModifiers[1]:") via fmt.Errorf("%w", ...).
+func validatePerkStatModifier(sm PerkStatModifier) error {
+	if !isKnownStat(sm.Stat) {
+		return fmt.Errorf("unknown stat %q — valid stats are: %s", sm.Stat, strings.Join(ListStatIDs(), ", "))
+	}
+	if sm.Op != statOpAdd && sm.Op != statOpMultiply {
+		return fmt.Errorf("stat %q has invalid op %q (want %q or %q)", sm.Stat, sm.Op, statOpAdd, statOpMultiply)
+	}
+	switch sm.Stage {
+	case "", statStageIntrinsic, statStageBase, statStageFinal:
+	default:
+		return fmt.Errorf("stat %q has unknown stage %q (want %q, %q, %q, or omit for base)", sm.Stat, sm.Stage, statStageIntrinsic, statStageBase, statStageFinal)
+	}
+	if sm.Op == statOpMultiply {
+		if d, ok := statRegistryByID[sm.Stat]; ok && !d.AllowMultiply {
+			return fmt.Errorf("stat %q does not support multiply (see statRegistry AllowMultiply)", sm.Stat)
+		}
+	}
+	return nil
+}
+
+// auraStackingMax is the only implemented PerkAura.Stacking mode today: take
+// the max Value and max PerAdditionalSource independently across covering
+// sources, then effectiveValue = maxValue + (count-1) * maxPerAdditionalSource.
+// See PerkAura's doc comment and perk_aura_stat_cache.go's
+// rebuildAuraStatCacheLocked for the full algorithm.
+const auraStackingMax = "max"
+
+// PerkAura describes a radius-based stat effect a perk EMITS to OTHER units
+// — the aura sibling of PerkStatModifier, which only ever affects the OWNING
+// unit. Pilot: zealous_march (Silver Cleric) grants nearby allies bonus move
+// speed. Resolved per-tick by the generic cache in perk_aura_stat_cache.go
+// (rebuildAuraStatCacheLocked / unitAuraStatContributionLocked), never by a
+// perk-specific Go handler.
+//
+//   - Radius              — pixel radius the aura covers. Must be > 0
+//     (validatePerkDef rejects <= 0).
+//   - Targets             — "allies" or "enemies": which units relative to
+//     the emitter's owner are eligible recipients.
+//   - IncludeSelf         — when true, the emitting unit is itself a valid
+//     recipient (only meaningful with Targets == "allies" — a unit is never
+//     its own enemy). zealous_march sets this true: a Cleric buffs itself.
+//   - Stacking            — combination rule across multiple covering
+//     sources. Only auraStackingMax ("max", the default when omitted) is
+//     implemented today.
+//   - PerAdditionalSource — under "max" stacking, the smaller bonus every
+//     covering source BEYOND the first contributes on top of the strongest
+//     Value. Zero (default) collapses to pure max-wins, no stacking bonus.
+//   - StatModifiers       — the stat changes granted to every covered
+//     recipient, in the SAME Stat/Op/Value/Stage vocabulary
+//     PerkDef.StatModifiers uses (validated by the same
+//     validatePerkStatModifier). IMPORTANT: unlike PerkDef.StatModifiers,
+//     these are NOT folded through unitPerkStatModifiersLocked /
+//     applyStatStages — they are resolved via
+//     unitAuraStatContributionLocked, and each stat's OWN fold site decides
+//     where the returned value lands in its arithmetic. This exists because
+//     folding an aura through the generic (base+add)×mul pipeline can
+//     silently change WHEN it composes with other same-stat bonuses (see the
+//     hawk_spirit / zealous_march "ordering trap" documented in
+//     perk_aura_stat_cache.go and perk_aura_migration_test.go).
+//     SCHEMA LIMITATION, ENFORCED: an aura StatModifiers entry's Op MUST be
+//     "add" and its Stage MUST be omitted/"base" — validatePerkDef REJECTS
+//     "multiply" and any non-base stage at catalog load. This is not a
+//     stylistic preference: rebuildAuraStatCacheLocked (perk_aura_stat_cache.go)
+//     reads only sm.Value into a raw additive accumulator and never inspects
+//     sm.Op or sm.Stage at all, so an authored "multiply" or "final" stage
+//     would silently behave exactly like "add"/"base" with no error — the
+//     validator exists to turn that silent no-op into a load-time error
+//     instead. Lift the restriction only once a real fold site is written
+//     that actually consumes Op/Stage for an aura.
+type PerkAura struct {
+	Radius              float64            `json:"radius"`
+	Targets             string             `json:"targets"`
+	IncludeSelf         bool               `json:"includeSelf,omitempty"`
+	Stacking            string             `json:"stacking,omitempty"`
+	PerAdditionalSource float64            `json:"perAdditionalSource,omitempty"`
+	StatModifiers       []PerkStatModifier `json:"statModifiers"`
+}
+
 // PerkDef is the static definition of a perk loaded from the catalog.
 //
 // Fields:
 //   - ID           — unique string key; used by runtime handlers to dispatch behaviour
 //   - DisplayName  — human-readable name shown in UI
 //   - Description  — one-line flavour/tooltip text
-//   - UnitType     — eligible unit type, e.g. "soldier". Empty = any.
-//   - Path         — eligible promotion path, e.g. "berserker". Empty = any.
-//   - Rank         — eligible rank tier, e.g. "bronze". Empty = any.
+//   - Path         — the perk's association: the promotion path whose folder it
+//                    lives in under catalog/perks/<path>/<id>/. Empty means it
+//                    lives in catalog/perks/generic/ (usable by any path).
+//                    DERIVED FROM THE FOLDER at load — never read from the
+//                    JSON body — and used only for editor picker filtering +
+//                    display, NOT for rank-up selection (that is perksByRank).
 //   - RequiresPerk — (optional) gate: this perk only appears in the pool when
 //                    the unit already owns the named perk. Empty = no gate.
 //                    Useful for Silver/Gold perks that only make sense alongside
@@ -192,9 +443,12 @@ type PerkDef struct {
 	// Icon is the action-icon ID used to render this perk in the HUD.
 	// Matches an entry in catalog/action-icons.json ("perk-<name>").
 	Icon         string             `json:"icon,omitempty"`
-	UnitType     string             `json:"unitType,omitempty"`
+	// Path is the perk's association: the promotion path whose folder it lives
+	// in under catalog/perks/<path>/<id>/. Empty means it lives in
+	// catalog/perks/generic/ (usable by any path). DERIVED FROM THE FOLDER at
+	// load — never read from the JSON body — and used only for editor picker
+	// filtering + display, NOT for rank-up selection (that is perksByRank).
 	Path         string             `json:"path,omitempty"`
-	Rank         string             `json:"rank,omitempty"`
 	RequiresPerk string             `json:"requiresPerk,omitempty"`
 	Config       map[string]float64 `json:"config"`
 	// ConfigByRank holds optional per-rank overrides keyed by the owning
@@ -217,9 +471,38 @@ type PerkDef struct {
 	// strip the ability; we don't currently support perk removal, so this
 	// is unidirectional.
 	GrantsAbilities []string `json:"grantsAbilities,omitempty"`
-	// Wired reports whether a Go handler exists for this perk's id (spec
-	// §7.3) — see perk_wired.go's wiredPerkIDs for exactly what counts. It
-	// is a derived, presentation-only field: it is NEVER set on the
+	// AbilityModifiers: scalar modifiers this perk applies to target abilities
+	// (data-driven replacement for bespoke per-ability modifier hooks). Empty
+	// for most perks. Read via abilityScalarModifiersForCasterLocked.
+	AbilityModifiers []AbilityModifier `json:"abilityModifiers,omitempty"`
+	// StatModifiers: typed, validated unit-stat changes this perk applies —
+	// data-driven replacement for the freeform Config-map convention where a
+	// perk's runtime handler had to know the exact key string to read (a
+	// typo silently read 0 forever). Empty for every perk today; this is the
+	// ENGINE (typed schema + validation + aggregation + fold sites), not a
+	// migration — existing perks keep reading Config via their Go switch
+	// arms until a follow-up task moves them over. See
+	// perk_stat_modifiers.go's unitPerkStatModifiersLocked for how these are
+	// resolved and stat_modifiers.go's applyStatStages for how they combine
+	// with zone auras.
+	StatModifiers []PerkStatModifier `json:"statModifiers,omitempty"`
+	// Auras: radius-based stat effects this perk EMITS to OTHER units (see
+	// PerkAura's doc comment for the full vocabulary). Empty for most perks.
+	// Resolved every tick by the generic cache in perk_aura_stat_cache.go —
+	// zero perk-specific Go required. Pilot: zealous_march.
+	Auras []PerkAura `json:"auras,omitempty"`
+	// AbilityRiders: action fragments this perk grafts onto a target
+	// ability's existing trigger (data-driven "add behavior" sibling to
+	// AbilityModifiers' "scale a number"). Empty for most perks. Schema +
+	// validation only today — see AbilityRider's doc comment; the runtime
+	// that executes a rider's Actions is a later task.
+	AbilityRiders []AbilityRider `json:"abilityRiders,omitempty"`
+	// Wired reports whether this perk actually does something in a match:
+	// either a Go handler exists for its id, or it carries typed data
+	// (StatModifiers/AbilityModifiers/AbilityRiders/GrantsAbilities) the
+	// generic engine executes (spec §7.3) — see perk_wired.go's isWiredPerk
+	// / perkHasTypedBehavior for exactly what counts. It is a derived,
+	// presentation-only field: it is NEVER set on the
 	// registry's own *PerkDef values (perkDefsByID / perkDefLookup /
 	// snapshotPerkDefs all leave it at its zero value, false). ListPerkDefs
 	// is the ONLY place that populates it, on the per-def COPY it returns —
@@ -227,6 +510,18 @@ type PerkDef struct {
 	// consume, so an editor-authored perk with no matching handler can be
 	// labeled "inert" instead of silently doing nothing in a match.
 	Wired bool `json:"wired"`
+	// GeneratedDescription is the tooltip prose describePerk (perk_describe.go)
+	// generates from this perk's typed authored fields (StatModifiers,
+	// AbilityModifiers, AbilityRiders, GrantsAbilities) — the perk-catalog
+	// sibling of AbilityDef.GeneratedDescription. It is a derived,
+	// presentation-only field: it is NEVER set on the registry's own
+	// *PerkDef values (perkDefsByID / perkDefLookup / snapshotPerkDefs all
+	// leave it at its zero value, ""), mirroring Wired's exact discipline
+	// above. ListPerkDefs is the ONLY place that populates it, on the
+	// per-def COPY it returns, so a future client/editor can show the
+	// generated text (and eventually treat it as the single source of
+	// truth, once TooltipTemplate/Config are retired per perk).
+	GeneratedDescription string `json:"generatedDescription,omitempty"`
 }
 
 // ConfigForRank returns the effective config map for a perk at a given rank.
@@ -258,7 +553,7 @@ func (def *PerkDef) ConfigForRank(rank string) map[string]float64 {
 // The hierarchy on disk is flattened here so all callers work against a
 // simple id→def map.
 //
-// perkDefsMu guards perkDefsByID. init() (perk_persistence.go) populates it
+// perkDefsMu guards perkDefsByID. Its var initializer (see below) populates it
 // single-threaded before any goroutine exists (same exemption documented for
 // path_defs.go's pathCatalogMu). Every read — i.e. everything reachable after
 // startup, including the tick-loop rank-up path (eligiblePerksForUnitAtRank) —
@@ -271,8 +566,16 @@ func (def *PerkDef) ConfigForRank(rank string) map[string]float64 {
 // concerned: a rebuild always builds entirely NEW *PerkDef values into a
 // fresh map before swapping, never mutates a def a reader might already be
 // holding.
+//
+// Initialized as a package-level VAR (not in an init() func): Go guarantees all
+// var initializers complete before any init() runs, so the registry is
+// populated before path_defs.go's init validates each path's perksByRank ids
+// via perkDefLookup. A prior init()-based build raced path_defs.go's init
+// (alphabetical file order runs path_defs' init first, leaving this nil).
+// Overlay is empty at package-init; LoadPersistedPerksIntoOverlay refreshes it
+// at startup. Mirrors the embeddedPerkDefs / unit-def var-initializer ordering.
 var perkDefsMu sync.RWMutex
-var perkDefsByID map[string]*PerkDef
+var perkDefsByID = buildPerkRegistry(nil)
 
 // perkDefLookup is the synchronized read path for perkDefsByID.
 func perkDefLookup(id string) (*PerkDef, bool) {
@@ -305,43 +608,24 @@ func perkDefByID(id string) *PerkDef {
 	return def
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EXTENSION POINT — PERK POOL FILTER
-//
-// eligiblePerksForUnitAtRank returns every perk in the catalog whose
-// eligibility fields match the unit's UnitType, ProgressionPath and the
-// given rank. An empty field in the definition matches any value (wildcard).
-//
-// This is the sole filter used by the assignment pipeline (via
-// perkPoolForRankLocked in perks.go). Adding a new perk to catalog/perks is
-// sufficient to include it in the eligible pool — no code changes needed here
-// or in the assignment function.
-//
-// To restrict a perk to multiple paths or ranks, add multiple PerkDef entries
-// sharing the same ID — or extend this function with set-based eligibility —
-// but keep it as the single place that defines "what qualifies".
-// ─────────────────────────────────────────────────────────────────────────────
+// eligiblePerksForUnitAtRank returns the perks a unit may roll at the given
+// rank. AUTHORITATIVE MODEL: the ONLY source is the unit's promotion path's
+// explicit perksByRank list (pathPerkRefsForRank). A perk's own folder-derived
+// association (PerkDef.Path) is used only for editor filtering and display — it
+// no longer participates in rank-up selection. Unknown ids resolve fail-safe
+// (skipped). The ID-sort keeps rngPerks.Intn deterministic regardless of the
+// authored list order, preserving replay reproducibility (AI_RULES.md).
 func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
-	var eligible []*PerkDef
-	seen := map[string]struct{}{}
-	for _, def := range snapshotPerkDefs() {
-		if def.UnitType != "" && def.UnitType != unit.UnitType {
-			continue
-		}
-		if def.Path != "" && def.Path != unit.ProgressionPath {
-			continue
-		}
-		if def.Rank != "" && def.Rank != rank {
-			continue
-		}
-		eligible = append(eligible, def)
-		seen[def.ID] = struct{}{}
+	if unit == nil {
+		return nil
 	}
-	// Union in the path's explicit per-rank perk references (SP2). A referenced
-	// perk that already matched via eligibility is not added twice (dedup via
-	// seen). Unknown ids resolve fail-safe (skipped). The ID-sort below keeps
-	// rngPerks.Intn deterministic regardless of insertion order.
-	for _, perkID := range pathPerkRefsForRank(unit.ProgressionPath, rank) {
+	refs := pathPerkRefsForRank(unit.ProgressionPath, rank)
+	if len(refs) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(refs))
+	eligible := make([]*PerkDef, 0, len(refs))
+	for _, perkID := range refs {
 		if _, dup := seen[perkID]; dup {
 			continue
 		}
@@ -350,11 +634,6 @@ func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
 			seen[perkID] = struct{}{}
 		}
 	}
-	// Sort by ID before returning so that rngPerks.Intn picks from a
-	// deterministic order regardless of map iteration order. Without this sort,
-	// two GameState instances with the same seed can produce different perks
-	// because Go randomises map iteration order per process, violating the
-	// replay-reproducibility invariant required by AI_RULES.md.
 	sort.Slice(eligible, func(i, j int) bool { return eligible[i].ID < eligible[j].ID })
 	return eligible
 }
@@ -366,7 +645,8 @@ func ListPerkDefs() []PerkDef {
 	defs := make([]PerkDef, 0, len(snapshot))
 	for _, def := range snapshot {
 		cp := *def
-		cp.Wired = isWiredPerk(cp.ID)
+		cp.Wired = isWiredPerk(cp)
+		cp.GeneratedDescription = describePerk(cp)
 		defs = append(defs, cp)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })

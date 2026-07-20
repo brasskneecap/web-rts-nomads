@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { PlacedUnit } from '@/game/network/protocol'
-import type { UnitDef } from '@/game/maps/unitDefs'
+import { PATHS_BY_UNIT_TYPE_MAP, type UnitDef } from '@/game/maps/unitDefs'
 
 export type InstancePatch = { rank: string; items: string[]; perks: string[] }
 
@@ -40,13 +40,17 @@ export function ranksForUnitType(unitDefs: UnitDef[], unitType: string): string[
 }
 
 // perksForUnitType filters the perk catalog to perks valid for a unit type.
-// PerkDef.unitType (see game/maps/perkDefs.ts) is the eligible unit type,
-// e.g. "soldier" — absent means the perk applies to any unit type.
-export function perksForUnitType<T extends { id: string; unitType?: string }>(
+// A perk's association is PerkDef.path (its owning promotion path's folder, ""
+// = generic). It is valid for a unit type when it is generic, or when its
+// association is one of that unit type's promotion paths. Mirrors the server's
+// filterKnownPerkIDsForUnit (maps.go), which keeps a perk when its association
+// is empty or unitTypeForPath(path) matches the unit type.
+export function perksForUnitType<T extends { id: string; path?: string }>(
   perkDefs: T[],
   unitType: string,
 ): T[] {
-  return perkDefs.filter((p) => !p.unitType || p.unitType === unitType)
+  const paths = PATHS_BY_UNIT_TYPE_MAP.get(unitType) ?? []
+  return perkDefs.filter((p) => !p.path || paths.includes(p.path))
 }
 
 // Items carry no unit-type restriction: any unit can equip any item. (Perks

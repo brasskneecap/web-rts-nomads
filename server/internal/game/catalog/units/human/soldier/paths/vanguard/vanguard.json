@@ -10,6 +10,11 @@
     "ringOffsetX": 0,
     "ringOffsetY": -18
   },
+  "perksByRank": {
+    "bronze": ["hold_the_line", "interlock", "reinforced_armor", "retaliation", "shield_bash"],
+    "silver": ["brace", "challengers_mark", "last_stand", "punishing_guard"],
+    "gold": ["guardian_aura", "pain_share", "rallying_banner"]
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 2,

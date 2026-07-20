@@ -1,0 +1,12 @@
+{
+  "id": "eagle_spirit",
+  "displayName": "Eagle Spirit",
+  "description": "Sharp-eyed precision: longer reach and better focus translate into more critical hits.",
+  "tooltipTemplate": "Attack range +{attackRangeBonus%}. Crit chance +{critChanceBonus%}.",
+  "icon": "perk-eagle-spirit",
+  "config": {
+    "attackRangeBonus": 0.2,
+    "critChanceBonus": 0.1
+  },
+  "wired": false
+}

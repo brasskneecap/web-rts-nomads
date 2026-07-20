@@ -263,6 +263,10 @@ func TestZealousMarch_GrantsMoveSpeedToNearbyAllies(t *testing.T) {
 	wantBonus := cfg["moveSpeedMultiplier"]
 
 	ally := spawnClericTestAlly(t, s, cleric.X+10, cleric.Y)
+	// zealous_march is resolved via the per-tick generic aura cache
+	// (perk_aura_stat_cache.go) — must be rebuilt before reading it directly,
+	// mirroring the existing rebuildGuardianAuraCacheLocked test convention.
+	s.rebuildAuraStatCacheLocked()
 	got := s.perkMoveSpeedMultiplierLocked(ally)
 	if math.Abs(got-(1.0+wantBonus)) > 1e-6 {
 		t.Errorf("recipient move speed multiplier = %.4f, want %.4f", got, 1.0+wantBonus)
@@ -297,6 +301,7 @@ func TestZealousMarch_AdditionalCovererAddsStackBonus(t *testing.T) {
 	wantBonus := base + stack
 
 	ally := spawnClericTestAlly(t, s, clericA.X+10, clericA.Y)
+	s.rebuildAuraStatCacheLocked()
 	got := s.perkMoveSpeedMultiplierLocked(ally)
 	if math.Abs(got-(1.0+wantBonus)) > 1e-6 {
 		t.Errorf("two covering clerics: recipient move speed = %.4f, want %.4f (base + 1×stack)", got, 1.0+wantBonus)
@@ -329,6 +334,7 @@ func TestZealousMarch_ThreeCoverersAddTwoStacks(t *testing.T) {
 	wantBonus := base + 2*stack
 
 	ally := spawnClericTestAlly(t, s, clericA.X+10, clericA.Y)
+	s.rebuildAuraStatCacheLocked()
 	got := s.perkMoveSpeedMultiplierLocked(ally)
 	if math.Abs(got-(1.0+wantBonus)) > 1e-6 {
 		t.Errorf("three covering clerics: recipient move speed = %.4f, want %.4f (base + 2×stack)", got, 1.0+wantBonus)
@@ -350,6 +356,7 @@ func TestZealousMarch_OutsideRadiusUnaffected(t *testing.T) {
 	cfg := def.ConfigForRank(cleric.Rank)
 
 	ally := spawnClericTestAlly(t, s, cleric.X+cfg["radiusPixels"]*2, cleric.Y)
+	s.rebuildAuraStatCacheLocked()
 	got := s.perkMoveSpeedMultiplierLocked(ally)
 	if math.Abs(got-1.0) > 1e-6 {
 		t.Errorf("ally outside radius: move speed = %.4f, want 1.0", got)
@@ -366,6 +373,7 @@ func TestZealousMarch_EnemyNotAffected(t *testing.T) {
 
 	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: cleric.X + 10, Y: cleric.Y})
 	enemy.Visible = true
+	s.rebuildAuraStatCacheLocked()
 	got := s.perkMoveSpeedMultiplierLocked(enemy)
 	if math.Abs(got-1.0) > 1e-6 {
 		t.Errorf("enemy in aura: move speed = %.4f, want 1.0", got)

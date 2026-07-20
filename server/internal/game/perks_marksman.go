@@ -190,7 +190,7 @@ func huntersMarkExplosionSourceID(unitID int) string {
 //
 // ADD NEW ATTACK-RANGE-MODIFYING PERKS HERE.
 func (s *GameState) perkAttackRangeMultiplierLocked(unit *Unit) float64 {
-	if unit == nil || len(unit.PerkIDs) == 0 {
+	if unit == nil {
 		return 0
 	}
 	total := 0.0
@@ -206,6 +206,23 @@ func (s *GameState) perkAttackRangeMultiplierLocked(unit *Unit) float64 {
 			total += def.Config["attackRangeBonus"]
 		}
 	}
+
+	// Zone-aura attack range. The caller applies this return value as
+	// baseRange × (1 + total); to fold the canonical (base + add) × mul rule
+	// we use unit.BaseAttackRange as the reference base (the same field
+	// AttackRangeMultiplier path tuning multiplies against) and convert back
+	// to fraction-of-base space. No active aura ⇒ (0, 1), which returns
+	// `total` unchanged. Note: for a promoted unit whose path applies a flat
+	// AttackRange override or a non-1x AttackRangeMultiplier, this base
+	// differs slightly from the baseRange actually used at the call site —
+	// an accepted approximation, since the helper has no access to the
+	// path-resolved baseRange local.
+	add, mul := s.playerStatModifierLocked(unit.OwnerID, statAttackRange)
+	if (add != 0 || mul != 1) && unit.BaseAttackRange > 0 {
+		effective := (unit.BaseAttackRange*(1.0+total) + add) * mul
+		return effective/unit.BaseAttackRange - 1.0
+	}
+
 	return total
 }
 
@@ -505,8 +522,21 @@ func (s *GameState) fireDeferredDoubleShotLocked(attacker *Unit) {
 
 	// Compute a fresh damage roll for the second shot. Independent crit roll —
 	// each shot has its own fortune.
+	//
+	// Mirrors state_combat.go's applyDelayedAttackLocked raw-damage calc:
+	// the Go-handler outgoing-damage-multiplier hook first, THEN the
+	// zone-aura / data-driven perk stat-modifier fold (which is where
+	// hawk_spirit's and vulture_spirit's intrinsic-stage damage multiplier
+	// now lives — see perks_attack.go). Without this second fold, a
+	// double-shot second arrow would silently drop hawk_spirit/vulture_spirit's
+	// bonus that the primary shot still gets.
 	bonus := s.perkBonusDamageMultiplierLocked(attacker, target)
 	raw := float64(attacker.Damage) * (1.0 + bonus)
+	dmgAdd, dmgMul := s.playerStatModifierLocked(attacker.OwnerID, statDamage)
+	dmgPerkStages := s.unitPerkStatModifiersLocked(attacker, statDamage)
+	if dmgAdd != 0 || dmgMul != 1 || len(dmgPerkStages) > 0 {
+		raw = applyStatStages(raw, mergeZoneIntoBaseStage(dmgPerkStages, dmgAdd, dmgMul))
+	}
 	isCrit := false
 	if rolled := s.rollCritDamage(attacker, target); rolled > 1.0 {
 		raw *= rolled

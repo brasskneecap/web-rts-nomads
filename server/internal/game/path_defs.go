@@ -90,13 +90,20 @@ type pathCatalogFile struct {
 	// from the unit def. Validated at load (start >= 0, end >= start).
 	ChannelLoop *ChannelLoopRange            `json:"channelLoop,omitempty"`
 	Ranks       map[string]pathRankStatsJSON `json:"ranks"`
-	// PerksByRank is the explicit opt-in perk references for this path, keyed by
+	// PerksByRank is the SOLE source of a path's rank-up perk pool, keyed by
 	// rank (bronze/silver/gold). Each value is a list of standalone perk ids
-	// (catalog/perks). At rank-up, these are UNION'd with the perks that match
-	// via their own eligibility wildcards (see eligiblePerksForUnitAtRank).
-	// Absent/empty ⇒ no explicit refs (auto-match only). Perk ids resolve
-	// fail-safe at selection; validated at save via perkDefLookup.
+	// (catalog/perks) — see eligiblePerksForUnitAtRank, which resolves ONLY
+	// this list (a PerkDef's own UnitType/Path/Rank fields no longer
+	// participate in selection; they are editor filtering/display only).
+	// Absent/empty for a (path, rank) ⇒ that rank rolls no perks. Perk ids
+	// resolve fail-safe at selection; validated at save via perkDefLookup.
 	PerksByRank map[string][]string `json:"perksByRank,omitempty"`
+	// AbilityPoolsByRank is the per-rank pool of candidate ability ids a unit
+	// MAY be granted at that rank (one is rolled at rank-up — see the ability
+	// pool roll). Keyed bronze/silver/gold. Independent of PerksByRank (a rank
+	// may author either). Editor-authored; replaces the former standalone
+	// spell-pool catalog file (removed).
+	AbilityPoolsByRank map[string][]string `json:"abilityPoolsByRank,omitempty"`
 }
 
 // pathRankStatsJSON mirrors the stat-modifier fields of pathModifierDef (the
@@ -110,11 +117,11 @@ type pathCatalogFile struct {
 // can continue to omit them. When both are present in a rank row, the flat
 // override wins — see applyRankModifiersLocked for the resolution order.
 type pathRankStatsJSON struct {
-	MaxHPMultiplier       float64 `json:"maxHPMultiplier"`
+	MaxHPMultiplier float64 `json:"maxHPMultiplier"`
 	// MaxMPMultiplier scales the unit def's catalog MaxMana for this (path, rank).
 	// Optional: omitted / zero defaults to 1.0 at load (so non-caster paths that
 	// never author it don't zero a caster's pool). Applied in applyRankModifiersLocked.
-	MaxMPMultiplier       float64 `json:"maxMPMultiplier"`
+	MaxMPMultiplier float64 `json:"maxMPMultiplier"`
 	// HealthRegenMultiplier scales the unit's base passive HP regen
 	// (UnitDef.healthRegenRate, else the global default) for this (path, rank).
 	// Optional: omitted / zero defaults to 1.0 at load, so a path that does not
@@ -202,14 +209,23 @@ var pathProjectileScaleByPath = map[string]float64{}
 // pass.
 var pathAbilitiesByPath = map[string][]string{}
 
-// pathPerkRefsByPath stores the optional per-path, per-rank explicit perk-id
+// pathPerkRefsByPath stores the per-path, per-rank explicit perk-id
 // references (PathDef.PerksByRank), keyed by path id then rank (e.g.
-// "berserker" -> "bronze" -> ["frenzy"]). A path absent from the map, or a
-// rank absent from a path's inner map, means "no explicit refs for that
-// (path, rank) — auto-match eligibility only" (see eligiblePerksForUnitAtRank
-// / pathPerkRefsForRank). Populated by registerPathFileInto, mirroring
-// pathAbilitiesByPath's contract exactly.
+// "berserker" -> "bronze" -> ["frenzy"]). This is the SOLE source of a
+// (path, rank)'s eligible perk pool (see eligiblePerksForUnitAtRank /
+// pathPerkRefsForRank). A path absent from the map, or a rank absent from a
+// path's inner map, means that (path, rank) rolls no perks. Populated by
+// registerPathFileInto, mirroring pathAbilitiesByPath's contract exactly.
 var pathPerkRefsByPath = map[string]map[string][]string{}
+
+// pathAbilityPoolsByPath stores the per-path, per-rank ability-pool
+// references (PathDef.AbilityPoolsByRank), keyed by path id then rank (e.g.
+// "arch_mage" -> "silver" -> ["fireball", "chain_lightning"]). Mirrors
+// pathPerkRefsByPath's contract exactly: a path absent from the map, or a
+// rank absent from a path's inner map, means that (path, rank) has no
+// authored ability pool. Populated by registerPathFileInto. Nothing reads
+// this map yet — a later task wires it into the rank-up ability roll.
+var pathAbilityPoolsByPath = map[string]map[string][]string{}
 
 // pathChannelLoopByPath stores the optional per-path channel-pose frame
 // override, keyed by path id (e.g. "siphoner": {Start: 3, End: 4}). A path
@@ -226,11 +242,12 @@ var pathChannelLoopByPath = map[string]ChannelLoopRange{}
 // layout instead of duplicating it.
 var pathsByUnitType = map[string][]string{}
 
-// pathCatalogMu guards all 12 package-global path-catalog maps above
+// pathCatalogMu guards all 13 package-global path-catalog maps above
 // (pathModifiersByKey, pathBoundsByPath, pathAttackOriginByPath,
 // pathVisionRangeByPath, pathProjectileByPath, pathDamageTypeByPath,
 // pathAttackTypeByPath, pathProjectileScaleByPath, pathAbilitiesByPath,
-// pathPerkRefsByPath, pathChannelLoopByPath, pathsByUnitType).
+// pathPerkRefsByPath, pathAbilityPoolsByPath, pathChannelLoopByPath,
+// pathsByUnitType).
 //
 // init() populates these maps single-threaded at startup before any
 // goroutine exists, so init's own reads/writes bypass the lock (see the
@@ -329,8 +346,8 @@ func pathAbilitiesFor(path string) ([]string, bool) {
 // given path for the given rank, or nil. Path ids are globally unique so the
 // unit type is not part of the key. Caller must NOT hold pathCatalogMu. The
 // returned slice is a COPY (mirrors pathAbilitiesFor / pathsForUnitType) —
-// callers (e.g. eligiblePerksForUnitAtRank's union step) must not be able to
-// mutate the shared catalog state through it.
+// callers (e.g. eligiblePerksForUnitAtRank, the sole consumer) must not be
+// able to mutate the shared catalog state through it.
 func pathPerkRefsForRank(pathName, rank string) []string {
 	pathCatalogMu.RLock()
 	defer pathCatalogMu.RUnlock()
@@ -344,6 +361,26 @@ func pathPerkRefsForRank(pathName, rank string) []string {
 	}
 	cp := make([]string, len(refs))
 	copy(cp, refs)
+	return cp
+}
+
+// pathAbilityPoolsForRank returns the ability-pool references authored on the
+// given path for the given rank, or nil. Mirrors pathPerkRefsForRank exactly
+// (same locking, returns a COPY, nil when absent). Caller must NOT hold
+// pathCatalogMu.
+func pathAbilityPoolsForRank(pathName, rank string) []string {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	byRank := pathAbilityPoolsByPath[pathName]
+	if byRank == nil {
+		return nil
+	}
+	pool := byRank[rank]
+	if pool == nil {
+		return nil
+	}
+	cp := make([]string, len(pool))
+	copy(cp, pool)
 	return cp
 }
 
@@ -366,6 +403,27 @@ func pathsForUnitType(unitType string) []string {
 	cp := make([]string, len(paths))
 	copy(cp, paths)
 	return cp
+}
+
+// unitTypeForPath returns the unit type that owns a promotion path, or "" if
+// the path is unknown. Reverse of pathsByUnitType; used by placed-unit perk
+// validation (maps.go) now that a perk's owning unit is derived from its path
+// association rather than a stored PerkDef.UnitType field. Linear scan over a
+// tiny catalog (a handful of unit types) — no index needed.
+func unitTypeForPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	for unitType, paths := range pathsByUnitType {
+		for _, p := range paths {
+			if p == path {
+				return unitType
+			}
+		}
+	}
+	return ""
 }
 
 // PathBoundsEntry is the shape served to the client: a path id plus its raw
@@ -547,10 +605,61 @@ func validatePathFile(file *pathCatalogFile, pathKey string) error {
 			}
 		}
 	}
+	// AbilityPoolsByRank: rank keys must be valid ranks; each ability id must
+	// resolve to a registered AbilityDef (not a perk) so a typo fails loud at
+	// save. Sorted for a deterministic first-error, mirroring PerksByRank.
+	abilityPoolRanks := make([]string, 0, len(file.AbilityPoolsByRank))
+	for rankName := range file.AbilityPoolsByRank {
+		abilityPoolRanks = append(abilityPoolRanks, rankName)
+	}
+	sort.Strings(abilityPoolRanks)
+	for _, rankName := range abilityPoolRanks {
+		if _, ok := validRankName[rankName]; !ok {
+			return fmt.Errorf("unknown rank %q in \"abilityPoolsByRank\" (want bronze/silver/gold)", rankName)
+		}
+		for _, abilityID := range file.AbilityPoolsByRank[rankName] {
+			if abilityID == "" {
+				return fmt.Errorf("empty ability id in abilityPoolsByRank[%q]", rankName)
+			}
+			if _, ok := getAbilityDef(abilityID); !ok {
+				return fmt.Errorf("ability %q in abilityPoolsByRank[%q] has no registered AbilityDef", abilityID, rankName)
+			}
+		}
+	}
+	// An ability id may NOT appear both in the base Abilities override and
+	// in any rank's AbilityPoolsByRank list (a permanently-granted ability
+	// listed in a roll pool is a dead/contradictory entry). An ability id
+	// MAY appear in more than one rank's pool -- this is a valid, designed
+	// configuration (e.g. bronze and silver sharing the same roll pool);
+	// unitKnownAbilitySetLocked de-dupes the actual grant across ranks at
+	// roll time, so a unit never ends up with two copies. Duplicates
+	// WITHIN a single rank's pool are still rejected. Sorted rank
+	// iteration (abilityPoolRanks, built above) keeps the first-reported
+	// error deterministic regardless of Go's map iteration order.
+	if file.Abilities != nil || len(file.AbilityPoolsByRank) > 0 {
+		baseAbilities := make(map[string]bool)
+		if file.Abilities != nil {
+			for _, abilityID := range *file.Abilities {
+				baseAbilities[abilityID] = true
+			}
+		}
+		for _, rankName := range abilityPoolRanks {
+			seenInRank := make(map[string]bool)
+			for _, abilityID := range file.AbilityPoolsByRank[rankName] {
+				if baseAbilities[abilityID] {
+					return fmt.Errorf("ability %q appears in both the base abilities and abilityPoolsByRank[%q]", abilityID, rankName)
+				}
+				if seenInRank[abilityID] {
+					return fmt.Errorf("ability %q is listed twice in abilityPoolsByRank[%q]", abilityID, rankName)
+				}
+				seenInRank[abilityID] = true
+			}
+		}
+	}
 	return nil
 }
 
-// pathDerivedMaps bundles the 12 derived path-catalog maps so
+// pathDerivedMaps bundles the 13 derived path-catalog maps so
 // registerPathFileInto can populate either the live package-global maps
 // (registerPathFileLocked's use, unchanged from Task 2) or a fresh throwaway
 // set (path_persistence.go's rebuildDerivedPathMaps, which builds an entire
@@ -567,11 +676,12 @@ type pathDerivedMaps struct {
 	projectileScaleByPath map[string]float64
 	abilitiesByPath       map[string][]string
 	perkRefsByPath        map[string]map[string][]string
+	abilityPoolsByPath    map[string]map[string][]string
 	channelLoopByPath     map[string]ChannelLoopRange
 	pathsByUnitType       map[string][]string
 }
 
-// newPathDerivedMaps returns a pathDerivedMaps wrapping 12 brand-new, empty
+// newPathDerivedMaps returns a pathDerivedMaps wrapping 13 brand-new, empty
 // maps — the "fresh" side of the build-then-swap rebuild.
 func newPathDerivedMaps() *pathDerivedMaps {
 	return &pathDerivedMaps{
@@ -585,6 +695,7 @@ func newPathDerivedMaps() *pathDerivedMaps {
 		projectileScaleByPath: map[string]float64{},
 		abilitiesByPath:       map[string][]string{},
 		perkRefsByPath:        map[string]map[string][]string{},
+		abilityPoolsByPath:    map[string]map[string][]string{},
 		channelLoopByPath:     map[string]ChannelLoopRange{},
 		pathsByUnitType:       map[string][]string{},
 	}
@@ -607,6 +718,7 @@ func livePathDerivedMaps() *pathDerivedMaps {
 		projectileScaleByPath: pathProjectileScaleByPath,
 		abilitiesByPath:       pathAbilitiesByPath,
 		perkRefsByPath:        pathPerkRefsByPath,
+		abilityPoolsByPath:    pathAbilityPoolsByPath,
 		channelLoopByPath:     pathChannelLoopByPath,
 		pathsByUnitType:       pathsByUnitType,
 	}
@@ -689,6 +801,15 @@ func registerPathFileInto(dst *pathDerivedMaps, unitKey string, file *pathCatalo
 		}
 		dst.perkRefsByPath[file.Path] = refs
 	}
+	if len(file.AbilityPoolsByRank) > 0 {
+		pools := make(map[string][]string, len(file.AbilityPoolsByRank))
+		for rankName, ids := range file.AbilityPoolsByRank {
+			cp := make([]string, len(ids))
+			copy(cp, ids)
+			pools[rankName] = cp
+		}
+		dst.abilityPoolsByPath[file.Path] = pools
+	}
 	for rankName, stats := range file.Ranks {
 		key := pathModifierKey(file.Path, rankName)
 		if _, exists := dst.modifiersByKey[key]; exists {
@@ -754,7 +875,7 @@ var embeddedPathUnit = map[string]string{}
 
 // clonePathCatalogFile returns a deep-enough copy of file: every field that
 // holds map/slice/pointer state (Bounds, AttackOrigin, Abilities,
-// ChannelLoop, Ranks, PerksByRank) gets its own backing storage so a later mutation to
+// ChannelLoop, Ranks, PerksByRank, AbilityPoolsByRank) gets its own backing storage so a later mutation to
 // the original — or to a copy taken from a live overlay entry — can never
 // reach back into the embedded baseline snapshot. Scalar fields copy by
 // value via the struct assignment.
@@ -787,6 +908,13 @@ func clonePathCatalogFile(file *pathCatalogFile) *pathCatalogFile {
 			refs[rankName] = append([]string(nil), ids...)
 		}
 		cp.PerksByRank = refs
+	}
+	if file.AbilityPoolsByRank != nil {
+		pools := make(map[string][]string, len(file.AbilityPoolsByRank))
+		for rankName, ids := range file.AbilityPoolsByRank {
+			pools[rankName] = append([]string(nil), ids...)
+		}
+		cp.AbilityPoolsByRank = pools
 	}
 	return &cp
 }

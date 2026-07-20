@@ -34,18 +34,12 @@ func resolvePerksDir() (string, error) {
 	return "", fmt.Errorf("perks directory not found at %s; set PERK_CATALOG_DIR to override", dir)
 }
 
-// rebuildPerkRegistry merges embeddedPerkDefs + runtimePerks (overlay wins) into
-// a fresh id->*PerkDef map, swapped under perkDefsMu.Lock(). Sorted-by-id build
-// preserves determinism. Readers (perkDefLookup/snapshotPerkDefs/ListPerkDefs)
-// are unchanged — they still read perkDefsByID under perkDefsMu.
-func rebuildPerkRegistry() {
-	runtimePerksMu.RLock()
-	overlay := make(map[string]PerkDef, len(runtimePerks))
-	for k, v := range runtimePerks {
-		overlay[k] = v
-	}
-	runtimePerksMu.RUnlock()
-
+// buildPerkRegistry merges the embedded baseline with an overlay snapshot
+// (overlay wins) into a fresh id->*PerkDef map, deterministically (ids sorted).
+// Pure: it neither locks nor mutates shared state, so it is safe to call from a
+// package-level var initializer (single-threaded, before any init() runs) AND
+// from rebuildPerkRegistry at runtime — the caller owns synchronization.
+func buildPerkRegistry(overlay map[string]PerkDef) map[string]*PerkDef {
 	merged := make(map[string]PerkDef, len(embeddedPerkDefs)+len(overlay))
 	for k, v := range embeddedPerkDefs {
 		merged[k] = v
@@ -63,14 +57,41 @@ func rebuildPerkRegistry() {
 		def := merged[id]
 		fresh[id] = &def
 	}
+	return fresh
+}
+
+// rebuildPerkRegistry snapshots the writable overlay, rebuilds the merged
+// registry, and swaps it in under perkDefsMu. Called at runtime after the
+// overlay changes (SavePerkDef / DeletePerkOverride / LoadPersistedPerksIntoOverlay).
+func rebuildPerkRegistry() {
+	runtimePerksMu.RLock()
+	overlay := make(map[string]PerkDef, len(runtimePerks))
+	for k, v := range runtimePerks {
+		overlay[k] = v
+	}
+	runtimePerksMu.RUnlock()
+
+	fresh := buildPerkRegistry(overlay)
+
 	perkDefsMu.Lock()
 	perkDefsByID = fresh
 	perkDefsMu.Unlock()
 }
 
-// SavePerkDef validates and writes an authored perk def to <dir>/<id>/<id>.json,
-// then registers it in the overlay and rebuilds the registry so the change is
-// visible immediately.
+// perkAssocDir returns the on-disk folder segment for a perk association.
+// Empty association (generic perk) lives under "generic".
+func perkAssocDir(assocPath string) string {
+	if assocPath == "" {
+		return "generic"
+	}
+	return assocPath
+}
+
+// SavePerkDef validates and writes an authored perk def to
+// <dir>/<assoc>/<id>/<id>.json (assoc derived from def.Path, "generic" when
+// empty), then registers it in the overlay and rebuilds the registry so the
+// change is visible immediately. The on-disk body never carries "path" — that
+// association is encoded by the folder and re-derived on load.
 func SavePerkDef(def *PerkDef) error {
 	if !perkIDPattern.MatchString(def.ID) {
 		return fmt.Errorf("perk id %q must match %s", def.ID, perkIDPattern)
@@ -82,11 +103,16 @@ func SavePerkDef(def *PerkDef) error {
 	if err != nil {
 		return err
 	}
-	outDir := filepath.Join(dir, def.ID)
+	assoc := perkAssocDir(def.Path)
+	outDir := filepath.Join(dir, assoc, def.ID)
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	raw, err := json.MarshalIndent(def, "", "  ")
+	// The folder encodes association; do not also write path into the file body
+	// (it is re-derived from the folder on load).
+	toWrite := *def
+	toWrite.Path = ""
+	raw, err := json.MarshalIndent(&toWrite, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -108,7 +134,9 @@ func PerkIsEmbedded(id string) bool {
 
 // DeletePerkOverride removes the override file + overlay entry for an id, then
 // rebuilds the registry. An embedded id reverts to its shipped default; a
-// purely-authored id disappears.
+// purely-authored id disappears. The association folder (<assoc>/<id>/) is
+// resolved from whatever currently knows the id's Path (embedded baseline or
+// live overlay) so the right file gets targeted.
 func DeletePerkOverride(id string) (existed bool, err error) {
 	if !perkIDPattern.MatchString(id) {
 		return false, nil // never a valid override id; also blocks path traversal
@@ -117,10 +145,21 @@ func DeletePerkOverride(id string) (existed bool, err error) {
 	if derr != nil {
 		return false, derr
 	}
+	assocPath := ""
+	if d, ok := embeddedPerkDefs[id]; ok {
+		assocPath = d.Path
+	}
+	runtimePerksMu.RLock()
+	if d, ok := runtimePerks[id]; ok {
+		assocPath = d.Path
+	}
+	runtimePerksMu.RUnlock()
+	assoc := perkAssocDir(assocPath)
+
 	removed := false
-	if rerr := os.Remove(filepath.Join(dir, id, id+".json")); rerr == nil {
+	if rerr := os.Remove(filepath.Join(dir, assoc, id, id+".json")); rerr == nil {
 		removed = true
-		_ = os.Remove(filepath.Join(dir, id)) // best-effort: drop the now-empty dir
+		_ = os.Remove(filepath.Join(dir, assoc, id)) // best-effort: drop the now-empty dir
 	}
 	runtimePerksMu.Lock()
 	_, inOverlay := runtimePerks[id]
@@ -152,6 +191,13 @@ func LoadPersistedPerksIntoOverlay() {
 			slog.Warn("persisted perks: skipped file", "file", d.Name())
 			return nil
 		}
+		// Association = the folder two levels up: <dir>/<assoc>/<id>/<id>.json.
+		assoc := filepath.Base(filepath.Dir(filepath.Dir(path)))
+		if assoc == "generic" {
+			def.Path = ""
+		} else {
+			def.Path = assoc
+		}
 		runtimePerksMu.Lock()
 		runtimePerks[def.ID] = def
 		runtimePerksMu.Unlock()
@@ -164,5 +210,7 @@ func LoadPersistedPerksIntoOverlay() {
 	}
 }
 
-// init builds the initial registry from the embedded standalone catalog.
-func init() { rebuildPerkRegistry() }
+// The initial registry is built by perkDefsByID's var initializer in
+// perk_defs.go (buildPerkRegistry) so it is ready before any init() runs —
+// notably path_defs.go's init, which validates perksByRank ids via
+// perkDefLookup. Runtime refreshes go through rebuildPerkRegistry above.

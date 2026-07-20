@@ -15,7 +15,7 @@ import (
 //
 //   arcane_feedback — restore mana to the caster on each Arcane Missile hit.
 //   arcane_conduit  — let Arcane Missiles trigger the caster's item on-hit effects.
-//   unstable_magic  — chance to cast a random learned spell at reduced effectiveness.
+//   unstable_magic  — chance to cast a random learned ability at reduced effectiveness.
 //
 // These enhance the existing Arch Mage loop: cast spells → spend mana → build
 // Arcane Charge → fire Arcane Missiles → Gold perk fires here.
@@ -52,7 +52,7 @@ func (s *GameState) onArcaneMissileHitLocked(caster, target *Unit) {
 
 		case "unstable_magic":
 			// Chance (rolled on the seeded perk RNG for determinism) to unleash
-			// one of the caster's learned spells at reduced effectiveness.
+			// one of the caster's learned abilities at reduced effectiveness.
 			if s.rngPerks.Float64() < def.Config["procChance"] {
 				s.fireUnstableMagicLocked(caster, target, def.Config["effectiveness"])
 			}
@@ -61,13 +61,14 @@ func (s *GameState) onArcaneMissileHitLocked(caster, target *Unit) {
 }
 
 // fireUnstableMagicLocked casts one of the caster's currently learned pool
-// spells (the bronze/silver picks recorded on PoolSpellsByRank) at `target`,
-// scaled to `effectiveness` of its normal damage output. It reuses the real
-// cast-resolution path rather than duplicating spell logic: the effective spell
-// is built from the catalog, its mana cost is zeroed (this is a free proc, not
-// the caster spending an action), its damage-bearing fields are scaled, then it
-// is handed to the same resolver a normal cast uses. No cooldown or global
-// cooldown is armed, so the proc never interferes with the caster's own casting.
+// abilities (the bronze/silver picks recorded on PoolAbilitiesByRank) at
+// `target`, scaled to `effectiveness` of its normal damage output. It reuses
+// the real cast-resolution path rather than duplicating spell logic: the
+// effective spell is built from the catalog, its mana cost is zeroed (this is
+// a free proc, not the caster spending an action), its damage-bearing fields
+// are scaled, then it is handed to the same resolver a normal cast uses. No
+// cooldown or global cooldown is armed, so the proc never interferes with the
+// caster's own casting.
 //
 // Reduced-effectiveness scaling is applied as a modifier on the EffectiveSpell,
 // not by authoring separate mini-spell definitions. Caller holds s.mu.
@@ -75,11 +76,11 @@ func (s *GameState) fireUnstableMagicLocked(caster, target *Unit, effectiveness 
 	if caster == nil || target == nil || effectiveness <= 0 {
 		return
 	}
-	spellID := s.randomLearnedSpellLocked(caster)
-	if spellID == "" {
-		return // no learned spells yet — nothing to unleash
+	abilityID := s.randomLearnedAbilityLocked(caster)
+	if abilityID == "" {
+		return // no learned abilities yet — nothing to unleash
 	}
-	def, ok := getAbilityDef(spellID)
+	def, ok := getAbilityDef(abilityID)
 	if !ok {
 		return
 	}
@@ -99,17 +100,17 @@ func (s *GameState) fireUnstableMagicLocked(caster, target *Unit, effectiveness 
 	}
 }
 
-// randomLearnedSpellLocked returns one of the caster's learned pool spells
-// (PoolSpellsByRank values) chosen uniformly from the seeded perk RNG, or ""
-// when the caster has learned none. Candidates are sorted so neither map nor
-// pool iteration order can drive the outcome (determinism invariant). Caller
-// holds s.mu.
-func (s *GameState) randomLearnedSpellLocked(caster *Unit) string {
-	if caster == nil || len(caster.PoolSpellsByRank) == 0 {
+// randomLearnedAbilityLocked returns one of the caster's learned pool
+// abilities (PoolAbilitiesByRank values) chosen uniformly from the seeded
+// perk RNG, or "" when the caster has learned none. Candidates are sorted so
+// neither map nor pool iteration order can drive the outcome (determinism
+// invariant). Caller holds s.mu.
+func (s *GameState) randomLearnedAbilityLocked(caster *Unit) string {
+	if caster == nil || len(caster.PoolAbilitiesByRank) == 0 {
 		return ""
 	}
-	candidates := make([]string, 0, len(caster.PoolSpellsByRank))
-	for _, id := range caster.PoolSpellsByRank {
+	candidates := make([]string, 0, len(caster.PoolAbilitiesByRank))
+	for _, id := range caster.PoolAbilitiesByRank {
 		candidates = append(candidates, id)
 	}
 	sort.Strings(candidates)

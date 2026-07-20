@@ -623,8 +623,15 @@ func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, des
 		// controlled zones, folded as (existing + add) × mul before crit/armor.
 		// Covers both melee and ranged (this is pre-branch). No active aura ⇒
 		// (0, 1) identity. Ability damage is a separate system, out of v1 scope.
-		if dmgAdd, dmgMul := s.playerStatModifierLocked(unit.OwnerID, statDamage); dmgAdd != 0 || dmgMul != 1 {
-			rawDamage = (rawDamage + dmgAdd) * dmgMul
+		//
+		// Data-driven perk stat modifiers (PerkStatModifier{Stat: "damage"})
+		// fold into the same merge via mergeZoneIntoBaseStage/applyStatStages.
+		// No perk authors statModifiers today, so this is byte-identical to
+		// the prior zone-only fold.
+		dmgAdd, dmgMul := s.playerStatModifierLocked(unit.OwnerID, statDamage)
+		dmgPerkStages := s.unitPerkStatModifiersLocked(unit, statDamage)
+		if dmgAdd != 0 || dmgMul != 1 || len(dmgPerkStages) > 0 {
+			rawDamage = applyStatStages(rawDamage, mergeZoneIntoBaseStage(dmgPerkStages, dmgAdd, dmgMul))
 		}
 		critMult := 1.0
 		isCrit := false

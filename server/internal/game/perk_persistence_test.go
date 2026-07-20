@@ -34,12 +34,12 @@ func withIsolatedPerkCatalogDir(t *testing.T) {
 
 func TestSaveAndOverlayPerkDef(t *testing.T) {
 	withIsolatedPerkCatalogDir(t)
-	def := &PerkDef{ID: "test_perk", DisplayName: "Test Perk", Rank: unitRankBronze}
+	def := &PerkDef{ID: "test_perk", DisplayName: "Test Perk"}
 	if err := SavePerkDef(def); err != nil {
 		t.Fatalf("SavePerkDef: %v", err)
 	}
 	got, ok := perkDefLookup("test_perk")
-	if !ok || got.DisplayName != "Test Perk" || got.Rank != unitRankBronze {
+	if !ok || got.DisplayName != "Test Perk" {
 		t.Fatalf("overlay def not resolved: ok=%v got=%+v", ok, got)
 	}
 	if PerkIsEmbedded("test_perk") {
@@ -57,7 +57,7 @@ func TestSaveAndOverlayPerkDef(t *testing.T) {
 func TestPerkDiskRoundTripAndRevert(t *testing.T) {
 	withIsolatedPerkCatalogDir(t)
 	// disk round-trip: save, clear overlay, reload from disk.
-	if err := SavePerkDef(&PerkDef{ID: "disk_perk", DisplayName: "On Disk", Rank: unitRankSilver}); err != nil {
+	if err := SavePerkDef(&PerkDef{ID: "disk_perk", DisplayName: "On Disk"}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	runtimePerksMu.Lock()
@@ -68,7 +68,7 @@ func TestPerkDiskRoundTripAndRevert(t *testing.T) {
 		t.Fatal("expected miss after clearing overlay (disk_perk is not embedded)")
 	}
 	LoadPersistedPerksIntoOverlay()
-	if got, ok := perkDefLookup("disk_perk"); !ok || got.DisplayName != "On Disk" || got.Rank != unitRankSilver {
+	if got, ok := perkDefLookup("disk_perk"); !ok || got.DisplayName != "On Disk" {
 		t.Fatalf("disk reload failed: ok=%v got=%+v", ok, got)
 	}
 
@@ -115,23 +115,13 @@ func TestSavePerkDefRejectsBadID(t *testing.T) {
 	}
 }
 
-func TestSavePerkDefRejectsBadRank(t *testing.T) {
-	withIsolatedPerkCatalogDir(t)
-	if err := SavePerkDef(&PerkDef{ID: "bad_rank_perk", Rank: "platinum"}); err == nil {
-		t.Fatal("expected rank rejection for a non bronze/silver/gold rank")
-	}
-	if _, ok := perkDefLookup("bad_rank_perk"); ok {
-		t.Fatal("bad-rank perk must not be registered after a rejected save")
-	}
-}
-
 // TestPerkSelectionEquivalence pins the id-addressed catalog against the known
 // shipped soldier/berserker perk pools. The expected id sets were read from the
 // pre-flip pool files (catalog/units/human/soldier/paths/berserker/perks/
-// {bronze,silver,gold}.json) and match the committed catalog/perks/<id>.json
-// unitType/path/rank fields. eligiblePerksForUnitAtRank is the exact filter the
-// rank-up assignment pipeline uses, so equal id sets here prove selection
-// behavior is unchanged by the flip.
+// {bronze,silver,gold}.json) and match soldier/berserker's authored
+// perksByRank. eligiblePerksForUnitAtRank is the exact filter the rank-up
+// assignment pipeline uses, so equal id sets here prove selection behavior is
+// unchanged by the flip.
 func TestPerkSelectionEquivalence(t *testing.T) {
 	unit := &Unit{UnitType: "soldier", ProgressionPath: "berserker"}
 	cases := []struct {
@@ -155,30 +145,34 @@ func TestPerkSelectionEquivalence(t *testing.T) {
 	}
 }
 
-// TestEligiblePerksUnionWithReferences pins Task 2's union step:
+// TestEligiblePerksForUnitAtRank_RefsAreSoleSource pins B1's refs-only model:
 // eligiblePerksForUnitAtRank must include a perk referenced via the path's
-// PerksByRank even when that perk's OWN eligibility fields would not match
-// the unit, must not duplicate a perk that matches BOTH the eligibility scan
-// AND the reference list, and must keep the ID-sorted output determinism
-// invariant that rngPerks.Intn relies on.
-func TestEligiblePerksUnionWithReferences(t *testing.T) {
+// PerksByRank even when that perk's OWN association (Path) would not match
+// the unit's path, must EXCLUDE a perk whose Path DOES match the unit's path
+// but is NOT referenced (the old catalog scan is gone — this is the key
+// regression guard against silently reintroducing it), must dedup a perk id
+// repeated in the authored list, and must keep the ID-sorted output
+// determinism invariant that rngPerks.Intn relies on.
+func TestEligiblePerksForUnitAtRank_RefsAreSoleSource(t *testing.T) {
 	withIsolatedPerkCatalogDir(t)
 	withIsolatedPathCatalogDir(t)
 
-	// Eligibility does NOT match soldier/berserker/bronze (UnitType "nobody"),
-	// so this perk can only appear in the pool via the explicit reference.
-	if err := SavePerkDef(&PerkDef{ID: "ref_only_perk", DisplayName: "Ref Only", UnitType: "nobody", Rank: unitRankBronze}); err != nil {
+	// Path does NOT match soldier's berserker path, so this perk can only
+	// appear in the pool via the explicit reference.
+	if err := SavePerkDef(&PerkDef{ID: "ref_only_perk", DisplayName: "Ref Only", Path: "nobody"}); err != nil {
 		t.Fatalf("SavePerkDef(ref_only_perk): %v", err)
 	}
-	// Eligibility DOES match soldier/berserker/bronze AND is also referenced
-	// explicitly — must appear exactly once (dedup via seen).
-	if err := SavePerkDef(&PerkDef{ID: "dual_match_perk", DisplayName: "Dual Match", UnitType: "soldier", Path: "berserker", Rank: unitRankBronze}); err != nil {
-		t.Fatalf("SavePerkDef(dual_match_perk): %v", err)
+	// Path DOES match berserker but this perk is NOT referenced in
+	// PerksByRank — under the refs-only model it must be excluded even
+	// though the old field-scan would have matched it.
+	if err := SavePerkDef(&PerkDef{ID: "unreferenced_match_perk", DisplayName: "Unreferenced Match", Path: "berserker"}); err != nil {
+		t.Fatalf("SavePerkDef(unreferenced_match_perk): %v", err)
 	}
 
 	if err := SavePathDef("soldier", &pathCatalogFile{
-		Path:        "berserker",
-		PerksByRank: map[string][]string{unitRankBronze: {"ref_only_perk", "dual_match_perk"}},
+		Path: "berserker",
+		// ref_only_perk listed twice to also pin dedup of a repeated id.
+		PerksByRank: map[string][]string{unitRankBronze: {"ref_only_perk", "ref_only_perk"}},
 	}); err != nil {
 		t.Fatalf("SavePathDef(berserker): %v", err)
 	}
@@ -193,8 +187,11 @@ func TestEligiblePerksUnionWithReferences(t *testing.T) {
 	if counts["ref_only_perk"] != 1 {
 		t.Fatalf("ref_only_perk count = %d, want 1 (pool=%v)", counts["ref_only_perk"], perkIDs(pool))
 	}
-	if counts["dual_match_perk"] != 1 {
-		t.Fatalf("dual_match_perk count = %d, want 1 (pool=%v)", counts["dual_match_perk"], perkIDs(pool))
+	if counts["unreferenced_match_perk"] != 0 {
+		t.Fatalf("unreferenced_match_perk count = %d, want 0 — field-matched but unreferenced perks must not roll (pool=%v)", counts["unreferenced_match_perk"], perkIDs(pool))
+	}
+	if len(pool) != 1 {
+		t.Fatalf("pool = %v, want exactly [ref_only_perk]", perkIDs(pool))
 	}
 	for i := 1; i < len(pool); i++ {
 		if pool[i-1].ID > pool[i].ID {
@@ -203,21 +200,32 @@ func TestEligiblePerksUnionWithReferences(t *testing.T) {
 	}
 }
 
-// TestEligiblePerksUnion_EmptyRefsIsNoOp asserts that with no path perk
-// references authored (the default/pre-Task-1 state), eligiblePerksForUnitAtRank
-// returns exactly the eligibility-matched set — the union step is a byte-
-// identical no-op when pathPerkRefsForRank returns nil.
-func TestEligiblePerksUnion_EmptyRefsIsNoOp(t *testing.T) {
-	unit := &Unit{UnitType: "soldier", ProgressionPath: "berserker"}
-	want := []string{"bloodlust", "cleaving_rage", "frenzy_core", "relentless", "savage_strikes"}
-	var got []string
-	for _, def := range eligiblePerksForUnitAtRank(unit, unitRankBronze) {
-		got = append(got, def.ID)
+// TestEligiblePerksForUnitAtRank_NoRefsYieldsEmptyPool asserts that when a
+// path has no PerksByRank entry for a given rank, eligiblePerksForUnitAtRank
+// returns an empty pool — NOT a fallback scan of the whole catalog for
+// field-matching perks. This is the direct regression guard for B1: refs are
+// the SOLE source, so an unauthored rank must roll nothing rather than
+// silently reviving the old auto-match behavior.
+func TestEligiblePerksForUnitAtRank_NoRefsYieldsEmptyPool(t *testing.T) {
+	withIsolatedPerkCatalogDir(t)
+	withIsolatedPathCatalogDir(t)
+
+	// Path matches soldier's berserker path exactly — under the old scan this
+	// would have rolled. PerksByRank below deliberately omits bronze.
+	if err := SavePerkDef(&PerkDef{ID: "would_have_matched_perk", DisplayName: "Would Have Matched", Path: "berserker"}); err != nil {
+		t.Fatalf("SavePerkDef(would_have_matched_perk): %v", err)
 	}
-	sort.Strings(got)
-	sort.Strings(want)
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("no-refs pool = %v, want %v", got, want)
+	if err := SavePathDef("soldier", &pathCatalogFile{
+		Path:        "berserker",
+		PerksByRank: map[string][]string{unitRankSilver: {"would_have_matched_perk"}},
+	}); err != nil {
+		t.Fatalf("SavePathDef(berserker): %v", err)
+	}
+
+	unit := &Unit{UnitType: "soldier", ProgressionPath: "berserker"}
+	pool := eligiblePerksForUnitAtRank(unit, unitRankBronze)
+	if len(pool) != 0 {
+		t.Fatalf("bronze pool with no authored refs = %v, want empty", perkIDs(pool))
 	}
 }
 
