@@ -235,6 +235,85 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
     expect(zoneAction.children ?? []).toHaveLength(0)
   })
 
+  // apply_status_duration mirrors create_zone/apply_status/beam/launch_projectile's
+  // "config carries a live nested-trigger container" shape (see
+  // CONFIG_TRIGGER_ACTION_TYPES, programTree.ts) — its own config.triggers
+  // holds the on_action_complete trigger that runs change_stat/apply_mark
+  // once per target. Rendering is action-type-agnostic (nestedTriggersFor), so
+  // this exercises the SAME recursive path zoneTriggerProgram's tests do,
+  // just with the real mark_of_weakness shape: one apply_status_duration
+  // action -> one nested on_action_complete trigger -> apply_mark + two
+  // change_stat actions.
+  function statusDurationTriggerProgram(): AbilityProgram {
+    const onApply: AbilityTriggerDef = {
+      id: 'on_apply',
+      type: 'on_action_complete',
+      actions: [
+        { id: 'icon', type: 'apply_mark', config: { icon: 'debuff-mark-of-weakness', iconKind: 'debuff' } },
+        { id: 'armor', type: 'change_stat', config: { stat: 'armor', op: 'add', value: -50 } },
+        { id: 'heal', type: 'change_stat', config: { stat: 'healingReceived', op: 'multiply', value: 0.7 } },
+      ],
+    }
+    return {
+      entry: { type: 'unit', range: 240 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [
+            { id: 'mark', type: 'apply_status_duration', config: { duration: 6, stacking: 'refresh', triggers: [onApply] } },
+          ],
+        },
+      ],
+    }
+  }
+
+  it("renders apply_status_duration's nested config.triggers as flow cards, with apply_mark + change_stat as real FlowActionCards", () => {
+    const program = statusDurationTriggerProgram()
+    const builder = makeBuilderStub({ program })
+    const wrapper = mountCard(program.triggers[0], builder)
+
+    const triggerCards = wrapper.findAll('[data-test="flow-trigger-card"]')
+    expect(triggerCards).toHaveLength(2)
+    expect(triggerCards[1].text()).toContain('On Action Complete')
+
+    const actionCards = triggerCards[1].findAll('[data-test="flow-action-card"]')
+    expect(actionCards).toHaveLength(3)
+    // summarizeAction humanizes the raw action type (apply_mark -> "Apply
+    // Mark", change_stat -> "Change Stat") — see summarizeAction.ts.
+    expect(actionCards.map((c) => c.text()).join(' ')).toContain('Apply Mark')
+    expect(actionCards.filter((c) => c.text().includes('Change Stat'))).toHaveLength(2)
+  })
+
+  it('adding a nested trigger to an apply_status_duration action targets config.triggers, never children', async () => {
+    // Real composable (not a stub), same rationale as the create_zone
+    // equivalent above — proves the slot-routing rule end-to-end for the
+    // newly-added CONFIG_TRIGGER_ACTION_TYPES entry.
+    const builder = useAbilityBuilder()
+    builder.program.value = {
+      entry: { type: 'unit', range: 240 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [{ id: 'mark', type: 'apply_status_duration', config: { duration: 6 } }],
+        },
+      ],
+    }
+    const wrapper = mount(FlowTriggerCard, {
+      props: { trigger: builder.program.value.triggers[0], index: 0, path: [{ kind: 'trigger', id: 't1' }] },
+      global: { provide: { [AbilityBuilderKey as unknown as string]: builder } },
+    })
+
+    await wrapper.find('[data-test="flow-trigger-add-nested-trigger"]').trigger('click')
+
+    const durationAction = builder.program.value.triggers[0].actions[0]
+    const cfgTriggers = durationAction.config?.triggers as AbilityTriggerDef[] | undefined
+    expect(cfgTriggers).toHaveLength(1)
+    expect(cfgTriggers?.[0].type).toBe('on_action_complete')
+    expect(durationAction.children ?? []).toHaveLength(0)
+  })
+
   it('offers a type picker for a nested trigger on create_zone but a single fixed type (no picker) for any other action', () => {
     const burn: AbilityTriggerDef = { id: 'burn', type: 'on_zone_tick', actions: [] }
     const zoneProgram = zoneTriggerProgram(burn)

@@ -28,6 +28,8 @@ import {
   validateAbilityProgram,
 } from '@/game/abilities/abilityEditorApi'
 import { fetchAuthoredUnitDefs } from '@/game/units/unitEditorApi'
+import { fetchActionIcons } from '@/game/maps/catalog'
+import { ACTION_ICON_MAP, initActionIcons } from '@/game/maps/actionIconDefs'
 import * as tree from './programTree'
 import type { NodePath, NodeRef } from './programTree'
 
@@ -294,7 +296,7 @@ export function useAbilityBuilder() {
   async function load() {
     loadError.value = ''
     try {
-      const [abilityDefs, schemaBundle, effects, projectiles, damageTypes, categories, autoCastSelectors, units] =
+      const [abilityDefs, schemaBundle, effects, projectiles, damageTypes, categories, autoCastSelectors, units, actionIcons] =
         await Promise.all([
           fetchAuthoredAbilityDefs(),
           fetchActionSchema(),
@@ -304,9 +306,19 @@ export function useAbilityBuilder() {
           fetchAbilityCategories(),
           fetchAutoCastSelectors(),
           fetchAuthoredUnitDefs(),
+          fetchActionIcons(),
         ])
       abilities.value = abilityDefs
       schema.value = schemaBundle
+      // Populate the shared action-icon lookup so the preview scene can draw
+      // overhead status icons (apply_mark) and any ACTION_ICON_MAP-based icon.
+      // In a live match GameClient.start() fills this; the standalone editor
+      // never runs that, so without this the preview silently skips every
+      // overhead icon (ACTION_ICON_MAP is empty). Guard on size so we don't
+      // clobber an already-populated map from a match played this session.
+      if (ACTION_ICON_MAP.size === 0) {
+        initActionIcons(actionIcons)
+      }
       catalogs.value = {
         effects,
         projectiles,

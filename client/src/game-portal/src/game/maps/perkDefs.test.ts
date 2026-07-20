@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getPerkAuraRadius, initPerkDefs, type PerkDef } from './perkDefs'
+import { getPerkAuraRing, initPerkDefs, type PerkDef } from './perkDefs'
 
-// Minimal fixture factory — only the fields getPerkAuraRadius cares about
+// Minimal fixture factory — only the fields getPerkAuraRing cares about
 // need real values; everything else is filled with harmless placeholders so
 // the fixtures type-check against PerkDef without dragging in catalog JSON.
 function makeDef(overrides: Partial<PerkDef> & { id: string }): PerkDef {
@@ -12,7 +12,7 @@ function makeDef(overrides: Partial<PerkDef> & { id: string }): PerkDef {
   }
 }
 
-describe('getPerkAuraRadius', () => {
+describe('getPerkAuraRing', () => {
   beforeEach(() => {
     initPerkDefs([])
   })
@@ -34,7 +34,7 @@ describe('getPerkAuraRadius', () => {
       }),
     ])
 
-    expect(getPerkAuraRadius('zealous_march')).toBe(192)
+    expect(getPerkAuraRing('zealous_march')).toEqual({ radius: 192, color: undefined })
   })
 
   it('falls back to the legacy config-key lookup for a non-migrated perk', () => {
@@ -45,7 +45,7 @@ describe('getPerkAuraRadius', () => {
       }),
     ])
 
-    expect(getPerkAuraRadius('guardian_aura')).toBe(150)
+    expect(getPerkAuraRing('guardian_aura')).toEqual({ radius: 150 })
   })
 
   it('prefers the aura schema over a legacy config key when a perk carries both', () => {
@@ -67,19 +67,19 @@ describe('getPerkAuraRadius', () => {
       }),
     ])
 
-    expect(getPerkAuraRadius('zealous_march')).toBe(192)
+    expect(getPerkAuraRing('zealous_march')).toEqual({ radius: 192, color: undefined })
   })
 
   it('returns null when a perk has neither an aura schema nor a legacy config source', () => {
     initPerkDefs([makeDef({ id: 'no_aura_perk', config: { unrelated: 5 } })])
 
-    expect(getPerkAuraRadius('no_aura_perk')).toBeNull()
+    expect(getPerkAuraRing('no_aura_perk')).toBeNull()
   })
 
   it('returns null for an unknown perk id', () => {
     initPerkDefs([])
 
-    expect(getPerkAuraRadius('does_not_exist')).toBeNull()
+    expect(getPerkAuraRing('does_not_exist')).toBeNull()
   })
 
   it('picks the largest radius when a perk carries multiple auras', () => {
@@ -94,7 +94,7 @@ describe('getPerkAuraRadius', () => {
       }),
     ])
 
-    expect(getPerkAuraRadius('multi_aura_perk')).toBe(250)
+    expect(getPerkAuraRing('multi_aura_perk')).toEqual({ radius: 250, color: undefined })
   })
 
   it('falls back to the legacy config path when auras is present but empty', () => {
@@ -107,6 +107,43 @@ describe('getPerkAuraRadius', () => {
     ])
     // An empty auras array must be treated as "no aura schema" and fall
     // through to the legacy AURA_RADIUS_SOURCES lookup, not short-circuit.
-    expect(getPerkAuraRadius('guardian_aura')).toBe(75)
+    expect(getPerkAuraRing('guardian_aura')).toEqual({ radius: 75 })
+  })
+
+  it('returns the ringColor authored on the winning aura entry', () => {
+    initPerkDefs([
+      makeDef({
+        id: 'zealous_march',
+        auras: [{ radius: 192, targets: 'allies', statModifiers: [], ringColor: '#38bdf8' }],
+      }),
+    ])
+
+    expect(getPerkAuraRing('zealous_march')).toEqual({ radius: 192, color: '#38bdf8' })
+  })
+
+  it('takes color from the SAME aura entry whose radius won, never a different one', () => {
+    // The smaller aura authors a distinct ringColor; the larger (winning)
+    // aura authors none. The result must carry the LARGER aura's radius
+    // together with ITS OWN (absent) color — never the smaller aura's color
+    // grafted onto the larger aura's radius.
+    initPerkDefs([
+      makeDef({
+        id: 'multi_aura_perk',
+        auras: [
+          { radius: 100, targets: 'allies', statModifiers: [], ringColor: '#ff0000' },
+          { radius: 250, targets: 'enemies', statModifiers: [] },
+        ],
+      }),
+    ])
+
+    expect(getPerkAuraRing('multi_aura_perk')).toEqual({ radius: 250, color: undefined })
+  })
+
+  it('legacy config-key perks never carry a color, even when active-gated', () => {
+    initPerkDefs([makeDef({ id: 'guardian_aura', config: { radius: 150 } })])
+
+    const ring = getPerkAuraRing('guardian_aura')
+    expect(ring).not.toBeNull()
+    expect(ring?.color).toBeUndefined()
   })
 })

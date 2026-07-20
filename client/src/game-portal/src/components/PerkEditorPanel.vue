@@ -187,7 +187,7 @@
           <label>
             Stat
             <select v-model="row.stat" :aria-label="`Stat Modifier ${idx + 1} stat`">
-              <option v-for="d in statDefs" :key="d.id" :value="d.id">{{ d.label }}</option>
+              <option v-for="d in selfStatDefsList" :key="d.id" :value="d.id">{{ d.label }}</option>
             </select>
           </label>
           <label>
@@ -251,7 +251,7 @@
         <div v-for="(row, idx) in auraRows" :key="idx" class="perk-editor__aura-row">
           <AuraEditor
             :model-value="row"
-            :stat-defs="statDefs"
+            :stat-defs="auraStatDefsList"
             @update:model-value="(v) => updateAuraRow(idx, v)"
           />
           <button type="button" class="perk-editor__row-del" title="Remove Aura" @click="removeAuraRow(idx)">✕</button>
@@ -282,7 +282,7 @@ import {
   createBlankForm, formFromDef, saveRequestFromForm,
   type AbilityModifier, type AbilityRider, type AuthoredPerkDef, type PerkAura, type PerkEditorForm, type PerkStatModifier,
 } from '@/game/perks/perkEditorForm'
-import { STAT_DEFS } from '@/game/stats/statRegistry'
+import { allStatDefs, selfStatDefs } from '@/game/stats/statRegistry'
 import {
   fetchAuthoredPerkDefs, saveEditorPerk, deleteEditorPerk, EditorValidationError,
 } from '@/game/perks/perkEditorApi'
@@ -470,7 +470,14 @@ interface StatModifierRow {
   stage: 'intrinsic' | 'base' | 'final'
 }
 const statModifierRows = ref<StatModifierRow[]>([])
-const statDefs = STAT_DEFS
+// Unit Stat Modifiers (self, top-level) may only offer stats with a
+// top-level fold site — aura-only stats (armorPercent,
+// projectileDamageReduction) are filtered out here because the server
+// rejects them on a top-level entry (validatePerkDef, perk_defs.go). The
+// Auras section below uses allStatDefs() instead, since aura-only stats are
+// valid there.
+const selfStatDefsList = selfStatDefs()
+const auraStatDefsList = allStatDefs()
 
 function rowsFromStatModifiers(mods?: PerkStatModifier[]): StatModifierRow[] {
   return (mods ?? []).map((m) => ({
@@ -496,7 +503,7 @@ function statModifiersFromRows(rows: StatModifierRow[]): PerkStatModifier[] {
 }
 
 function addStatModifierRow() {
-  statModifierRows.value.push({ stat: statDefs[0]?.id ?? '', op: 'add', value: 0, stage: 'base' })
+  statModifierRows.value.push({ stat: selfStatDefsList[0]?.id ?? '', op: 'add', value: 0, stage: 'base' })
 }
 function removeStatModifierRow(idx: number) { statModifierRows.value.splice(idx, 1) }
 watch(statModifierRows, (rows) => {
@@ -524,6 +531,7 @@ function rowsFromAuras(auras?: PerkAura[]): AuraRow[] {
     includeSelf: a.includeSelf ?? false,
     perAdditionalSource: a.perAdditionalSource ?? '',
     statRows: (a.statModifiers ?? []).map((m) => ({ stat: m.stat, value: m.value })),
+    ringColor: a.ringColor ?? '',
   }))
 }
 
@@ -547,13 +555,17 @@ function aurasFromRows(rows: AuraRow[]): PerkAura[] {
     if (typeof perAdditionalSource === 'number' && !Number.isNaN(perAdditionalSource)) {
       aura.perAdditionalSource = perAdditionalSource
     }
+    // Omit ringColor entirely when unset ('') — round-trips byte-for-byte
+    // with a source def that never authored it, same omit-when-default
+    // convention as stage/perAdditionalSource above.
+    if (row.ringColor) aura.ringColor = row.ringColor
     out.push(aura)
   }
   return out
 }
 
 function addAuraRow() {
-  auraRows.value.push({ radius: 128, targets: 'allies', includeSelf: false, perAdditionalSource: '', statRows: [] })
+  auraRows.value.push({ radius: 128, targets: 'allies', includeSelf: false, perAdditionalSource: '', statRows: [], ringColor: '' })
 }
 function removeAuraRow(idx: number) { auraRows.value.splice(idx, 1) }
 function updateAuraRow(idx: number, row: AuraRow) { auraRows.value[idx] = row }

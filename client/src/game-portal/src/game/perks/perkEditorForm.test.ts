@@ -70,4 +70,19 @@ describe('perkEditorForm', () => {
     const out = saveRequestFromForm(form)
     expect('wired' in out).toBe(false)
   })
+  it('round-trips an aura ringColor when authored', () => {
+    const form = createBlankForm()
+    form.id = 'x'
+    form.auras = [{ radius: 100, targets: 'allies', statModifiers: [], ringColor: '#38bdf8' }]
+    const out = saveRequestFromForm(form)
+    expect(out.auras).toEqual([{ radius: 100, targets: 'allies', statModifiers: [], ringColor: '#38bdf8' }])
+  })
+  it('omits ringColor from a saved aura that never authored one', () => {
+    const form = createBlankForm()
+    form.id = 'x'
+    form.auras = [{ radius: 100, targets: 'allies', statModifiers: [] }]
+    const out = saveRequestFromForm(form)
+    expect(out.auras).toHaveLength(1)
+    expect('ringColor' in out.auras![0]).toBe(false)
+  })
 })

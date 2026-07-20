@@ -6,10 +6,13 @@ import "math"
 // CLERIC PERKS — SILVER & GOLD
 //
 // This file owns the runtime helpers for every Cleric Silver and Gold perk.
-// Cleric BRONZE perks (sanctuary, battle_prayer, bolstering_prayer,
-// mana_conduit) are light enough to live as case arms in the shared hook
-// files (perks.go, perks_attack.go, perks_defense.go, perks_icons.go) —
-// see the per-path file convention in perks.go.
+// Cleric BRONZE perks (sanctuary, battle_prayer, bolstering_prayer) are
+// light enough to live as case arms in the shared hook files (perks.go,
+// perks_attack.go, perks_defense.go, perks_icons.go) — see the per-path
+// file convention in perks.go. mana_conduit (bronze) is the exception: like
+// zealous_march (silver, below), it has migrated to the generic,
+// data-driven PerkDef.Auras vocabulary and keeps only a thin HUD probe
+// (hasManaConduitAuraLocked) in this file — see its section below.
 //
 // Silver perks (support-oriented):
 //   - divine_aegis      — owner-pulsed one-charge damage block on nearby allies.
@@ -30,34 +33,43 @@ import "math"
 // still read their radius from the config key "radiusPixels" via bespoke Go
 // handlers in this file — a perk's in-world reach is a Cleric concept, not a
 // per-perk one, so keeping the key uniform makes future tuning passes
-// trivial. zealous_march (silver) is the exception: it has migrated to the
-// generic, data-driven PerkDef.Auras vocabulary (perk_defs.go,
-// perk_aura_stat_cache.go) and reads its radius, move-speed bonus, and
-// per-additional-source stack bonus from the aura's own "radius" /
-// "statModifiers[0].value" / "perAdditionalSource" fields in JSON instead —
-// see this file's zealous_march section below and describePerk's Auras
-// rendering (perk_describe.go). zealous_march's JSON still carries the
-// legacy "radiusPixels" / "moveSpeedMultiplier" / "stackBonus" config keys
-// even though no Go BEHAVIOR reads them anymore (tooltipTemplate was deleted
-// once describePerk could generate equivalent prose from the Auras block) —
-// they are NOT dead: (1) the client's AURA_RADIUS_SOURCES
-// (perkDefs.ts) still reads config.radiusPixels to draw the aura-radius ring
-// around the owning unit, and (2) perk_aura_migration_test.go's frozen
-// legacy-formula oracle (legacyZealousMarchBonusLocked — intentionally never
-// "fixed" to match new code) reads all three keys as its byte-for-byte
-// migration-proof input. Deleting them would break real consumers, not just
-// tidy JSON — see those two call sites before ever removing this Config
-// block.
+// trivial. zealous_march (silver) and mana_conduit (bronze) are the
+// exceptions: both have migrated to the generic, data-driven PerkDef.Auras
+// vocabulary (perk_defs.go, perk_aura_stat_cache.go) and read their radius
+// and per-stat value from the aura's own "radius" / "statModifiers[].value"
+// fields in JSON instead — see this file's zealous_march and mana_conduit
+// sections below and describePerk's Auras rendering (perk_describe.go).
+// zealous_march's JSON also carries a "perAdditionalSource" stack term;
+// mana_conduit's does not (see STACKING POLICY below). Both JSONs still
+// carry the legacy "radiusPixels" config key even though no Go BEHAVIOR
+// reads it anymore (zealous_march additionally kept "moveSpeedMultiplier" /
+// "stackBonus"; its tooltipTemplate was deleted once describePerk could
+// generate equivalent prose from the Auras block — mana_conduit KEPT its
+// tooltipTemplate, since the generated prose would drop the "does not
+// stack" / self-inclusion callouts the hand-authored text states
+// explicitly) — these legacy config keys are NOT dead: (1) the client's
+// AURA_RADIUS_SOURCES (perkDefs.ts) still reads config.radiusPixels as a
+// fallback for any perk whose `auras` payload is ever missing from the
+// catalog response (getPerkAuraRadius prefers the declarative `auras` field
+// when present, per-perk, so this is a safety net only), and (2)
+// perk_aura_migration_test.go's frozen legacy-formula oracles
+// (legacyZealousMarchBonusLocked, legacyManaConduitBonusLocked —
+// intentionally never "fixed" to match new code) read these keys as their
+// byte-for-byte migration-proof input. Deleting them would break real
+// consumers, not just tidy JSON — see those call sites before ever removing
+// a Config block.
 //
 // STACKING POLICY
 //
 // All cleric auras are max-wins, no-stack at the magnitude level. Two Clerics
 // with zealous_march overlapping on an ally grant the strongest aura's speed,
-// not the sum (with a small per-additional-source stack bonus). Two Clerics
-// with divine_aegis overlapping refresh the same single charge with the
-// strongest remaining duration. Two Clerics with restoration_aura overlapping
-// fire independent pulses on their own cadence — the "stacking" comes from
-// cadence overlap, not aura multiplication.
+// not the sum (with a small per-additional-source stack bonus). mana_conduit
+// has NO per-additional-source term at all — two overlapping Clerics grant
+// only the strongest bonusManaRegen, full stop. Two Clerics with divine_aegis
+// overlapping refresh the same single charge with the strongest remaining
+// duration. Two Clerics with restoration_aura overlapping fire independent
+// pulses on their own cadence — the "stacking" comes from cadence overlap,
+// not aura multiplication.
 //
 // EXTENSION POINTS
 //   - HealMeta: add new flags for future heal-trigger perks; older sites
@@ -234,101 +246,33 @@ func (s *GameState) hasZealousMarchAuraLocked(unit *Unit) bool {
 // ─────────────────────────────────────────────────────────────────────────────
 // BRONZE — Mana Conduit (aura: bonus mana regen for nearby allies)
 //
-// Recipient-query pattern (same shape as zealous_march): each unit's mana
-// regen tick asks "is any allied Cleric with mana_conduit covering me?" and
-// if so adds the strongest covering source's bonusManaRegen to the per-tick
-// rate. Max-wins across multiple Clerics — they don't stack (consistent
-// with the "all cleric auras are max-wins, no-stack at the magnitude
-// level" convention).
+// mana_conduit's mana-regen bonus is fully data-driven: PerkDef.Auras
+// (perk_defs.go, catalog JSON) declares the radius/targets/self-inclusion/
+// value, and the generic per-tick cache (perk_aura_stat_cache.go) resolves
+// it for every recipient with zero perk-specific Go. The read call lives in
+// mana.go's effectiveManaRegenLocked, at the exact arithmetic position the
+// old bespoke helper (manaConduitAuraBonusLocked, deleted) occupied — see
+// that file's comment and perk_aura_stat_cache.go's "ordering trap" doc for
+// why the position matters.
 //
-// The Cleric is inside their own aura (distance 0) so they benefit too,
-// matching the old self-only behavior the perk replaced.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// manaConduitAuraBonusLocked returns the bonus mana-regen rate (per second)
-// the unit receives from every allied Cleric with mana_conduit whose aura
-// covers it. Max-wins across covering sources — a unit in two Clerics'
-// auras still receives only the strongest bonus, not the sum.
+// Unlike zealous_march, mana_conduit carries no PerAdditionalSource — it is
+// pure max-wins with no stacking bonus at all across multiple covering
+// Clerics (consistent with the "all cleric auras are max-wins, no-stack at
+// the magnitude level" convention; see perks_icons.go's comment on the
+// recipient-icon branch).
 //
-// Returns 0 when no covering source exists. Called from
-// tickUnitManaRegenLocked on every mana-bearing unit per tick, so it stays
-// cheap: skips units with no mana pool earlier (caller's gate), and the
-// scan walks s.Units once with simple distance + perk checks per candidate.
+// The Cleric is inside their own aura (distance 0, IncludeSelf: true) so
+// they benefit too, matching the old self-only behavior the perk replaced.
 //
-// Caller holds s.mu (read or write).
-func (s *GameState) manaConduitAuraBonusLocked(unit *Unit) float64 {
-	if unit == nil {
-		return 0
-	}
-	def := perkDefByID("mana_conduit")
-	if def == nil {
-		return 0
-	}
-	best := 0.0
-	for _, src := range s.Units {
-		if src == nil || src.HP <= 0 || !src.Visible {
-			continue
-		}
-		if !containsString(src.PerkIDs, "mana_conduit") {
-			continue
-		}
-		if !s.unitsFriendlyLocked(src, unit) {
-			continue
-		}
-		cfg := def.ConfigForRank(src.Rank)
-		radius := cfg["radiusPixels"]
-		bonus := cfg["bonusManaRegen"]
-		if radius <= 0 || bonus <= 0 {
-			continue
-		}
-		dx := src.X - unit.X
-		dy := src.Y - unit.Y
-		if dx*dx+dy*dy > radius*radius {
-			continue
-		}
-		if bonus > best {
-			best = bonus
-		}
-	}
-	return best
-}
-
 // hasManaConduitAuraLocked is a cheap one-shot probe used by the HUD code
-// to decide whether to display the mana_conduit recipient buff icon.
-// Mirrors hasZealousMarchAuraLocked: same scan shape as the bonus helper
-// above but bails on the first matching source.
+// (perks_icons.go) to decide whether to display the mana_conduit recipient
+// buff icon — it reads the same generic aura cache the mana-regen fold site
+// reads, so the icon appears exactly when the bonus is live.
 //
 // Caller holds s.mu (read or write).
 func (s *GameState) hasManaConduitAuraLocked(unit *Unit) bool {
-	if unit == nil {
-		return false
-	}
-	def := perkDefByID("mana_conduit")
-	if def == nil {
-		return false
-	}
-	for _, src := range s.Units {
-		if src == nil || src.HP <= 0 || !src.Visible {
-			continue
-		}
-		if !containsString(src.PerkIDs, "mana_conduit") {
-			continue
-		}
-		if !s.unitsFriendlyLocked(src, unit) {
-			continue
-		}
-		cfg := def.ConfigForRank(src.Rank)
-		radius := cfg["radiusPixels"]
-		if radius <= 0 {
-			continue
-		}
-		dx := src.X - unit.X
-		dy := src.Y - unit.Y
-		if dx*dx+dy*dy <= radius*radius {
-			return true
-		}
-	}
-	return false
+	_, sources := s.unitAuraStatContributionLocked(unit, statManaRegen)
+	return sources > 0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -670,6 +614,7 @@ func (s *GameState) fireDivineJudgementLocked(caster, healed *Unit, intendedAmou
 	src := DamageSource{
 		AttackerUnitID: caster.ID,
 		Kind:           "divine_judgement",
+		Category:       DamageCategoryPerk,
 		DamageType:     DamageHoly,
 	}
 

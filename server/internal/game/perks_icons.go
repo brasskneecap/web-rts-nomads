@@ -298,67 +298,71 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 			// movement-speed buff while it is live.
 			addIcon(perkID, 1)
 
-		// divine_healer, divine_intervention, beacon_of_life, divine_judgement
-		// intentionally emit NO owner buff icons. Per the floating-icon rule
-		// (active effect on THIS unit, not perk ownership):
-		//   - divine_healer scales heals the cleric CASTS — visible on heal
-		//     amount itself, not on the cleric.
-		//   - divine_intervention is a triggered emergency save — fires on
-		//     ally death, no active state on the cleric. Cooldown still
-		//     surfaces via perkCooldownsLocked on the perk slot.
-		//   - beacon_of_life splashes on heal events — recipients show the
-		//     heal popup; no active state on the cleric.
-		//   - divine_judgement detonates AoE on heal events — same.
-		// Perk ownership is conveyed by the selection panel's perk slots.
+			// divine_healer, divine_intervention, beacon_of_life, divine_judgement
+			// intentionally emit NO owner buff icons. Per the floating-icon rule
+			// (active effect on THIS unit, not perk ownership):
+			//   - divine_healer scales heals the cleric CASTS — visible on heal
+			//     amount itself, not on the cleric.
+			//   - divine_intervention is a triggered emergency save — fires on
+			//     ally death, no active state on the cleric. Cooldown still
+			//     surfaces via perkCooldownsLocked on the perk slot.
+			//   - beacon_of_life splashes on heal events — recipients show the
+			//     heal popup; no active state on the cleric.
+			//   - divine_judgement detonates AoE on heal events — same.
+			// Perk ownership is conveyed by the selection panel's perk slots.
 
-		// Siphoner bronze perks are intentionally NOT emitted on the owner:
-		//   - soul_leech is a conditional damage/heal multiplier on Siphon
-		//     Life — it doesn't stat-buff the Siphoner itself.
-		//   - withering_beam, lingering_hex, mark_of_weakness all act on
-		//     enemies; their visual presence is the corresponding debuff
-		//     icon on the affected unit (debuff-withering-beam, etc.).
-		// Convention: a floating buff badge on a unit should signal an
-		// active stat benefit on THAT unit. Perk-owned indicators that
-		// only buff allies / debuff enemies live on the affected target.
-		// Cooldown wipes for the two autonomous AoEs surface via
-		// perkCooldownsLocked → SelectionHud's perk slot.
+			// Siphoner bronze perks are intentionally NOT emitted on the owner:
+			//   - soul_leech is a conditional damage/heal multiplier on Siphon
+			//     Life — it doesn't stat-buff the Siphoner itself.
+			//   - withering_beam, lingering_hex, mark_of_weakness all act on
+			//     enemies; their visual presence is the corresponding debuff
+			//     icon on the affected unit (debuff-withering-beam, etc.).
+			// Convention: a floating buff badge on a unit should signal an
+			// active stat benefit on THAT unit. Perk-owned indicators that
+			// only buff allies / debuff enemies live on the affected target.
+			// Cooldown wipes for the two autonomous AoEs surface via
+			// perkCooldownsLocked → SelectionHud's perk slot.
 
-		// Siphoner silver & gold perks intentionally emit NO owner buff
-		// icons. Floating buff icons represent ACTIVE effects on the unit
-		// (time-bounded buffs, current shield, etc.), not perk ownership —
-		// the selection panel's perk slots already show which perks the
-		// unit owns. None of the following passively modify the Siphoner
-		// in a way that warrants a head-icon:
-		//   - chain_siphon, shared_suffering: act on enemies (chain beams,
-		//     echo damage popups on victims).
-		//   - amplify_damage: autonomous AoE; cooldown wipes via
-		//     perkCooldownsLocked on the perk slot.
-		//   - dark_renewal: active benefit IS the shield pool, which
-		//     already surfaces as the "Shield X/Y" stat row and the
-		//     per-source tooltip — no separate floating icon needed.
-		//   - beam_mastery: silently buffs Siphon Life ticks; the channel
-		//     beam itself is the visual.
-		//   - repurposed_life: triggers on enemy death; recipients' mana
-		//     bars filling is the visible signal.
-		//   - ascended_corruption: enhances whichever Silver perk the unit
-		//     owns; the Silver perk's own visuals carry the load.
+			// Siphoner silver & gold perks intentionally emit NO owner buff
+			// icons. Floating buff icons represent ACTIVE effects on the unit
+			// (time-bounded buffs, current shield, etc.), not perk ownership —
+			// the selection panel's perk slots already show which perks the
+			// unit owns. None of the following passively modify the Siphoner
+			// in a way that warrants a head-icon:
+			//   - chain_siphon, shared_suffering: act on enemies (chain beams,
+			//     echo damage popups on victims).
+			//   - amplify_damage: autonomous AoE; cooldown wipes via
+			//     perkCooldownsLocked on the perk slot.
+			//   - dark_renewal: active benefit IS the shield pool, which
+			//     already surfaces as the "Shield X/Y" stat row and the
+			//     per-source tooltip — no separate floating icon needed.
+			//   - beam_mastery: silently buffs Siphon Life ticks; the channel
+			//     beam itself is the visual.
+			//   - repurposed_life: triggers on enemy death; recipients' mana
+			//     bars filling is the visible signal.
+			//   - ascended_corruption: enhances whichever Silver perk the unit
+			//     owns; the Silver perk's own visuals carry the load.
 
-		// battle_prayer's icon lives on the BUFFED TARGET (cross-unit buff),
-		// not on the perk owner. Surfaced below this loop so allies who don't
-		// own the perk still display the buff icon while it is active.
+			// battle_prayer's icon lives on the BUFFED TARGET (cross-unit buff),
+			// not on the perk owner. Surfaced below this loop so allies who don't
+			// own the perk still display the buff icon while it is active.
 
-		// ── add cases for new visually-indicated buffs below this line ──────
+			// ── add cases for new visually-indicated buffs below this line ──────
 		}
 	}
 
 	// guardian_aura recipient buff: show the aura icon on allies currently
 	// under any guardian_aura. Stack count == number of distinct emitters
-	// covering this unit (from the aura cache's Sources counter). addIcon
-	// dedupes with the owner-case above, so a Vanguard who owns the perk
-	// AND stands in a teammate's aura sees 1 icon with "2" stacks, not two
-	// side-by-side icons.
-	if aura := s.guardianAuraCache[unit.ID]; aura.Sources > 0 {
-		addIcon("guardian_aura", aura.Sources)
+	// covering this unit (from the generic aura cache's Sources counter,
+	// read via statArmor — guardian_aura's flat and percent StatModifiers
+	// share the same emitter set and effective radius, so either stat's
+	// Sources count is equivalent; statArmor is used here for parity with
+	// effectiveArmorLocked's primary read). addIcon dedupes with the
+	// owner-case above, so a Vanguard who owns the perk AND stands in a
+	// teammate's aura sees 1 icon with "2" stacks, not two side-by-side
+	// icons.
+	if _, sources := s.unitAuraStatContributionLocked(unit, statArmor); sources > 0 {
+		addIcon("guardian_aura", sources)
 	}
 
 	// rallying_banner recipient buff: show the icon on allied units inside any
@@ -429,8 +433,9 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 	}
 
 	// mana_conduit recipient buff: emit the icon while ANY allied Cleric
-	// with mana_conduit covers this unit. Reuses the same scan as
-	// manaConduitAuraBonusLocked so the icon appears exactly when the
+	// with mana_conduit covers this unit. Reads the same generic aura cache
+	// (via hasManaConduitAuraLocked → unitAuraStatContributionLocked) that
+	// effectiveManaRegenLocked reads, so the icon appears exactly when the
 	// bonus mana regen is live. Skip when the unit owns mana_conduit
 	// itself — the owner-branch above already added the icon, and
 	// `addIcon` sums stacks (not dedupes), so a second add here would
@@ -450,6 +455,25 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 	// buffs above. Decays in state.go alongside the other cross-unit timers.
 	if unit.PerkState.InvulnerabilityRemaining > 0 {
 		addIcon("divine_intervention", 1)
+	}
+
+	// GENERIC authored-status buff icons: any active AbilityStatus targeting
+	// this unit that declared IconKind:"buff" (set by a nested apply_mark
+	// action inside its enclosing apply_status_duration's config.triggers -
+	// ability_status_duration.go) contributes its Icon here with zero
+	// perk-specific Go, unlike every case above. Iterated in
+	// s.AbilityStatuses' existing stable append order (never map order - see
+	// tickAbilityStatusesLocked's own determinism note) so output order is
+	// deterministic. addIcon's existing dedupe-and-sum semantics mean N
+	// "stack"-mode instances sharing the same Icon id (spawnAbilityStatusLocked)
+	// naturally render as one icon with stacks=N - no separate stack-counting
+	// needed here; a "refresh"-mode status only ever has one live instance,
+	// so it always contributes exactly 1.
+	for _, st := range s.AbilityStatuses {
+		if st == nil || st.TargetUnitID != unit.ID || st.Icon == "" || st.IconKind != "buff" {
+			continue
+		}
+		addIcon(st.Icon, 1)
 	}
 
 	return active
@@ -520,14 +544,29 @@ func (s *GameState) activeDebuffIconsLocked(unit *Unit) []protocol.ActiveEffectI
 	if unit.PerkState.LingeringHexRemaining > 0 {
 		addIcon("debuff-lingering-hex", 1)
 	}
-	if unit.PerkState.MarkOfWeaknessRemaining > 0 {
-		addIcon("debuff-mark-of-weakness", 1)
-	}
 	// Amplify Damage (Siphoner silver) — damage-taken multiplier debuff.
 	// Cross-unit: lives on the afflicted enemy regardless of source.
 	if unit.PerkState.AmplifyDamageRemaining > 0 {
 		addIcon("debuff-amplify-damage", 1)
 	}
+
+	// GENERIC authored-status debuff icons — the debuff-channel twin of
+	// activeBuffIconsLocked's trailing loop (see that loop's doc comment for
+	// the full determinism/dedupe/stack-count argument, identical here except
+	// for the IconKind:"debuff" gate). This is now how Mark of Weakness's own
+	// overhead icon reaches this list — catalog/abilities/mark_of_weakness's
+	// apply_status_duration action nests an apply_mark action authoring
+	// icon:"debuff-mark-of-weakness", iconKind:"debuff" directly in its JSON
+	// (no bespoke Go case here anymore — unitHasActiveAbilityStatusLocked
+	// remains as a generic "is this unit carrying a status from ability X"
+	// query, just no longer perks_icons.go's caller).
+	for _, st := range s.AbilityStatuses {
+		if st == nil || st.TargetUnitID != unit.ID || st.Icon == "" || st.IconKind != "debuff" {
+			continue
+		}
+		addIcon(st.Icon, 1)
+	}
+
 	return active
 }
 
@@ -591,10 +630,11 @@ func (s *GameState) perkCooldownsLocked(unit *Unit) []protocol.PerkCooldownSnaps
 			// hex pulse will fire. Total uses cooldownSeconds from the
 			// perk config (set on every successful pulse).
 			add(perkID, unit.PerkState.LingeringHexCooldownRemaining, cfg["cooldownSeconds"])
-		case "mark_of_weakness":
-			// Siphoner bronze autonomous AoE — same cooldown wipe convention
-			// as lingering_hex.
-			add(perkID, unit.PerkState.MarkOfWeaknessCooldownRemaining, cfg["cooldownSeconds"])
+		// mark_of_weakness intentionally has NO case here anymore: its
+		// cooldown wipe is now the granted ability's own action-bar cooldown
+		// (AbilitySnapshot.CooldownRemaining/CooldownTotal via
+		// abilityStatesLocked, ability_autocast.go) — there is no longer a
+		// separate PerkState cooldown field to surface on the perk icon.
 		case "amplify_damage":
 			// Siphoner silver autonomous AoE — same cooldown wipe convention
 			// as the bronze affliction perks above.

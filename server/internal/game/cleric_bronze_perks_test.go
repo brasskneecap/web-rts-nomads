@@ -825,6 +825,11 @@ func TestSanctuary_ReducesProjectileDamage(t *testing.T) {
 	const rawDamage = 100
 	wantDamage := int(math.Round(float64(rawDamage) * (1.0 - reductionPct)))
 
+	// sanctuary is resolved via the per-tick generic aura cache
+	// (perk_aura_stat_cache.go) — must be rebuilt before a direct call into
+	// applyUnitDamageWithSourceLocked outside Update(), mirroring the
+	// mana_conduit / zealous_march test convention.
+	s.rebuildAuraStatCacheLocked()
 	s.applyUnitDamageWithSourceLocked(ally, rawDamage, DamageSource{Kind: "projectile"})
 
 	gotDamage := allyStartHP - ally.HP
@@ -858,6 +863,7 @@ func TestSanctuary_DoesNotReduceMelee(t *testing.T) {
 	ally.HP = allyStartHP
 
 	const rawDamage = 100
+	s.rebuildAuraStatCacheLocked()
 	s.applyUnitDamageWithSourceLocked(ally, rawDamage, DamageSource{Kind: "melee"})
 
 	gotDamage := allyStartHP - ally.HP
@@ -890,6 +896,7 @@ func TestSanctuary_DoesNotReduceTrap(t *testing.T) {
 	ally.HP = allyStartHP
 
 	const rawDamage = 100
+	s.rebuildAuraStatCacheLocked()
 	s.applyUnitDamageWithSourceLocked(ally, rawDamage, DamageSource{Kind: "trap"})
 
 	gotDamage := allyStartHP - ally.HP
@@ -924,6 +931,7 @@ func TestSanctuary_TargetOutsideRadiusUnaffected(t *testing.T) {
 	ally.HP = allyStartHP
 
 	const rawDamage = 100
+	s.rebuildAuraStatCacheLocked()
 	s.applyUnitDamageWithSourceLocked(ally, rawDamage, DamageSource{Kind: "projectile"})
 
 	gotDamage := allyStartHP - ally.HP
@@ -969,6 +977,7 @@ func TestSanctuary_OverlappingAurasTakeMaxNoStack(t *testing.T) {
 	const rawDamage = 100
 	wantDamage := int(math.Round(float64(rawDamage) * (1.0 - reductionPct)))
 
+	s.rebuildAuraStatCacheLocked()
 	s.applyUnitDamageWithSourceLocked(ally, rawDamage, DamageSource{Kind: "projectile"})
 
 	gotDamage := allyStartHP - ally.HP
@@ -1007,6 +1016,12 @@ func TestManaConduit_AuraGrantsBonusToOwner(t *testing.T) {
 		t.Fatalf("bonusManaRegen = %.4f; expected positive value in the catalog", bonusPerSec)
 	}
 
+	// mana_conduit is resolved via the per-tick generic aura cache
+	// (perk_aura_stat_cache.go) — must be rebuilt before reading it directly,
+	// mirroring the existing rebuildGuardianAuraCacheLocked / zealous_march
+	// test convention.
+	s.rebuildAuraStatCacheLocked()
+
 	cleric.CurrentMana = 0
 	cleric.ManaRegenAccumulator = 0
 	// Zero out base regen so this test isolates the aura contribution.
@@ -1044,6 +1059,10 @@ func TestManaConduit_AuraCoversNearbyAlly(t *testing.T) {
 	ally.CurrentMana = 0
 	ally.ManaRegenAccumulator = 0
 	ally.ManaRegenPerSecond = 0 // isolate aura contribution
+
+	// mana_conduit is resolved via the per-tick generic aura cache — must be
+	// rebuilt before reading it directly (see AuraGrantsBonusToOwner above).
+	s.rebuildAuraStatCacheLocked()
 
 	const dt = 0.1
 	s.tickUnitManaRegenLocked(ally, dt)
@@ -1102,6 +1121,10 @@ func TestManaConduit_AuraMaxWinsNoStack(t *testing.T) {
 	ally.CurrentMana = 0
 	ally.ManaRegenAccumulator = 0
 	ally.ManaRegenPerSecond = 0
+
+	// mana_conduit is resolved via the per-tick generic aura cache — must be
+	// rebuilt before reading it directly (see AuraGrantsBonusToOwner above).
+	s.rebuildAuraStatCacheLocked()
 
 	const dt = 0.1
 	s.tickUnitManaRegenLocked(ally, dt)

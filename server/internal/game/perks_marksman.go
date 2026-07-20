@@ -653,7 +653,7 @@ func (s *GameState) fireExplosiveTipsLocked(attacker, primaryTarget *Unit, def *
 		}
 		armorAdj := applyArmorMitigation(int(math.Round(raw)), s.effectiveArmorLocked(candidate))
 		if armorAdj > 0 {
-			s.applyUnitDamageWithSourceLocked(candidate, armorAdj, DamageSource{AttackerUnitID: attacker.ID, Kind: "explosive_tips"})
+			s.applyUnitDamageWithSourceLocked(candidate, armorAdj, DamageSource{AttackerUnitID: attacker.ID, Kind: "explosive_tips", Category: DamageCategoryPerk})
 			s.recordDamageDealtLocked(attacker, candidate, armorAdj)
 			s.trackBattleDamageLocked(battleSourceFromUnit(attacker), candidate, armorAdj)
 			if isVictimCrit {

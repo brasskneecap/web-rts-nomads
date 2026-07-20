@@ -488,6 +488,11 @@ func TestDivineHealer_DoesNotDoubleManaConduit(t *testing.T) {
 	cleric.ManaRegenAccumulator = 0
 	cleric.ManaRegenPerSecond = 0 // isolate aura contribution
 
+	// mana_conduit is resolved via the per-tick generic aura cache
+	// (perk_aura_stat_cache.go) — must be rebuilt before reading it directly,
+	// mirroring the existing zealous_march test convention.
+	s.rebuildAuraStatCacheLocked()
+
 	const dt = 0.1
 	s.tickUnitManaRegenLocked(cleric, dt)
 

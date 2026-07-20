@@ -70,6 +70,12 @@ var perkDefsFS embed.FS
 // name instead, so this pattern is not applied there.
 var perkIDPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 
+// hexColorPattern gates PerkAura.RingColor. Accepts CSS hex color shorthand
+// (#rgb), full (#rrggbb), and full-with-alpha (#rrggbbaa) — the three forms
+// a native <input type="color"> (RGB via the picker) or a hand-typed value
+// (any of the three) can produce. Case-insensitive.
+var hexColorPattern = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
+
 // embeddedPerkDefs is the standalone catalog, id-keyed, loaded once at init.
 // It is the immutable baseline that rebuildPerkRegistry (perk_persistence.go)
 // merges the writable overlay on top of.
@@ -153,15 +159,37 @@ func validatePerkDef(def *PerkDef) error {
 		if err := validatePerkStatModifier(sm); err != nil {
 			return fmt.Errorf("statModifiers: %w", err)
 		}
+		// PerCompanion only means something inside a PerkAura.StatModifiers
+		// entry (see PerkStatModifier.PerCompanion's doc comment) — a
+		// top-level entry only ever affects the owning unit, so nothing
+		// anywhere ever reads PerCompanion off it. Reject rather than let it
+		// silently no-op (standing "no inert authorable fields" rule).
+		if sm.PerCompanion != 0 {
+			return fmt.Errorf("statModifiers: stat %q sets perCompanion but perCompanion is only meaningful inside auras[].statModifiers — it is never read on a top-level statModifiers entry", sm.Stat)
+		}
+		// AuraOnly stats (statDef.AuraOnly, stat_modifiers.go — e.g.
+		// armorPercent, projectileDamageReduction) have NO top-level fold
+		// site: unitPerkStatModifiersLocked's entire caller list resolves
+		// only stats with a real per-unit read site, and these two are
+		// consumed exclusively via the aura cache
+		// (unitAuraStatContributionLocked). A top-level entry naming one
+		// would compute and store a per-stage value that nothing ever reads
+		// — the identical silent-no-op shape PerCompanion is rejected for
+		// above. Reject here too; the SAME stat inside auras[].statModifiers
+		// is unaffected by this check (see the loop below) and remains its
+		// valid, intended home.
+		if isAuraOnlyStat(sm.Stat) {
+			return fmt.Errorf("statModifiers: stat %q can only be used inside an auras[] entry (auras[].statModifiers) — it has no effect on the owning unit's own top-level statModifiers because no top-level fold site reads it (see statDef.AuraOnly, stat_modifiers.go)", sm.Stat)
+		}
 	}
 	for i, aura := range def.Auras {
 		if aura.Radius <= 0 {
 			return fmt.Errorf("auras[%d]: radius must be > 0", i)
 		}
 		switch aura.Targets {
-		case "allies", "enemies":
+		case "allies", "enemies", "sameOwner":
 		default:
-			return fmt.Errorf("auras[%d]: targets %q must be \"allies\" or \"enemies\"", i, aura.Targets)
+			return fmt.Errorf("auras[%d]: targets %q must be \"allies\", \"enemies\", or \"sameOwner\"", i, aura.Targets)
 		}
 		switch aura.Stacking {
 		case "", auraStackingMax:
@@ -195,6 +223,9 @@ func validatePerkDef(def *PerkDef) error {
 				return fmt.Errorf("auras[%d].statModifiers[%d]: stage %q not supported for auras — auras currently support only base-stage stat contributions; %q and other stages are not implemented by any aura fold site yet", i, j, sm.Stage, statStageBase)
 			}
 		}
+		if aura.RingColor != "" && !hexColorPattern.MatchString(aura.RingColor) {
+			return fmt.Errorf("auras[%d]: ringColor %q must be a valid CSS hex color (#rgb, #rrggbb, or #rrggbbaa)", i, aura.RingColor)
+		}
 	}
 	for _, r := range def.AbilityRiders {
 		if r.Target == "" {
@@ -209,7 +240,7 @@ func validatePerkDef(def *PerkDef) error {
 		// ability's actions — one validator, not a parallel hand-rolled copy.
 		w := &validationWalker{seenIDs: map[string]bool{}}
 		for i, action := range r.Actions {
-			w.walkAction(action, fmt.Sprintf("abilityRiders[target=%s].actions[%d]", r.Target, i), false, nil)
+			w.walkAction(action, fmt.Sprintf("abilityRiders[target=%s].actions[%d]", r.Target, i), false, false, nil)
 		}
 		for _, issue := range w.issues {
 			if issue.Severity == "error" {
@@ -231,7 +262,7 @@ func validatePerkDef(def *PerkDef) error {
 //   - Variant         — optional sub-variant for client art selection
 type PerkEffect struct {
 	Name            string  `json:"name"`
-	Target          string  `json:"target"`          // "self" or "enemies"
+	Target          string  `json:"target"` // "self" or "enemies"
 	SizeScale       float64 `json:"sizeScale,omitempty"`
 	DurationSeconds float64 `json:"durationSeconds,omitempty"`
 	Variant         string  `json:"variant,omitempty"`
@@ -303,6 +334,22 @@ type PerkStatModifier struct {
 	Op    string  `json:"op"`
 	Value float64 `json:"value"`
 	Stage string  `json:"stage,omitempty"`
+	// PerCompanion is the EMITTER-side synergy bonus this modifier's Value
+	// gains per companion emitter of the SAME PerkAura — see
+	// PerkAura.SynergyRadiusPerCompanion for the full companion-counting
+	// algorithm (rebuildAuraStatCacheLocked, perk_aura_stat_cache.go).
+	// Guardian Vanguards standing near each other is the pilot: each
+	// companion within the aura's BASE radius adds PerCompanion to the
+	// effective Value fanned out to recipients, e.g. bonusArmor: 15,
+	// perCompanion: 5 with 2 companions emits effective value 25.
+	//
+	// ONLY meaningful inside a PerkAura.StatModifiers entry — a
+	// top-level PerkDef.StatModifiers entry (this same type, reused) only
+	// ever affects the OWNING unit and has no notion of "nearby companion
+	// emitters" at all, so validatePerkDef REJECTS a non-zero PerCompanion
+	// there (no inert authorable fields — see the standing rule that
+	// removed cooldownMult/radiusMult/durationMult from AbilityModifier).
+	PerCompanion float64 `json:"perCompanion,omitempty"`
 }
 
 // validatePerkStatModifier checks one PerkStatModifier's fields against the
@@ -347,18 +394,59 @@ const auraStackingMax = "max"
 // perk-specific Go handler.
 //
 //   - Radius              — pixel radius the aura covers. Must be > 0
-//     (validatePerkDef rejects <= 0).
-//   - Targets             — "allies" or "enemies": which units relative to
-//     the emitter's owner are eligible recipients.
+//     (validatePerkDef rejects <= 0). This is the BASE radius — see
+//     SynergyRadiusPerCompanion for how it can grow at runtime.
+//   - Targets             — "allies", "enemies", or "sameOwner": which units
+//     relative to the emitter are eligible recipients.
+//     "allies" means playersAreFriendlyLocked(emitter, candidate) — same
+//     TEAM, which can include units belonging to a DIFFERENT player on a
+//     multiplayer team. "sameOwner" is the strictly narrower relation
+//     candidate.OwnerID == emitter.OwnerID — the SAME player's units only.
+//     This distinction is invisible in 1-owner-per-team matches but matters
+//     the moment two players share a team: an "allies"-targeted aura covers
+//     a teammate's units too, a "sameOwner"-targeted aura does not.
+//     guardian_aura uses "sameOwner" deliberately (see its catalog entry) —
+//     using "allies" there would silently change behavior in team games
+//     versus the pre-migration bespoke scan, which compared u.OwnerID ==
+//     source.ownerID directly. "enemies" means
+//     playersAreHostileLocked(emitter, candidate), unrelated to ownership.
 //   - IncludeSelf         — when true, the emitting unit is itself a valid
-//     recipient (only meaningful with Targets == "allies" — a unit is never
-//     its own enemy). zealous_march sets this true: a Cleric buffs itself.
+//     recipient (meaningful with Targets == "allies" or "sameOwner" — a unit
+//     is never its own enemy, so it's a no-op under "enemies").
+//     zealous_march sets this true: a Cleric buffs itself. guardian_aura
+//     leaves this false (the default): the legacy algorithm hard-excluded
+//     the emitting unit from its own aura (u.ID == source.unitID skip), so
+//     the Vanguard emitting guardian_aura does NOT benefit from its own
+//     armor bonus.
 //   - Stacking            — combination rule across multiple covering
 //     sources. Only auraStackingMax ("max", the default when omitted) is
 //     implemented today.
-//   - PerAdditionalSource — under "max" stacking, the smaller bonus every
-//     covering source BEYOND the first contributes on top of the strongest
-//     Value. Zero (default) collapses to pure max-wins, no stacking bonus.
+//   - PerAdditionalSource — RECIPIENT-side stacking: under "max" stacking,
+//     the smaller bonus every covering source BEYOND the first contributes
+//     on top of the strongest Value, when multiple DIFFERENT emitters cover
+//     the SAME recipient. Zero (default) collapses to pure max-wins, no
+//     stacking bonus. Distinct from SynergyRadiusPerCompanion /
+//     PerkStatModifier.PerCompanion below, which is EMITTER-side: it grows
+//     one emitter's own radius/value based on companion emitters near THAT
+//     EMITTER, before the recipient fan-out even happens. guardian_aura uses
+//     only the emitter-side form (PerAdditionalSource stays 0 — the legacy
+//     algorithm took a strict per-dimension max across sources at the
+//     recipient, never an additional recipient-side stacking bonus).
+//   - SynergyRadiusPerCompanion — EMITTER-side companion synergy. When > 0,
+//     rebuildAuraStatCacheLocked first counts, for THIS emitter, how many
+//     OTHER emitters of the SAME aura (same owning perk id + aura index)
+//     with the SAME OwnerID sit within this aura's BASE Radius (never the
+//     companion-inflated effective radius — using the effective radius here
+//     would create recursive radius inflation: more companions → bigger
+//     radius → detects even more companions. Always compare against the
+//     fixed base Radius). That companion count then scales BOTH this
+//     emitter's effective radius (Radius + count×SynergyRadiusPerCompanion)
+//     AND each of its StatModifiers entries' effective value
+//     (Value + count×PerCompanion — see PerkStatModifier.PerCompanion).
+//     Zero (default, and the only value zealous_march/mana_conduit/sanctuary
+//     author) means no companion phase runs for this aura at all — behavior-
+//     neutral for every aura migrated before guardian_aura. guardian_aura is
+//     the pilot: nearby Guardian Vanguards amplify each other's auras.
 //   - StatModifiers       — the stat changes granted to every covered
 //     recipient, in the SAME Stat/Op/Value/Stage vocabulary
 //     PerkDef.StatModifiers uses (validated by the same
@@ -381,13 +469,28 @@ const auraStackingMax = "max"
 //     validator exists to turn that silent no-op into a load-time error
 //     instead. Lift the restriction only once a real fold site is written
 //     that actually consumes Op/Stage for an aura.
+//   - RingColor            — PURELY PRESENTATIONAL. Optionally overrides the
+//     color of this aura's radius ring in the HUD (CanvasRenderer's
+//     drawAuraRing). Empty ⇒ the ring falls back to the owning player's
+//     color, exactly as before this field existed. Never read by any
+//     gameplay/simulation code — only by the client renderer, via the
+//     GeneratedDescription-adjacent wire field on PerkAura. Must be a valid
+//     CSS hex color (#rgb, #rrggbb, or #rrggbbaa) when set; validatePerkDef
+//     rejects anything else rather than silently falling back to the player
+//     color on a typo.
 type PerkAura struct {
-	Radius              float64            `json:"radius"`
-	Targets             string             `json:"targets"`
-	IncludeSelf         bool               `json:"includeSelf,omitempty"`
-	Stacking            string             `json:"stacking,omitempty"`
-	PerAdditionalSource float64            `json:"perAdditionalSource,omitempty"`
-	StatModifiers       []PerkStatModifier `json:"statModifiers"`
+	Radius                    float64            `json:"radius"`
+	Targets                   string             `json:"targets"`
+	IncludeSelf               bool               `json:"includeSelf,omitempty"`
+	Stacking                  string             `json:"stacking,omitempty"`
+	PerAdditionalSource       float64            `json:"perAdditionalSource,omitempty"`
+	SynergyRadiusPerCompanion float64            `json:"synergyRadiusPerCompanion,omitempty"`
+	StatModifiers             []PerkStatModifier `json:"statModifiers"`
+	// RingColor optionally overrides the color of the aura's radius ring in
+	// the HUD. Empty ⇒ the ring falls back to the owning player's color,
+	// exactly as before this field existed. Purely presentational: it never
+	// affects gameplay.
+	RingColor string `json:"ringColor,omitempty"`
 }
 
 // PerkDef is the static definition of a perk loaded from the catalog.
@@ -442,7 +545,7 @@ type PerkDef struct {
 	TooltipTemplateByOwnedPerk map[string]string `json:"tooltipTemplateByOwnedPerk,omitempty"`
 	// Icon is the action-icon ID used to render this perk in the HUD.
 	// Matches an entry in catalog/action-icons.json ("perk-<name>").
-	Icon         string             `json:"icon,omitempty"`
+	Icon string `json:"icon,omitempty"`
 	// Path is the perk's association: the promotion path whose folder it lives
 	// in under catalog/perks/<path>/<id>/. Empty means it lives in
 	// catalog/perks/generic/ (usable by any path). DERIVED FROM THE FOLDER at

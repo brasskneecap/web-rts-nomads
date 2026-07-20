@@ -231,11 +231,16 @@ export function findAction(
 // `triggers` field out of its own config, meaning a nested trigger belongs in
 // `config.triggers` rather than `children`. Mirrors the Go side exactly (see
 // walkAction's switch in ability_program_validate.go):
-//   create_zone       -> createZoneConfig.Triggers      (on_zone_tick/enter/exit)
-//   apply_status      -> applyStatusConfig.Triggers     (on_status_tick/expire;
-//                        non-empty is ALSO the authored-vs-legacy discriminator)
-//   launch_projectile -> launchProjectileConfig.Triggers (on_projectile_impact)
-//   beam              -> beamConfig.Triggers             (on_beam_impact | on_beam_tick)
+//   create_zone            -> createZoneConfig.Triggers      (on_zone_tick/enter/exit)
+//   apply_status           -> applyStatusConfig.Triggers     (on_status_tick/expire;
+//                              non-empty is ALSO the authored-vs-legacy discriminator)
+//   launch_projectile      -> launchProjectileConfig.Triggers (on_projectile_impact)
+//   beam                   -> beamConfig.Triggers             (on_beam_impact | on_beam_tick)
+//   apply_status_duration  -> applyStatusDurationConfig.Triggers (on_action_complete,
+//                              run once per live target with ctx.CurrentStatus bound —
+//                              see ability_status_duration.go). This is the "duration is
+//                              its own action" container: change_stat/apply_mark are only
+//                              valid authored here, in ITS config.triggers.
 // Reading is deliberately action-type-agnostic (configTriggersOf below) — only
 // the ADD path needs this list, to pick the right slot. Keep it in step with
 // the Go descriptors; a missing entry silently misfiles an authored trigger
@@ -246,6 +251,7 @@ const CONFIG_TRIGGER_ACTION_TYPES: ReadonlySet<string> = new Set([
   'apply_status',
   'launch_projectile',
   'beam',
+  'apply_status_duration',
 ])
 
 // configTriggersOf reads action.config.triggers defensively: `config` is an

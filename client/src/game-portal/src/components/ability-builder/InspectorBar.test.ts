@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref, shallowRef } from 'vue'
-import type { AbilityEditorForm } from '@/game/abilities/abilityEditorForm'
+import type { AbilityEditorForm, AuthoredAbilityDef } from '@/game/abilities/abilityEditorForm'
 import { createBlankForm } from '@/game/abilities/abilityEditorForm'
 import type { AbilityProgram } from '@/game/abilities/program/abilityProgram'
 import type { ActionSchemaBundle } from '@/game/abilities/program/programSchema'
 import type { ValidationIssue } from '@/game/abilities/program/programValidation'
+import { ACTION_ICON_MAP, initActionIcons } from '@/game/maps/actionIconDefs'
 import InspectorBar from './InspectorBar.vue'
 import { AbilityBuilderKey } from './AbilityBuilderContext'
 import type { AbilityBuilderCatalogs } from './useAbilityBuilder'
@@ -74,6 +75,7 @@ function makeBuilderStub(overrides: {
   program?: AbilityProgram
   schema?: ActionSchemaBundle | null
   catalogs?: AbilityBuilderCatalogs
+  abilities?: AuthoredAbilityDef[]
   selected?: NodeRef
   issues?: ValidationIssue[]
 } = {}) {
@@ -82,6 +84,7 @@ function makeBuilderStub(overrides: {
     program: shallowRef<AbilityProgram>(overrides.program ?? emptyProgram()),
     schema: shallowRef<ActionSchemaBundle | null>(overrides.schema ?? null),
     catalogs: shallowRef<AbilityBuilderCatalogs>(overrides.catalogs ?? emptyCatalogs()),
+    abilities: shallowRef<AuthoredAbilityDef[]>(overrides.abilities ?? []),
     selected: shallowRef<NodeRef>(overrides.selected ?? { kind: 'ability' }),
     issues: ref<ValidationIssue[]>(overrides.issues ?? []),
     updateForm: vi.fn(),
@@ -590,5 +593,437 @@ describe('InspectorBar', () => {
     const wrapper = mountInspectorBar(builder)
 
     expect(wrapper.find('[data-test="inspector-bar-issues"]').text()).toContain('crater damage too high')
+  })
+
+  // ── Damage Scope (on_damage_dealt trigger) ──────────────────────────────
+  function makeDamageDealtProgram(damageScope?: { categories?: string[]; abilityId?: string }): AbilityProgram {
+    return {
+      entry: { type: 'unit', range: 300 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_damage_dealt',
+          ...(damageScope ? { damageScope } : {}),
+          actions: [{ id: 'a1', type: 'deal_damage', config: { amount: 10 } }],
+        },
+      ],
+    }
+  }
+
+  it('renders the Damage Scope section for an on_damage_dealt trigger', () => {
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram(),
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.find('[data-test="damage-scope-categories"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Damage Scope')
+    expect(wrapper.text()).toContain('Basic Attack')
+    expect(wrapper.text()).toContain('Specific Ability')
+  })
+
+  it('does NOT render the Damage Scope section for another trigger type', () => {
+    const builder = makeBuilderStub({
+      program: makeProgram(), // t1 is on_cast_complete
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.find('[data-test="damage-scope-categories"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Damage Scope')
+  })
+
+  it('uses the schema-published damageCategories enum when loaded', () => {
+    const schema: ActionSchemaBundle = { actions: [], enums: { damageCategories: ['ability', 'trap'] } }
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram(),
+      schema,
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const section = wrapper.find('[data-test="damage-scope-categories"]')
+    expect(section.text()).toContain('Ability')
+    expect(section.text()).toContain('Trap')
+    expect(section.text()).not.toContain('Basic Attack')
+  })
+
+  it('selecting a category writes damageScope.categories', async () => {
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram(),
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const basicAttackCheckbox = wrapper
+      .findAll('[data-test="damage-scope-categories"] input[type="checkbox"]')[0]
+    await basicAttackCheckbox.setValue(true)
+
+    expect(builder.updateTrigger).toHaveBeenCalledTimes(1)
+    expect(builder.updateTrigger).toHaveBeenCalledWith(t1Path, {
+      damageScope: { categories: ['basic_attack'] },
+    })
+  })
+
+  it('clearing all categories omits damageScope.categories', async () => {
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram({ categories: ['basic_attack'] }),
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const basicAttackCheckbox = wrapper
+      .findAll('[data-test="damage-scope-categories"] input[type="checkbox"]')[0]
+    expect((basicAttackCheckbox.element as HTMLInputElement).checked).toBe(true)
+    await basicAttackCheckbox.setValue(false)
+
+    expect(builder.updateTrigger).toHaveBeenCalledWith(t1Path, { damageScope: undefined })
+  })
+
+  it('setting an abilityId writes it on blur (change), not per keystroke', async () => {
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram(),
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const abilityIdInput = wrapper.find('#ib-damage-scope-ability-id')
+    const el = abilityIdInput.element as HTMLInputElement
+    el.value = 'fireball'
+    await abilityIdInput.trigger('input')
+    expect(builder.updateTrigger).not.toHaveBeenCalled()
+
+    await abilityIdInput.trigger('change')
+    expect(builder.updateTrigger).toHaveBeenCalledTimes(1)
+    expect(builder.updateTrigger).toHaveBeenCalledWith(t1Path, {
+      damageScope: { abilityId: 'fireball' },
+    })
+  })
+
+  it('clearing the abilityId omits it', async () => {
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram({ abilityId: 'fireball' }),
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const abilityIdInput = wrapper.find('#ib-damage-scope-ability-id')
+    const el = abilityIdInput.element as HTMLInputElement
+    expect(el.value).toBe('fireball')
+    el.value = ''
+    await abilityIdInput.trigger('input')
+    await abilityIdInput.trigger('change')
+
+    expect(builder.updateTrigger).toHaveBeenCalledWith(t1Path, { damageScope: undefined })
+  })
+
+  it('an untouched on_damage_dealt trigger never carries a damageScope key (round-trip clean)', () => {
+    const program = makeDamageDealtProgram()
+    expect(program.triggers[0]).not.toHaveProperty('damageScope')
+  })
+
+  it('offers authored ability ids in the "Specific Ability" datalist', () => {
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram(),
+      abilities: [{ id: 'fireball' }, { id: 'frost_nova' }],
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const options = wrapper.findAll('#ib-damage-scope-ability-ids option').map((o) => o.attributes('value'))
+    expect(options).toEqual(['fireball', 'frost_nova'])
+  })
+
+  it('shows a non-blocking hint when abilityId is set but Categories excludes "ability"', () => {
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram({ categories: ['trap'], abilityId: 'fireball' }),
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const warn = wrapper.find('[data-test="damage-scope-contradiction"]')
+    expect(warn.exists()).toBe(true)
+    expect(warn.text()).toContain('Ability')
+  })
+
+  it('shows no contradiction hint when Categories includes "ability"', () => {
+    const builder = makeBuilderStub({
+      program: makeDamageDealtProgram({ categories: ['ability'], abilityId: 'fireball' }),
+      selected: { kind: 'trigger', path: t1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.find('[data-test="damage-scope-contradiction"]').exists()).toBe(false)
+  })
+
+  // ── "duration is its own action" — change_stat (Stat/Op/Value) + apply_mark
+  // (icon/iconKind) ──────────────────────────────────────────────────────────
+  // apply_status no longer carries statModifiers/icon/iconKind at all (see
+  // applyStatusConfig's doc comment, ability_exec_actions.go) — those effects
+  // are now authored as change_stat / apply_mark actions nested inside an
+  // apply_status_duration container (ability_status_duration.go). Schemas
+  // below mirror the server's REAL registrations for these three action
+  // types exactly (ListStatIDs() for change_stat's "stat" — the full
+  // registry, aura-only stats included, since the SERVER schema doesn't
+  // pre-filter them; the client custom control does).
+  function changeStatSchema(): ActionSchemaBundle {
+    return {
+      actions: [
+        {
+          type: 'change_stat',
+          runnable: true,
+          fields: [
+            {
+              key: 'stat', label: 'Stat', control: 'enum', section: 'Properties',
+              options: ['armor', 'armorPercent', 'healingReceived', 'moveSpeed', 'projectileDamageReduction'],
+            },
+            { key: 'op', label: 'Operation', control: 'enum', options: ['add', 'multiply'], section: 'Properties' },
+            { key: 'value', label: 'Value', control: 'number', section: 'Properties' },
+            { key: 'stage', label: 'Stage', control: 'enum', options: ['intrinsic', 'base', 'final'], section: 'Advanced' },
+          ],
+        },
+      ],
+      enums: {},
+    }
+  }
+
+  function changeStatProgram(config: Record<string, unknown>): AbilityProgram {
+    return {
+      entry: { type: 'unit', range: 300 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [{ id: 'a1', type: 'change_stat', config }],
+        },
+      ],
+    }
+  }
+
+  function applyMarkSchema(): ActionSchemaBundle {
+    return {
+      actions: [
+        {
+          type: 'apply_mark',
+          runnable: true,
+          fields: [
+            { key: 'icon', label: 'Overhead Icon', control: 'enum', section: 'Properties' },
+            {
+              key: 'iconKind', label: 'Icon Channel', control: 'enum', options: ['buff', 'debuff'], section: 'Properties',
+              showWhen: { key: 'icon', op: 'ne', value: '' },
+            },
+          ],
+        },
+      ],
+      enums: { icon: ['debuff-weakened', 'debuff-slowed'] },
+    }
+  }
+
+  function applyMarkProgram(config: Record<string, unknown>): AbilityProgram {
+    return {
+      entry: { type: 'unit', range: 300 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [{ id: 'a1', type: 'apply_mark', config }],
+        },
+      ],
+    }
+  }
+
+  it('renders the Stat/Operation/Value editor for a change_stat action, populated from config', () => {
+    const builder = makeBuilderStub({
+      program: changeStatProgram({ stat: 'armor', op: 'add', value: -50 }),
+      schema: changeStatSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const statSelect = wrapper.find('select[aria-label="Stat"]')
+    expect((statSelect.element as HTMLSelectElement).value).toBe('armor')
+
+    const valueInput = wrapper.find('input[type="number"]')
+    expect((valueInput.element as HTMLInputElement).value).toBe('-50')
+  })
+
+  it('does not offer aura-only stats (armorPercent, projectileDamageReduction) in the change_stat Stat dropdown', () => {
+    const builder = makeBuilderStub({
+      program: changeStatProgram({ stat: 'armor', op: 'add', value: -50 }),
+      schema: changeStatSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const statSelect = wrapper.find('select[aria-label="Stat"]')
+    const optionValues = statSelect.findAll('option').map((o) => o.attributes('value'))
+    expect(optionValues).not.toContain('armorPercent')
+    expect(optionValues).not.toContain('projectileDamageReduction')
+    expect(optionValues).toContain('armor')
+  })
+
+  it('editing the Stat dropdown commits config.stat', async () => {
+    const builder = makeBuilderStub({
+      program: changeStatProgram({ stat: 'armor', op: 'add', value: -50 }),
+      schema: changeStatSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const statSelect = wrapper.find('select[aria-label="Stat"]')
+    await statSelect.setValue('moveSpeed')
+
+    expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, { stat: 'moveSpeed' })
+  })
+
+  it('editing the Value field for change_stat commits config.value on change', async () => {
+    const builder = makeBuilderStub({
+      program: changeStatProgram({ stat: 'armor', op: 'add', value: -50 }),
+      schema: changeStatSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const valueInput = wrapper.find('input[type="number"]')
+    ;(valueInput.element as HTMLInputElement).value = '-30'
+    await valueInput.trigger('input')
+    await valueInput.trigger('change')
+
+    expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, { value: -30 })
+  })
+
+  it('apply_status no longer shows a Change Status section, a Stat dropdown, or an Overhead Icon field', () => {
+    const legacyApplyStatusSchema: ActionSchemaBundle = {
+      actions: [
+        {
+          type: 'apply_status',
+          runnable: true,
+          fields: [
+            { key: 'status', label: 'Status', control: 'enum', options: ['slow', 'stun', 'burn'], section: 'Properties' },
+            { key: 'duration', label: 'Duration', control: 'duration', section: 'Timing' },
+          ],
+        },
+      ],
+      enums: {},
+    }
+    const builder = makeBuilderStub({
+      program: {
+        entry: { type: 'unit', range: 300 },
+        triggers: [
+          { id: 't1', type: 'on_cast_complete', actions: [{ id: 'a1', type: 'apply_status', config: { status: 'slow', duration: 4 } }] },
+        ],
+      },
+      schema: legacyApplyStatusSchema,
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).not.toContain('Change Status')
+    expect(wrapper.text()).not.toContain('Overhead Icon')
+    expect(wrapper.find('select[aria-label="Stat"]').exists()).toBe(false)
+  })
+
+  // ── apply_mark's icon field: visual OverheadIconPicker ──────────────────
+  // iconKind is now fully DERIVED from the chosen icon id's prefix (see
+  // InspectorBar's commitApplyMarkIcon + actionIconDefs' iconKindForId) —
+  // there is no more separate "Icon Channel" control for apply_mark to show
+  // or hide, so the old showWhen-driven assertions are gone along with it.
+  function findIconOption(wrapper: ReturnType<typeof mountInspectorBar>, id: string) {
+    const el = wrapper.find(`[data-test="overhead-icon-option-${id}"]`)
+    if (!el.exists()) throw new Error(`no overhead icon option for ${id}`)
+    return el
+  }
+
+  it('renders the icon picker from the schema enums bundle, with the configured icon marked selected, and never shows Icon Channel', () => {
+    const builder = makeBuilderStub({
+      program: applyMarkProgram({ icon: 'debuff-weakened', iconKind: 'debuff' }),
+      schema: applyMarkSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).toContain('Overhead Icon')
+    expect(wrapper.text()).not.toContain('Icon Channel')
+
+    const options = wrapper.findAll('[data-test="overhead-icon-picker"] [role="option"]')
+    // "None" + the 2 enums.icon options.
+    expect(options.length).toBe(3)
+
+    const selected = findIconOption(wrapper, 'debuff-weakened')
+    expect(selected.attributes('aria-selected')).toBe('true')
+    const unselected = findIconOption(wrapper, 'debuff-slowed')
+    expect(unselected.attributes('aria-selected')).toBe('false')
+  })
+
+  it('selecting an icon commits both icon and the derived iconKind in one write', async () => {
+    const builder = makeBuilderStub({
+      program: applyMarkProgram({}),
+      schema: applyMarkSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    await findIconOption(wrapper, 'debuff-weakened').trigger('click')
+
+    expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, {
+      icon: 'debuff-weakened',
+      iconKind: 'debuff',
+    })
+  })
+
+  it('clearing the icon (the "none" option) omits both icon and iconKind', async () => {
+    const builder = makeBuilderStub({
+      program: applyMarkProgram({ icon: 'debuff-weakened', iconKind: 'debuff' }),
+      schema: applyMarkSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    await wrapper.find('[data-test="overhead-icon-option-none"]').trigger('click')
+
+    expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, { icon: undefined, iconKind: undefined })
+  })
+
+  it('renders the actual icon art (an SVG path from ACTION_ICON_MAP) for a loaded icon', () => {
+    if (ACTION_ICON_MAP.size === 0) {
+      initActionIcons([
+        { id: 'debuff-weakened', path: 'M4 4h16v16H4z' },
+        { id: 'debuff-slowed', path: 'M2 2h20v20H2z' },
+      ])
+    }
+    const builder = makeBuilderStub({
+      program: applyMarkProgram({ icon: 'debuff-weakened' }),
+      schema: applyMarkSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const option = findIconOption(wrapper, 'debuff-weakened')
+    const path = option.find('svg path')
+    expect(path.exists()).toBe(true)
+    expect(path.attributes('d')).toBe(ACTION_ICON_MAP.get('debuff-weakened'))
+  })
+
+  it('degrades gracefully to id labels when ACTION_ICON_MAP has no art for an option (no crash)', () => {
+    const builder = makeBuilderStub({
+      program: applyMarkProgram({}),
+      schema: {
+        actions: [
+          {
+            type: 'apply_mark',
+            runnable: true,
+            fields: [{ key: 'icon', label: 'Overhead Icon', control: 'enum', section: 'Properties' }],
+          },
+        ],
+        enums: { icon: ['debuff-unregistered-icon-id'] },
+      },
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    const option = findIconOption(wrapper, 'debuff-unregistered-icon-id')
+    expect(option.find('svg').exists()).toBe(false)
+    expect(option.text()).toContain('debuff-unregistered-icon-id')
   })
 })

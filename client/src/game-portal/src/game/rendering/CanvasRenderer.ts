@@ -47,7 +47,7 @@ import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
 import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
-import { getPerkAuraRadius, PERK_DEF_MAP } from '../maps/perkDefs'
+import { getPerkAuraRing, PERK_DEF_MAP } from '../maps/perkDefs'
 import {
   getSpritePaddingFrac,
   getUnitFrame,
@@ -175,6 +175,27 @@ function getCachedPath2D(svgPath: string): Path2D {
     path2DCache.set(svgPath, p)
   }
   return p
+}
+
+// resolveActiveBuffIconPath: the icon lookup drawUnitActiveBuffs renders.
+// UnitSnapshot.activeBuffs is normally a list of PERK ids (the historical
+// shape — activeBuffIconsLocked in perks.go), so the primary path indirects
+// through PERK_DEF_MAP to find that perk's own `icon` field before resolving
+// the SVG path in ACTION_ICON_MAP. An authored apply_status action with
+// iconKind:"buff" has no perk backing it at all — it emits a RAW
+// ACTION_ICON_MAP id straight onto AbilityStatus.Icon (ability_status.go),
+// so the PERK_DEF_MAP lookup above finds nothing and iconId stays undefined.
+// Falling back to a DIRECT ACTION_ICON_MAP lookup on the id itself (mirroring
+// drawUnitActiveDebuffs' own direct-lookup convention — debuffs have carried
+// raw icon ids from the start, see that method's doc comment) makes an
+// authored buff icon render the same way a debuff already does; a genuine
+// perk id is tried first so existing perk-sourced buffs are unaffected.
+// Exported (pure, no canvas/ctx dependency) so it's unit-testable without
+// standing up a full CanvasRenderer + fake 2D context.
+export function resolveActiveBuffIconPath(buffId: string): string | undefined {
+  const def = PERK_DEF_MAP.get(buffId)
+  const iconId = def?.icon
+  return (iconId ? ACTION_ICON_MAP.get(iconId) : undefined) ?? ACTION_ICON_MAP.get(buffId)
 }
 
 // Shared damage-variant → color palette used by BOTH the minor (side-falling)
@@ -2632,9 +2653,13 @@ export class CanvasRenderer {
         // whirlwind_core's flash ring follows the EffectSnapshot, not buffs).
         const activeEffectNames = effectNamesByUnit.get(unit.id)
         for (const perkId of unit.perkIds) {
-          const radius = getPerkAuraRadius(perkId, activeBuffIds, activeEffectNames)
-          if (radius == null) continue
-          this.drawAuraRing(selectionCenterX, selectionCenterY, radius, unit.color || '#fef08a')
+          const ring = getPerkAuraRing(perkId, activeBuffIds, activeEffectNames)
+          if (ring == null) continue
+          // ring.color is the designer-authored per-aura override
+          // (PerkAura.RingColor); when absent (the common case, and every
+          // aura authored before this field existed), fall back to the
+          // owning player's color exactly as before.
+          this.drawAuraRing(selectionCenterX, selectionCenterY, ring.radius, ring.color || unit.color || '#fef08a')
         }
       }
 
@@ -4350,9 +4375,7 @@ export class CanvasRenderer {
     let cursorX = x - totalWidth / 2
 
     for (const buff of buffs) {
-      const def = PERK_DEF_MAP.get(buff.id)
-      const iconId = def?.icon
-      const iconPath = iconId ? ACTION_ICON_MAP.get(iconId) : undefined
+      const iconPath = resolveActiveBuffIconPath(buff.id)
       if (!iconPath) {
         cursorX += iconSize + gap
         continue

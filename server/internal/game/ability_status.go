@@ -85,6 +85,42 @@ type AbilityStatus struct {
 	//     deliberately does not extend — reported in the phase's summary).
 	Stacking  string
 	MaxStacks int
+	// StatModifiers carries stat changes applied to the AFFLICTED unit
+	// (TargetUnitID) for as long as this status is active — the THIRD
+	// emitter of the shared PerkStatModifier vocabulary (stat_modifiers.go),
+	// alongside perks (apply to the owner, unitPerkStatModifiersLocked) and
+	// auras (apply in a radius, perk_aura_stat_cache.go). Composed per-stat,
+	// across every active status on a unit, by
+	// unitStatusStatModifiersLocked (perk_stat_modifiers.go) and folded in
+	// at that stat's existing read site (effectiveArmorLocked for "armor",
+	// healUnitLocked for "healingReceived" — see each fold site's own doc
+	// comment for exactly where in the arithmetic this composes). Populated
+	// by change_stat's Execute (ability_status_duration.go), appending onto
+	// whichever AbilityStatus the enclosing apply_status_duration bound as
+	// ctx.CurrentStatus when this status was spawned — see that action's
+	// doc comment ("duration is its own action") for the full design. Empty
+	// for every status not spawned by an apply_status_duration whose
+	// config.triggers include a change_stat, so an empty/nil slice here is
+	// always a clean no-op at every fold site — see
+	// unitStatusStatModifiersLocked's nil-safety.
+	StatModifiers []PerkStatModifier
+	// Icon is the overhead HUD icon id shown above the afflicted unit while
+	// this status is active — an id looked up client-side in ACTION_ICON_MAP
+	// (populated from catalog/action-icons.json via GET /catalog/action-icons,
+	// see action_icon_defs.go). Empty means no overhead icon, which is the
+	// zero-value/no-op case for every status spawned before this field
+	// existed (byte-identical: activeBuffIconsLocked/activeDebuffIconsLocked
+	// skip any status whose Icon is ""). Populated by apply_mark's Execute
+	// (ability_status_duration.go), the icon-channel sibling of change_stat
+	// above — same "writes onto ctx.CurrentStatus" binding.
+	Icon string
+	// IconKind selects which HUD channel Icon renders in: "buff" or
+	// "debuff" — see activeBuffIconsLocked / activeDebuffIconsLocked
+	// (perks_icons.go), which each only emit statuses whose IconKind matches
+	// their own channel. Required (and validated) whenever Icon is non-empty
+	// — see apply_mark's Validate func (ability_status_duration.go).
+	// Meaningless/ignored when Icon is empty.
+	IconKind string
 }
 
 func abilityStatusIDString(id int) string {
@@ -165,8 +201,20 @@ func (s *GameState) spawnAbilityStatusLocked(st *AbilityStatus) {
 	}
 
 	if st.TickInterval <= 0 {
-		slog.Warn("ability status spawned with non-positive tickInterval; it will never tick",
-			"abilityId", st.AbilityID, "casterId", st.CasterID)
+		// Only a misconfiguration worth warning about when st ALSO declares
+		// on_status_tick/on_status_expire Triggers — that's the one shape
+		// that actually needs a tick cadence to do anything (apply_status's
+		// authored path). A pure apply_status_duration-spawned status
+		// (ability_status_duration.go) never sets Triggers at all — its
+		// nested change_stat/apply_mark effects run once at spawn time via a
+		// completely separate mechanism (config.triggers, on_action_complete)
+		// and legitimately never tick — so warning here for every ordinary
+		// mark_of_weakness-shaped cast would be pure log spam for expected,
+		// correct behavior.
+		if len(st.Triggers) > 0 {
+			slog.Warn("ability status spawned with non-positive tickInterval; it will never tick",
+				"abilityId", st.AbilityID, "casterId", st.CasterID)
+		}
 	} else {
 		st.tickTimer = st.TickInterval
 	}
@@ -305,4 +353,27 @@ func (s *GameState) fireAbilityStatusTickLocked(st *AbilityStatus) {
 func (s *GameState) fireAbilityStatusExpireLocked(st *AbilityStatus) {
 	ctx := s.buildStatusEventContextLocked(st)
 	s.runProgramTriggersLocked(ctx, st.Triggers, TriggerOnStatusExpire)
+}
+
+// unitHasActiveAbilityStatusLocked reports whether unitID currently carries
+// an active AbilityStatus spawned by the named ability (matched on
+// AbilityID, ignoring Name — every caller today wants "any status this
+// ability applied", not a specific named sub-status). Originally added as a
+// hand-wired HUD-icon seam for mark_of_weakness (a single `case
+// "mark_of_weakness":` arm in activeDebuffIconsLocked, perks_icons.go); that
+// arm was deleted once apply_status grew its own generic Icon/IconKind
+// fields (AbilityStatus.Icon — see that field's doc comment), which
+// activeBuffIconsLocked/activeDebuffIconsLocked now read directly with no
+// per-ability Go. This helper remains as a general-purpose "is unitID
+// currently affected by ability X's status" query — today only exercised by
+// mark_of_weakness's own migration tests (mark_of_weakness_migration_test.go)
+// — and is a reasonable seam for a future non-icon use (e.g. an AI-scoring
+// or targeting predicate). Caller holds s.mu.
+func (s *GameState) unitHasActiveAbilityStatusLocked(unitID int, abilityID string) bool {
+	for _, st := range s.AbilityStatuses {
+		if st != nil && st.TargetUnitID == unitID && st.AbilityID == abilityID {
+			return true
+		}
+	}
+	return false
 }

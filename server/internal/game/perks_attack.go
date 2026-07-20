@@ -156,12 +156,17 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, prima
 					bonusDmg := maxInt(0, int(math.Round(float64(attacker.Damage)*def.Config["bonusMultiplier"])))
 					actualDmg := applyArmorMitigation(bonusDmg, s.effectiveArmorLocked(primaryTarget))
 					if actualDmg > 0 {
-						s.applyUnitDamageWithSourceLocked(primaryTarget, actualDmg, DamageSource{AttackerUnitID: attacker.ID, Kind: "savage_strikes"})
+						s.applyUnitDamageWithSourceLocked(primaryTarget, actualDmg, DamageSource{AttackerUnitID: attacker.ID, Kind: "savage_strikes", Category: DamageCategoryPerk})
 						s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
 						s.onPerkDamageTakenLocked(primaryTarget, attacker, actualDmg)
 						s.recordDamageDealtLocked(attacker, primaryTarget, actualDmg)
 						s.trackBattleDamageLocked(battleSourceFromUnit(attacker), primaryTarget, actualDmg)
-						// Let on-damage perks (blood_sustain) react to the extra hit.
+						// Let on-damage perks (blood_engine) react to the extra hit.
+						// NOTE: blood_sustain no longer reacts here — its lifesteal
+						// migrated to a granted on_damage_dealt passive scoped to
+						// DamageCategoryBasicAttack, which this DamageCategoryPerk
+						// bonus hit does not match (see the blood_sustain case-arm
+						// removal comment above).
 						s.onPerkAttackDamageAppliedLocked(attacker, primaryTarget, actualDmg)
 						// Primary target death is handled by the caller — do NOT append here.
 					}
@@ -250,7 +255,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		if damage == 0 {
 			continue
 		}
-		s.applyUnitDamageWithSourceLocked(candidate, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "whirlwind"})
+		s.applyUnitDamageWithSourceLocked(candidate, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "whirlwind", Category: DamageCategoryPerk})
 		s.onUnitDamagedLocked(attacker, candidate, damage)
 		s.onPerkDamageTakenLocked(candidate, attacker, damage)
 		s.recordDamageDealtLocked(attacker, candidate, damage)
@@ -339,12 +344,15 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	if damage == 0 {
 		return
 	}
-	s.applyUnitDamageWithSourceLocked(secondary, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "cleave"})
+	s.applyUnitDamageWithSourceLocked(secondary, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "cleave", Category: DamageCategoryPerk})
 	s.onUnitDamagedLocked(attacker, secondary, damage)
 	s.onPerkDamageTakenLocked(secondary, attacker, damage)
 	s.recordDamageDealtLocked(attacker, secondary, damage)
 	s.trackBattleDamageLocked(battleSourceFromUnit(attacker), secondary, damage)
-	// Let on-damage perks (blood_sustain) react to cleave hits.
+	// Let on-damage perks (blood_engine) react to cleave hits. NOTE:
+	// blood_sustain no longer reacts here — see the case-arm removal comment
+	// in onPerkAttackDamageAppliedLocked (this DamageCategoryPerk hit is out
+	// of scope for its migrated basic_attack-only passive).
 	s.onPerkAttackDamageAppliedLocked(attacker, secondary, damage)
 	// The cleave hit is a distinct hit — fire the attacker's equipment on-hit
 	// effects (procs / elemental) on the secondary too, so a Berserker's
@@ -483,7 +491,7 @@ func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, dama
 	if attacker == nil || target == nil || damage <= 0 || len(attacker.PerkIDs) == 0 {
 		return
 	}
-	// Dead attackers don't heal (blood_sustain) — guards against weird edges
+	// Dead attackers don't heal (blood_engine) — guards against weird edges
 	// where a perk hits after the attacker has already died this tick.
 	if attacker.HP <= 0 {
 		return
@@ -497,14 +505,19 @@ func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, dama
 
 		switch perkID {
 
-		case "blood_sustain":
-			// Heal for a percentage of damage dealt. Routed through
-			// healUnitLocked so blood_engine (gold) can convert overheal into
-			// shield. No recursion risk — healing never triggers damage events.
-			heal := int(math.Round(float64(damage) * def.Config["lifestealPercent"]))
-			if heal > 0 {
-				s.healUnitLocked(attacker, heal)
-			}
+		// blood_sustain migrated off this hook — it is now a granted passive
+		// ability (catalog/abilities/blood_sustain) whose on_damage_dealt
+		// trigger is scoped to DamageCategoryBasicAttack (see
+		// ability_damage_dealt.go / fireOnDamageDealtLocked, dispatched from
+		// applyUnitDamageWithSourceLocked's canonical HP-loss point). NORMALIZED
+		// BEHAVIOR CHANGE (approved): this hook used to fire on every
+		// attacker-attributed on-hit reaction, including savage_strikes/
+		// cleaving_rage/whirlwind_core bonus hits (DamageCategoryPerk) — those
+		// no longer heal blood_sustain. Basic melee/ranged/pierce attacks
+		// (DamageCategoryBasicAttack) are unaffected. blood_engine (below) is
+		// deliberately UNTOUCHED and still heals off every bonus hit via this
+		// hook — the two perks now diverge on bonus-hit interactions when both
+		// are taken.
 
 		case "blood_engine":
 			// Gold blood_engine now carries its own lifesteal so it's useful
@@ -546,7 +559,8 @@ func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, dama
 
 	// Marksman post-hit dispatch — explosive_tips fires its AoE here so it
 	// runs after the primary hit's damage has already landed (and after any
-	// other on-hit perk reactions like blood_sustain heal), keeping order
-	// predictable and preventing the explosion from short-circuiting them.
+	// other on-hit perk reactions like blood_engine's lifesteal), keeping
+	// order predictable and preventing the explosion from short-circuiting
+	// them.
 	s.onMarksmanDamageAppliedLocked(attacker, target, damage)
 }

@@ -76,8 +76,36 @@ const (
 	ActionDealDamage    ActionType = "deal_damage"
 	ActionRestoreHealth ActionType = "restore_health"
 	ActionApplyStatus   ActionType = "apply_status"
-	ActionRemoveStatus  ActionType = "remove_status"
-	ActionCreateZone    ActionType = "create_zone"
+	// ActionApplyStatusDuration is the container action for the "duration is
+	// its own action" model: it owns the LIFETIME of a status (spawns one
+	// AbilityStatus, config: name/duration/stacking/maxStacks only) and runs
+	// its own config.triggers (an on_action_complete trigger) once per live
+	// target, exposing the freshly spawned status as the "current status" in
+	// RuntimeAbilityContext (ctx.CurrentStatus) so nested ActionChangeStat /
+	// ActionApplyMark actions can bind their effect to it without knowing
+	// anything about duration themselves. See applyStatusDurationConfig
+	// (ability_status_duration.go) for the full design writeup and
+	// RuntimeAbilityContext.CurrentStatus's doc comment (ability_exec.go) for
+	// exactly how the binding is exposed/restored.
+	ActionApplyStatusDuration ActionType = "apply_status_duration"
+	// ActionChangeStat is a duration-AGNOSTIC effect action: it applies ONE
+	// PerkStatModifier-shaped stat change to the afflicted unit, bound to
+	// whichever apply_status_duration currently encloses it (ctx.CurrentStatus
+	// — reads it, appends to its StatModifiers, and does nothing else). It has
+	// no lifetime of its own and is rejected by validation anywhere outside an
+	// apply_status_duration's config.triggers (see walkAction's
+	// insideStatusDuration check, ability_program_validate.go).
+	ActionChangeStat ActionType = "change_stat"
+	// ActionApplyMark is change_stat's icon-channel sibling: it sets the
+	// overhead HUD indicator (icon id + buff/debuff kind) on whichever
+	// apply_status_duration currently encloses it (ctx.CurrentStatus), same
+	// binding/validation rule as ActionChangeStat. No duration of its own —
+	// the enclosing container's expiry clears the icon exactly like it clears
+	// change_stat's stat modifiers, because both write onto the SAME
+	// AbilityStatus object.
+	ActionApplyMark    ActionType = "apply_mark"
+	ActionRemoveStatus ActionType = "remove_status"
+	ActionCreateZone   ActionType = "create_zone"
 	// ActionLaunchProjectile also covers arcane_orb's moving pull+DoT vortex
 	// shape (TravelMode "direction" + TickInterval > 0 — see
 	// launchProjectileConfig's doc comment, ability_compile.go): a formerly
@@ -109,8 +137,8 @@ const (
 	// no direct damage application, and its own trigger type (on_charge_full)
 	// is unlike every cast-driven/zone-tick-driven action — see
 	// spell_charge.go's file doc comment for the full design rationale.
-	ActionChargeFireVolley  ActionType = "charge_fire_volley"
-	ActionSummonUnit        ActionType = "summon_unit"
+	ActionChargeFireVolley ActionType = "charge_fire_volley"
+	ActionSummonUnit       ActionType = "summon_unit"
 	// ActionPlaceTrap plants a trap by reusing the existing trap runtime
 	// (plantTrapLocked / plantOneTrapLocked, trap.go) — the same
 	// primitive today's Trapper bronze perks (caltrops, fire_pit,
@@ -120,8 +148,8 @@ const (
 	// migration (Phase 2) can retire the perk-driven placement path
 	// without reimplementing trap placement/geometry. See
 	// placeTrapConfig (ability_exec_place_trap.go) for the config shape.
-	ActionPlaceTrap ActionType = "place_trap"
-	ActionMoveUnit  ActionType = "move_unit"
+	ActionPlaceTrap         ActionType = "place_trap"
+	ActionMoveUnit          ActionType = "move_unit"
 	ActionApplyForce        ActionType = "apply_force"
 	ActionModifyResource    ActionType = "modify_resource"
 	ActionTriggerEvent      ActionType = "trigger_event"
@@ -285,6 +313,45 @@ type AbilityTriggerDef struct {
 	Timing     *TriggerTiming        `json:"timing,omitempty"`
 	Conditions []AbilityConditionDef `json:"conditions,omitempty"`
 	Actions    []AbilityActionDef    `json:"actions"`
+	// DamageScope narrows which damage instances fire an on_damage_dealt
+	// trigger (fireOnDamageDealtLocked, ability_damage_dealt.go). Nil/omitted
+	// means ANY damage this unit deals fires the trigger. Only meaningful
+	// when Type is TriggerOnDamageDealt — the validator (walkTrigger,
+	// ability_program_validate.go) rejects it on every other trigger type, so
+	// there is never an authored-but-inert field sitting on the wire (this
+	// project's standing rule against inert authorable fields). Follows the
+	// same "trigger-type-specific optional field" precedent as Timing
+	// (TriggerTiming, above) rather than a generic config map — AbilityTriggerDef
+	// has no such map today, and Conditions is NOT a substitute: trigger-level
+	// Conditions are currently INERT (see the TODO(phase-3b) markers in
+	// ability_exec.go and ability_marker.go), so a scope built on Conditions
+	// would be unbuilt machinery pretending to work.
+	DamageScope *DamageTriggerScope `json:"damageScope,omitempty"`
+}
+
+// DamageTriggerScope narrows an on_damage_dealt trigger to a subset of the
+// damage instances this unit deals. Both fields are additive filters (AND'd
+// together when both are set); either left empty/zero means "no restriction
+// from this field." See AbilityTriggerDef.DamageScope's doc comment for the
+// authoring/validation contract.
+type DamageTriggerScope struct {
+	// Categories restricts firing to damage instances whose DamageSource.Category
+	// is one of these (damage_pipeline.go). Empty ⇒ any category. Every entry
+	// must be one of the six real DamageCategory constants — DamageCategoryUnspecified
+	// ("") is a gap marker on the damage-pipeline side, never an authorable
+	// filter value (see isKnownDamageCategory).
+	Categories []DamageCategory `json:"categories,omitempty"`
+	// AbilityID restricts firing to damage instances whose DamageSource.SourceAbilityID
+	// equals this exact ability id. Empty ⇒ any (or no) source ability.
+	//
+	// VALIDATION: if AbilityID is set AND Categories is non-empty, Categories
+	// must include DamageCategoryAbility — an ability-attributed damage
+	// instance always carries Category "ability" (see deal_damage's Execute,
+	// ability_program_registry.go), so pairing AbilityID with a Categories
+	// list that excludes "ability" (e.g. ["basic_attack"]) describes a damage
+	// instance that can never occur. The validator (walkTrigger) rejects that
+	// combination outright rather than silently ignoring one half.
+	AbilityID string `json:"abilityId,omitempty"`
 }
 
 // LoopVar is one loop variable. At iteration k (0-based) it holds:

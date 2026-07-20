@@ -52,6 +52,9 @@ export type ActionType =
   | 'deal_damage'
   | 'restore_health'
   | 'apply_status'
+  | 'apply_status_duration'
+  | 'change_stat'
+  | 'apply_mark'
   | 'remove_status'
   | 'create_zone'
   | 'launch_projectile'
@@ -221,6 +224,28 @@ export interface AbilityTriggerDef {
   timing?: TriggerTiming
   conditions?: AbilityConditionDef[]
   actions: AbilityActionDef[]
+  // damageScope narrows which damage instances fire an on_damage_dealt
+  // trigger. Mirrors Go's AbilityTriggerDef.DamageScope (ability_program.go) —
+  // undefined means ANY damage this unit deals fires the trigger. Only
+  // meaningful when `type` is 'on_damage_dealt'; the server validator rejects
+  // it on every other trigger type (invalid_damage_scope_placement), so the
+  // editor never offers it there either (see InspectorBar.vue).
+  damageScope?: DamageTriggerScope
+}
+
+// DamageTriggerScope narrows an on_damage_dealt trigger to a subset of the
+// damage instances this unit deals. Both fields are additive filters (AND'd
+// together when both are set); an omitted/empty field means "no restriction
+// from this field." Mirrors Go's DamageTriggerScope (ability_program.go).
+export interface DamageTriggerScope {
+  // categories restricts firing to damage instances whose category is one of
+  // these. Values come from the server's ProgramEnums()["damageCategories"]
+  // (basic_attack/ability/trap/building/perk/item). Omitted/empty ⇒ any
+  // category.
+  categories?: string[]
+  // abilityId restricts firing to damage instances attributed to this exact
+  // ability id. Omitted/empty ⇒ any (or no) source ability.
+  abilityId?: string
 }
 
 // LoopVar is one loop variable: at iteration k it holds start + step*k. Name is

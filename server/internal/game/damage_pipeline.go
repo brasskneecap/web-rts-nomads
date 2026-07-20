@@ -48,6 +48,73 @@ func (s *GameState) applyProfileDamageMultiplierLocked(attacker *Unit, rawDamage
 // same unit from both the call-site manual bookkeeping and the drain.
 // ═════════════════════════════════════════════════════════════════════════════
 
+// DamageCategory is the CLOSED, semantic classification of where a damage
+// instance came from. Unlike Kind (a freeform human/telemetry label, below),
+// this is the field gameplay logic may branch on — e.g. an ability trigger
+// scoped to "basic attacks only" or "this specific ability" (the on_damage_
+// dealt trigger's filter, composable-abilities design). Kind stays freeform
+// text for debugging/telemetry; Category is the typed vocabulary a designer-
+// facing filter can trust.
+//
+// DamageCategoryUnspecified (the zero value) is NOT a meaningful default —
+// it means "this call site has not been classified yet," a gap to close, not
+// "no category." Every DamageSource literal in production code should set a
+// real category; see the classification sites listed on each constant below
+// and damage_pipeline_category_test.go for the paths that are characterized
+// end-to-end.
+type DamageCategory string
+
+const (
+	// DamageCategoryUnspecified is the zero value. Set only by call sites that
+	// have not been classified (see the task's report for the current list —
+	// today: applyProjectileDamageLocked's generic single-target helper,
+	// projectile_defs.go, which is unreachable from any production call site
+	// and carries no signal to distinguish a basic attack from an ability) and
+	// by the deliberately-anonymous DamageSource{} literal
+	// (applyUnitDamageLocked, perks_defense.go) used by legacy call sites that
+	// do their own kill bookkeeping.
+	DamageCategoryUnspecified DamageCategory = ""
+	// DamageCategoryBasicAttack is a unit's ordinary attack: melee swings,
+	// ranged auto-attack arrows/bolts (including a pierce-shaped arrow — the
+	// "pierce" perk changes the ARROW'S GEOMETRY, not what kind of damage it
+	// is; every pierce hit lands through the same resolveAttackHitLocked hub
+	// as a normal swing), and base-stat splash (a unit's own SplashRadius
+	// property, e.g. raider_brute — inherent to the attack itself, not a
+	// perk-granted bonus hit).
+	DamageCategoryBasicAttack DamageCategory = "basic_attack"
+	// DamageCategoryAbility is damage dealt by a cast/channeled/commander
+	// ability: composable deal_damage actions, legacy instant-hit and AoE
+	// ability resolution, ability-sourced projectiles and beams (including
+	// chain_lightning's bounce hops, which route through the equipment-proc
+	// beam mechanism but carry SourceAbilityID), and player commander
+	// abilities (no unit attribution, but still an authored spell effect —
+	// not a basic attack, trap, building, perk, or item).
+	DamageCategoryAbility DamageCategory = "ability"
+	// DamageCategoryTrap is damage dealt by a trap's own mechanics: zone DoT,
+	// infusion bonus ticks, detonation bursts, Cataclysm/Reactive Flames/
+	// Final Exposure/Overload payloads, and silver-tier trap burn stacks.
+	// Distinct from an equipment weapon's burn stack (DamageCategoryItem),
+	// which shares the same BurnStacks machinery but originates from gear,
+	// not a trap.
+	DamageCategoryTrap DamageCategory = "trap"
+	// DamageCategoryBuilding is damage dealt by a building's own attack
+	// (towers/keeps acquiring and firing on hostiles in range).
+	DamageCategoryBuilding DamageCategory = "building"
+	// DamageCategoryPerk is a NEW damage instance created by a perk hook
+	// reacting to combat — a bonus hit layered on top of (not identical to)
+	// the attack/ability that triggered it: savage_strikes, whirlwind,
+	// cleave, explosive_tips, retaliation's reflected counter-hit, and
+	// divine_judgement's AoE proc off a heal event. Contrast with a
+	// REDIRECT/PROPAGATION of an existing instance (pain_share,
+	// shared_pain), which is not its own category — see those calls sites'
+	// comments for why they instead forward the origin's own Category.
+	DamageCategoryPerk DamageCategory = "perk"
+	// DamageCategoryItem is damage dealt by equipment: on-hit elemental
+	// instances, rolled on-hit/on-struck procs (bolts and beams), and a
+	// weapon's on-hit burn stack (e.g. fire_sword).
+	DamageCategoryItem DamageCategory = "item"
+)
+
 // DamageSource identifies who caused a damage event for kill attribution.
 // The zero value (anonymous) means the call site is doing its own kill
 // bookkeeping — the drain will only do removal, not XP/stats.
@@ -55,10 +122,22 @@ type DamageSource struct {
 	AttackerUnitID     int    // 0 if not from a unit
 	AttackerBuildingID string // "" if not from a building
 	AttackerTrapID     string // "" if not from a trap
-	// Kind is a human-readable label used for debugging/telemetry.
-	// Examples: "melee", "projectile", "building", "savage_strikes",
-	// "whirlwind", "cleave", "shared_pain", "pain_share_redirect", "retaliation".
+	// Kind is a HUMAN-READABLE label used ONLY for debugging/telemetry —
+	// examples: "melee", "projectile", "building", "savage_strikes",
+	// "whirlwind", "cleave", "shared_pain", "pain_share_redirect",
+	// "retaliation". It is freeform (~25 ad-hoc values in practice) and MUST
+	// NOT be branched on by gameplay logic — Category (above) is the typed
+	// field for that. The one pre-existing exception is
+	// perks_defense.go's sanctuary check (src.Kind == "projectile"), kept
+	// working as-is; do not add new logic keyed on Kind.
 	Kind string
+	// Category is the CLOSED classification gameplay logic should branch on
+	// (DamageCategory, above). The zero value (DamageCategoryUnspecified)
+	// means the call site hasn't been classified yet — a gap, not a
+	// meaningful default. Every pre-existing DamageSource{} literal keeps
+	// compiling and behaving exactly as before (nothing reads this field
+	// yet); it is metadata only until a consumer is built.
+	Category DamageCategory
 	// DamageType is the element / school of this damage event, set from the
 	// attacker's attack or the ability definition (NOT the projectile). The
 	// zero value means "unspecified"; ResolvedDamageType() maps it to
@@ -148,6 +227,35 @@ type DamageSource struct {
 // raw field so "unspecified" is always explicit.
 func (d DamageSource) ResolvedDamageType() DamageType {
 	return d.DamageType.OrPhysical()
+}
+
+// allDamageCategories is the canonical list of every REAL (authorable)
+// DamageCategory — deliberately excluding DamageCategoryUnspecified, which is
+// a gap marker ("this call site hasn't been classified yet"), never a
+// meaningful filter value an author could intend. isKnownDamageCategory
+// derives from it so the two cannot drift, mirroring allTriggerTypes /
+// isKnownTriggerType (ability_program_validate.go). First (only, as of this
+// writing) consumer: DamageTriggerScope.Categories validation
+// (ability_program_validate.go).
+var allDamageCategories = []DamageCategory{
+	DamageCategoryBasicAttack, DamageCategoryAbility, DamageCategoryTrap,
+	DamageCategoryBuilding, DamageCategoryPerk, DamageCategoryItem,
+}
+
+// knownDamageCategories is the lookup set derived from allDamageCategories.
+var knownDamageCategories = func() map[DamageCategory]bool {
+	m := make(map[DamageCategory]bool, len(allDamageCategories))
+	for _, c := range allDamageCategories {
+		m[c] = true
+	}
+	return m
+}()
+
+// isKnownDamageCategory reports whether c is one of the six real DamageCategory
+// enum consts. DamageCategoryUnspecified ("") is deliberately NOT known — see
+// allDamageCategories' doc comment.
+func isKnownDamageCategory(c DamageCategory) bool {
+	return knownDamageCategories[c]
 }
 
 // IsAnonymous returns true when the source carries no attacker attribution.

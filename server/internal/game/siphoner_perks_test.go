@@ -2,8 +2,15 @@ package game
 
 // Section: Siphoner Bronze perk unit tests.
 //
-// Covers all four Bronze perks: soul_leech, withering_beam, lingering_hex,
-// mark_of_weakness. Mirrors the shape of cleric_bronze_perks_test.go.
+// Covers three of the four Bronze perks: soul_leech, withering_beam,
+// lingering_hex. Mirrors the shape of cleric_bronze_perks_test.go.
+//
+// mark_of_weakness is NOT covered here anymore — it was migrated from a
+// bespoke autonomous-fire PerkState mechanic to a perk-granted composable
+// ability (catalog/abilities/mark_of_weakness). Its characterization tests
+// now live in mark_of_weakness_migration_test.go, driven through the real
+// ability-cast / auto-cast path instead of the deleted
+// applyMarkOfWeaknessAoELocked / tickMarkOfWeaknessPerkLocked helpers.
 //
 // Expected values derive from the perk catalog Config maps — never hardcoded —
 // so a tuning change in JSON requires only a baseline update, not test edits.
@@ -244,51 +251,6 @@ func TestLingeringHex_AoEStampsHexOnEnemies(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// mark_of_weakness — AoE stamps armor + healing-received debuff
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestMarkOfWeakness_ArmorReductionAndHealingDebuff(t *testing.T) {
-	s, siphoner, anchor := newSiphonerBronzeState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	withSiphonerPerk(s, siphoner, "mark_of_weakness")
-
-	def := perkDefByID("mark_of_weakness")
-	armorReduction := int(math.Round(def.Config["armorReduction"]))
-	healMult := def.Config["healingReceivedMultiplier"]
-
-	// Snapshot armor BEFORE the mark lands.
-	armorBefore := s.effectiveArmorLocked(anchor)
-
-	s.applyMarkOfWeaknessAoELocked(siphoner, anchor)
-
-	if anchor.PerkState.MarkOfWeaknessRemaining <= 0 {
-		t.Fatal("anchor should be marked")
-	}
-
-	armorAfter := s.effectiveArmorLocked(anchor)
-	wantArmorAfter := armorBefore - armorReduction
-	if wantArmorAfter < 0 {
-		wantArmorAfter = 0
-	}
-	if armorAfter != wantArmorAfter {
-		t.Errorf("effective armor: got %d, want %d (was %d, reduction %d)",
-			armorAfter, wantArmorAfter, armorBefore, armorReduction)
-	}
-
-	// Healing-received: 100 hp restored to a wounded marked unit becomes
-	// round(100 * healMult). The damage path is integer; we drop HP first.
-	anchor.HP = 1
-	anchor.MaxHP = 1000
-	s.healUnitLocked(anchor, 100)
-	wantGain := int(math.Round(100 * healMult))
-	if got := anchor.HP - 1; got != wantGain {
-		t.Errorf("healing landed: got +%d HP, want +%d (mult %.2f)", got, wantGain, healMult)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Autonomous-fire tests — Lingering Hex / Mark of Weakness pulse on a per-
 // unit cooldown. They are NOT player-castable abilities; the tick handler
 // in tickUnitPerkStateLocked drives them, mirroring the trapper trap-
@@ -364,42 +326,6 @@ func TestLingeringHex_HoldsFireWithoutMana(t *testing.T) {
 	s.tickLingeringHexPerkLocked(siphoner, def, 0)
 	if siphoner.PerkState.LingeringHexCooldownRemaining > 0 {
 		t.Errorf("perk should NOT consume cooldown when mana insufficient")
-	}
-}
-
-func TestMarkOfWeakness_AutonomousFireOnCooldown(t *testing.T) {
-	s, siphoner, enemy := newSiphonerBronzeState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	withSiphonerPerk(s, siphoner, "mark_of_weakness")
-	def := perkDefByID("mark_of_weakness")
-	cooldown := def.Config["cooldownSeconds"]
-	manaCost := int(def.Config["manaCost"])
-	manaBefore := siphoner.CurrentMana
-
-	s.tickMarkOfWeaknessPerkLocked(siphoner, def, 0)
-	if enemy.PerkState.MarkOfWeaknessRemaining <= 0 {
-		t.Fatalf("mark should land on first tick; got Remaining=%.2f", enemy.PerkState.MarkOfWeaknessRemaining)
-	}
-	if siphoner.CurrentMana != manaBefore-manaCost {
-		t.Errorf("mana spent: got %d, want %d", siphoner.CurrentMana, manaBefore-manaCost)
-	}
-	if siphoner.PerkState.MarkOfWeaknessCooldownRemaining <= 0 {
-		t.Errorf("cooldown should arm after fire")
-	}
-
-	// During cooldown — no refire.
-	prev := enemy.PerkState.MarkOfWeaknessRemaining
-	s.tickMarkOfWeaknessPerkLocked(siphoner, def, 0.1)
-	if enemy.PerkState.MarkOfWeaknessRemaining > prev {
-		t.Errorf("mark should NOT refresh while cooldown is ticking")
-	}
-
-	// Past cooldown — refire.
-	s.tickMarkOfWeaknessPerkLocked(siphoner, def, cooldown+0.01)
-	if enemy.PerkState.MarkOfWeaknessRemaining < def.Config["durationSeconds"] {
-		t.Errorf("re-fire should re-stamp at full duration; got %.2f", enemy.PerkState.MarkOfWeaknessRemaining)
 	}
 }
 

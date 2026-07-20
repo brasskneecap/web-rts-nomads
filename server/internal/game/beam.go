@@ -484,9 +484,21 @@ func (s *GameState) applyBeamPendingDamageLocked(b *Beam, deadUnitIDs *[]int) {
 	if target == nil || target.HP <= 0 || !target.Visible {
 		return
 	}
+	// Category depends on WHO fired this momentary beam: an ability's chain
+	// bounce (chain_lightning, via fireAbilityChainLocked stamping
+	// ProcSource.SourceAbilityID) carries SourceAbilityID through to here and
+	// is DamageCategoryAbility; an equipment/item proc beam (Kind stays
+	// "item-proc" — no ability ever attaches its id) never sets
+	// SourceAbilityID and is DamageCategoryItem. Same beam-bounce mechanism,
+	// two different sources — see SourceAbilityID's doc comment above.
+	category := DamageCategoryItem
+	if b.SourceAbilityID != "" {
+		category = DamageCategoryAbility
+	}
 	s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{
 		AttackerUnitID:  b.AttackerUnitID,
 		Kind:            "item-proc",
+		Category:        category,
 		DamageType:      b.DamageType,
 		SourceAbilityID: b.SourceAbilityID,
 	})

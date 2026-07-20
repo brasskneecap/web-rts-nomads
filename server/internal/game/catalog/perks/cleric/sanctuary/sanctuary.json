@@ -8,5 +8,16 @@
     "damageReductionPercent": 0.25,
     "radiusPixels": 192
   },
+  "auras": [
+    {
+      "radius": 192,
+      "targets": "allies",
+      "includeSelf": true,
+      "stacking": "max",
+      "statModifiers": [
+        { "stat": "projectileDamageReduction", "op": "add", "value": 0.25 }
+      ]
+    }
+  ],
   "wired": false
 }

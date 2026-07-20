@@ -363,6 +363,22 @@ func (dealDamageConfig) actionConfig() {}
 type restoreHealthConfig struct {
 	Amount int        `json:"amount"`
 	School DamageType `json:"school,omitempty"`
+	// AmountRef, when non-empty, names a ctxScalar in ctx.Named whose value is the
+	// heal amount (e.g. "trigger_damage", bound by fireOnDamageDealtLocked to the
+	// triggering hit's landed damage — see ability_damage_dealt.go). AmountMult
+	// scales it (default 1 when 0/unset). Built for lifesteal-style passives that
+	// heal a fraction of the damage their unit just dealt, which varies per hit and
+	// so cannot be expressed as a static Amount. When AmountRef is set the value is
+	// applied RAW — deliberately SKIPPING effectiveAbilityHealLocked's
+	// divine_healer fold — because the referenced scalar is already a final,
+	// folded number (the tick's actual damage/heal), mirroring deal_damage's
+	// identical AmountRef contract exactly. A ref that isn't bound (missing, or
+	// bound to a non-scalar) resolves to amount 0 (a no-op heal) rather than
+	// falling back to Amount — an author who set AmountRef meant "the runtime
+	// value," not "the static Amount as a fallback." When AmountRef is empty,
+	// Amount is used exactly as before (100% unchanged path).
+	AmountRef  string  `json:"amountRef,omitempty"`
+	AmountMult float64 `json:"amountMult,omitempty"`
 }
 
 func (restoreHealthConfig) actionConfig() {}
@@ -458,7 +474,7 @@ func init() {
 				if u == nil || u.HP <= 0 {
 					continue
 				}
-				s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", DamageType: dt, SourceAbilityID: ctx.AbilityID})
+				s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", Category: DamageCategoryAbility, DamageType: dt, SourceAbilityID: ctx.AbilityID})
 				hit = append(hit, id)
 				ctx.lastAppliedDamage += amount
 				ctx.trace("damage_applied", ctx.currentActionPath, map[string]any{"unit": id, "amount": amount, "type": string(dt)})
@@ -478,8 +494,11 @@ func init() {
 		},
 		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue {
 			c := cfg.(restoreHealthConfig)
-			if c.Amount <= 0 {
-				return []ValidationIssue{{Code: "empty_required_property", Message: "restore_health requires amount > 0", Severity: "error"}}
+			// A non-empty AmountRef supplies the amount at runtime (from a bound
+			// ctxScalar), so Amount == 0 is valid alongside it — only require
+			// Amount > 0 when there is no ref to fall back on.
+			if c.Amount <= 0 && c.AmountRef == "" {
+				return []ValidationIssue{{Code: "empty_required_property", Message: "restore_health requires amount > 0 or amountRef", Severity: "error"}}
 			}
 			if c.School != "" && !IsValidDamageType(c.School) {
 				return []ValidationIssue{{Code: "invalid_damage_type", Message: "unknown school " + string(c.School), Severity: "error"}}
@@ -489,6 +508,8 @@ func init() {
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "amount", Label: "Amount", Control: "number", Section: "Properties"},
 			{Key: "school", Label: "School", Control: "enum", Section: "Properties"},
+			{Key: "amountRef", Label: "Amount From (context)", Control: "text", Section: "Properties"},
+			{Key: "amountMult", Label: "Amount ×", Control: "number", Section: "Properties"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(restoreHealthConfig)
@@ -496,15 +517,33 @@ func init() {
 			if caster == nil {
 				return nil
 			}
-			// Divine Healer (silver cleric) scales every heal amount produced by
-			// the caster, at parity with the legacy resolveAbilityCastOnTargetLocked
-			// path (which scales def.HealAmount by the same multiplier). base is
-			// THIS action's configured amount, not necessarily def.HealAmount — see
-			// effectiveAbilityHealLocked's doc comment, mirroring
-			// effectiveAbilityDamageLocked's "action's amount, not def's" contract.
-			amount := c.Amount
-			if ctx.abilityDef != nil {
-				amount = s.effectiveAbilityHealLocked(caster, *ctx.abilityDef, c.Amount)
+			var amount int
+			if c.AmountRef != "" {
+				// AmountRef path (see the field's doc comment): the bound scalar
+				// is already a final, folded number, so it is applied RAW —
+				// deliberately SKIPPING effectiveAbilityHealLocked's divine_healer
+				// fold. A ref that isn't bound (missing, or bound to a non-scalar)
+				// resolves to amount 0 (a no-op heal) rather than falling back to
+				// Amount — an author who set AmountRef meant "the runtime value,"
+				// not "the static Amount as a fallback."
+				mult := c.AmountMult
+				if mult == 0 {
+					mult = 1
+				}
+				if v, ok := ctx.Named[c.AmountRef]; ok && v.Kind == ctxScalar {
+					amount = int(math.Round(v.Scalar * mult))
+				}
+			} else {
+				// Divine Healer (silver cleric) scales every heal amount produced by
+				// the caster, at parity with the legacy resolveAbilityCastOnTargetLocked
+				// path (which scales def.HealAmount by the same multiplier). base is
+				// THIS action's configured amount, not necessarily def.HealAmount — see
+				// effectiveAbilityHealLocked's doc comment, mirroring
+				// effectiveAbilityDamageLocked's "action's amount, not def's" contract.
+				amount = c.Amount
+				if ctx.abilityDef != nil {
+					amount = s.effectiveAbilityHealLocked(caster, *ctx.abilityDef, c.Amount)
+				}
 			}
 			healed := make([]int, 0, len(targets))
 			for _, id := range targets {

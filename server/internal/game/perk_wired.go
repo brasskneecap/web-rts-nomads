@@ -70,7 +70,7 @@ var wiredPerkIDs = map[string]struct{}{
 	"last_stand":        {},
 	"punishing_guard":   {},
 	"challengers_mark":  {}, // perks_attack.go
-	"guardian_aura":     {}, // perks_auras.go
+	"guardian_aura":     {}, // perks_icons.go (owner buff-icon case arm); flat/percent armor effect itself is now data-driven via PerkDef.Auras (perk_aura_stat_cache.go) — see perkHasTypedBehavior
 	"pain_share":        {}, // perks_auras.go
 	"rallying_banner":   {}, // perks.go
 
@@ -83,8 +83,11 @@ var wiredPerkIDs = map[string]struct{}{
 	"momentum":        {}, // also perks.go / perks_crit.go / perks_movement.go
 	"executioner":     {},
 	"berserk_state":   {},
-	"blood_sustain":   {},
-	"blood_engine":    {}, // also perks_defense.go
+	// blood_sustain is NOT listed here — it has no remaining Go handler arm
+	// (removed in the on_damage_dealt migration, perks_attack.go). It is now
+	// wired purely via perkHasTypedBehavior (PerkDef.GrantsAbilities is
+	// non-empty — see catalog/perks/berserker/blood_sustain).
+	"blood_engine": {}, // also perks_defense.go
 	"whirlwind_core":  {}, // also perks.go
 
 	// ─── archer / marksman (perks_marksman.go, perks_crit.go) ────────────
@@ -119,11 +122,11 @@ var wiredPerkIDs = map[string]struct{}{
 	"overload_protocol":     {},
 	"increased_deployment":  {}, // trap.go
 
-	// ─── acolyte / cleric (perks_cleric.go, perks.go, perks_auras.go) ────
-	"sanctuary":            {}, // perks_auras.go
+	// ─── acolyte / cleric (perks_cleric.go, perks.go, perks_icons.go) ────
+	"sanctuary":            {}, // perks_icons.go (owner buff-icon case arm); projectile-damage-reduction effect itself is now data-driven via PerkDef.Auras (perk_aura_stat_cache.go) + the src.Kind=="projectile" gate at perks_defense.go's fold site — see perkHasTypedBehavior
 	"battle_prayer":        {}, // perks.go
 	"bolstering_prayer":    {}, // perks.go
-	"mana_conduit":         {}, // perks_cleric.go
+	"mana_conduit":         {}, // perks_icons.go (owner buff-icon case arm); mana-regen bonus itself is now data-driven via PerkDef.Auras (perk_aura_stat_cache.go) — see perkHasTypedBehavior
 	"divine_aegis":         {}, // perks.go
 	"divine_healer":        {}, // perks_cleric.go
 	"restoration_aura":     {}, // perks.go
@@ -134,7 +137,13 @@ var wiredPerkIDs = map[string]struct{}{
 
 	// ─── acolyte / siphoner (perks_siphoner.go) ──────────────────────────
 	"lingering_hex":       {}, // also perks.go
-	"mark_of_weakness":    {}, // also perks.go
+	// mark_of_weakness is NOT listed here anymore: its last Go handler arm
+	// (the hand-wired debuff-icon case in activeDebuffIconsLocked,
+	// perks_icons.go) was deleted once the ability's own apply_status action
+	// started authoring icon:"debuff-mark-of-weakness"/iconKind:"debuff"
+	// directly (generic authored-status icon emission, same file). It is now
+	// wired purely via perkHasTypedBehavior (PerkDef.GrantsAbilities is
+	// non-empty) — see perk_wired_test.go for the regression guard.
 	"soul_leech":          {},
 	"withering_beam":      {},
 	"chain_siphon":        {},

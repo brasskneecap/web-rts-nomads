@@ -2,11 +2,21 @@
   "id": "mana_conduit",
   "displayName": "Mana Conduit",
   "description": "Allies within the aura (including the Cleric) regenerate bonus mana.",
-  "tooltipTemplate": "Allies within {radiusPixels} regenerate an additional {bonusManaRegen:1} mana per second. Multiple Mana Conduits do not stack; the strongest aura wins.",
   "icon": "perk-mana-conduit",
   "config": {
     "bonusManaRegen": 2,
     "radiusPixels": 120
   },
+  "auras": [
+    {
+      "radius": 120,
+      "targets": "allies",
+      "includeSelf": true,
+      "stacking": "max",
+      "statModifiers": [
+        { "stat": "manaRegen", "op": "add", "value": 2 }
+      ]
+    }
+  ],
   "wired": false
 }

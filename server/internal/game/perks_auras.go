@@ -5,199 +5,20 @@ import "math"
 // ═════════════════════════════════════════════════════════════════════════════
 // AURA AND REDIRECT PERK INFRASTRUCTURE
 //
-// This file implements the per-tick aura cache for guardian_aura, the
-// damage-redirect hook for pain_share, and the banner effect helpers for
-// rallying_banner.
+// This file implements the damage-redirect hook for pain_share and the
+// banner effect helpers for rallying_banner. guardian_aura's own per-tick
+// cache used to live here (rebuildGuardianAuraCacheLocked / guardianAuraValue
+// / perkBonusArmorFromAurasLocked / perkArmorPercentBonusFromAurasLocked) —
+// it has been migrated to the generic, data-driven PerkDef.Auras vocabulary
+// resolved by perk_aura_stat_cache.go's rebuildAuraStatCacheLocked (statArmor
+// / statArmorPercent), the same engine zealous_march, mana_conduit, and
+// sanctuary already use. See perks_defense.go's effectiveArmorLocked for the
+// fold site and perk_aura_migration_test.go for the characterization proof
+// against the frozen pre-migration algorithm (kept there as a test-only
+// oracle).
 //
 // All functions must be called under s.mu (read or write) lock.
 // ═════════════════════════════════════════════════════════════════════════════
-
-// guardianAuraValue holds the two independent armor bonus dimensions that
-// guardian_aura contributes to a recipient unit. Both are taken as max
-// independently across all covering auras (see rebuildGuardianAuraCacheLocked).
-type guardianAuraValue struct {
-	FlatArmor    int     // total flat armor bonus from the strongest aura (per dimension)
-	PercentArmor float64 // total percent armor bonus (e.g. 0.20 = +20% of base armor)
-	// Sources is the count of distinct guardian_aura emitters covering this
-	// recipient — used by activeBuffIconsLocked to render a stack-count
-	// badge when multiple overlapping auras stack on the same ally. The
-	// mechanical armor bonus still uses max-per-dimension (not a sum), so
-	// this count is purely a HUD signal.
-	Sources int
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// guardian_aura — per-tick cache rebuild
-//
-// rebuildGuardianAuraCacheLocked rebuilds s.guardianAuraCache from scratch
-// each tick using a three-phase algorithm designed for determinism:
-//
-// Phase 1 — Snapshot:
-//
-//	Iterate s.Units in slice order; collect each alive, visible unit that owns
-//	guardian_aura as an aura source. Record base radius, base flat/percent armor,
-//	and synergy config values. No writes to guardianAuraCache in this phase.
-//
-// Phase 2 — Companion counting:
-//
-//	For each source, count OTHER sources with the same OwnerID whose position
-//	is within THIS source's BASE radius (dist² ≤ baseR²). This is the critical
-//	rule: companion detection always uses baseR, never the effective radius,
-//	to prevent recursive radius inflation. Compute effR, effFlat, and effPercent
-//	from the count and store on the snapshot entry. Phase 2 reads only from
-//	Phase 1 snapshot data — never from other sources' in-progress values.
-//
-// Phase 3 — Fan-out:
-//
-//	Iterate sources again (slice order). For each source, iterate s.Units and
-//	update cache[allyID] by taking max independently for each dimension for
-//	every allied, alive, visible unit (excluding the owner) within effR².
-//	Using max-per-dimension ensures a unit covered by multiple auras benefits
-//	from the best flat AND the best percent, not just the best overall bundle.
-//
-// Determinism guarantee: slice-order iteration + max() are both stable and
-// commutative. The cache produces bitwise-identical output for identical
-// s.Units state.
-//
-// Must be called under s.mu write lock. Called from Update(dt) before combat.
-// ─────────────────────────────────────────────────────────────────────────────
-type auraSource struct {
-	unitID     int
-	ownerID    string
-	x, y       float64
-	baseR      float64
-	baseFlat   float64
-	basePct    float64
-	rBonus     float64
-	flatBonus  float64
-	pctBonus   float64
-	effR       float64
-	effFlat    float64
-	effPercent float64
-}
-
-func (s *GameState) rebuildGuardianAuraCacheLocked() {
-	// Clear the cache; reuse the map allocation if the server is still running.
-	for k := range s.guardianAuraCache {
-		delete(s.guardianAuraCache, k)
-	}
-
-	def := perkDefByID("guardian_aura")
-	if def == nil {
-		return
-	}
-
-	// Phase 1 — Snapshot all alive, visible units with guardian_aura.
-	var sources []auraSource
-	for _, u := range s.Units {
-		if u == nil || u.HP <= 0 || !u.Visible {
-			continue
-		}
-		if !containsString(u.PerkIDs, "guardian_aura") {
-			continue
-		}
-		sources = append(sources, auraSource{
-			unitID:    u.ID,
-			ownerID:   u.OwnerID,
-			x:         u.X,
-			y:         u.Y,
-			baseR:     def.Config["radius"],
-			baseFlat:  def.Config["bonusArmor"],
-			basePct:   def.Config["armorPercent"],
-			rBonus:    def.Config["synergyRadiusBonus"],
-			flatBonus: def.Config["synergyArmorBonus"],
-			pctBonus:  def.Config["synergyArmorPercentBonus"],
-		})
-	}
-
-	if len(sources) == 0 {
-		return
-	}
-
-	// Phase 2 — Count companions within BASE radius; compute effR, effFlat, effPercent.
-	// A companion is another source with the SAME ownerID within baseR² of
-	// THIS source's position. We read only from the Phase 1 snapshot (baseR,
-	// not any effR computed earlier in this loop) to prevent recursive feedback.
-	for i := range sources {
-		companions := 0
-		baseRSq := sources[i].baseR * sources[i].baseR
-		for j := range sources {
-			if i == j {
-				continue
-			}
-			if sources[j].ownerID != sources[i].ownerID {
-				continue
-			}
-			dx := sources[j].x - sources[i].x
-			dy := sources[j].y - sources[i].y
-			if dx*dx+dy*dy <= baseRSq {
-				companions++
-			}
-		}
-		sources[i].effR = sources[i].baseR + float64(companions)*sources[i].rBonus
-		sources[i].effFlat = sources[i].baseFlat + float64(companions)*sources[i].flatBonus
-		sources[i].effPercent = sources[i].basePct + float64(companions)*sources[i].pctBonus
-	}
-
-	// Phase 3 — Fan-out: for each source, mark allied units within effR².
-	// Owner is excluded (owner does NOT benefit from their own aura).
-	// Max is taken per dimension independently: an ally covered by two auras
-	// gets the best flat from whichever source has the highest flat, AND the
-	// best percent from whichever source has the highest percent — even if
-	// they are different sources.
-	for i := range sources {
-		effRSq := sources[i].effR * sources[i].effR
-		for _, u := range s.Units {
-			if u == nil || u.HP <= 0 || !u.Visible {
-				continue
-			}
-			if u.ID == sources[i].unitID {
-				continue // owner excluded from own aura
-			}
-			if u.OwnerID != sources[i].ownerID {
-				continue // enemies excluded
-			}
-			dx := u.X - sources[i].x
-			dy := u.Y - sources[i].y
-			if dx*dx+dy*dy > effRSq {
-				continue
-			}
-			// max per dimension independently; count sources for the HUD.
-			existing := s.guardianAuraCache[u.ID]
-			flat := int(sources[i].effFlat)
-			if flat > existing.FlatArmor {
-				existing.FlatArmor = flat
-			}
-			if sources[i].effPercent > existing.PercentArmor {
-				existing.PercentArmor = sources[i].effPercent
-			}
-			existing.Sources++
-			s.guardianAuraCache[u.ID] = existing
-		}
-	}
-}
-
-// perkBonusArmorFromAurasLocked returns the total flat armor bonus the unit
-// receives from any guardian_aura covering it this tick. Reads from the
-// pre-built guardianAuraCache. Called from effectiveArmorLocked.
-// Must be called under s.mu (read or write) lock.
-func (s *GameState) perkBonusArmorFromAurasLocked(unit *Unit) int {
-	if unit == nil {
-		return 0
-	}
-	return s.guardianAuraCache[unit.ID].FlatArmor
-}
-
-// perkArmorPercentBonusFromAurasLocked returns the total fractional armor
-// bonus (e.g. 0.20 = +20% of base armor) the unit receives from any
-// guardian_aura covering it this tick. Called from effectiveArmorLocked.
-// Must be called under s.mu (read or write) lock.
-func (s *GameState) perkArmorPercentBonusFromAurasLocked(unit *Unit) float64 {
-	if unit == nil {
-		return 0
-	}
-	return s.guardianAuraCache[unit.ID].PercentArmor
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pain_share — damage redirect hook
@@ -286,11 +107,19 @@ func (s *GameState) perkRedirectIncomingDamageLocked(target *Unit, damage int, s
 	// (damage_pipeline.go) for the full argument and its contrast with
 	// retaliation's reflected counter-hit, which is NOT propagated (a brand
 	// new damage instance, not this one redirected).
+	//
+	// Category is propagated for the exact same reason: this redirect is not
+	// a new perk-created damage instance (contrast savage_strikes/whirlwind/
+	// cleave/retaliation, which ARE DamageCategoryPerk) — it is src's own
+	// damage, fanned out to a different victim, so it keeps src's Category
+	// (basic attack stays basic attack, an ability's hit stays that ability's
+	// hit, etc.) rather than being hard-coded to Perk.
 	redirectSrc := DamageSource{
 		AttackerUnitID:     src.AttackerUnitID,
 		AttackerBuildingID: src.AttackerBuildingID,
 		AttackerTrapID:     src.AttackerTrapID,
 		Kind:               "pain_share_redirect",
+		Category:           src.Category,
 		SourceAbilityID:    src.SourceAbilityID,
 	}
 	s.applyUnitDamageWithSourceLocked(best, redirected, redirectSrc)
@@ -327,65 +156,13 @@ func (s *GameState) perkBonusArmorFromBannersLocked(unit *Unit) int {
 	return total
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// sanctuary — ranged damage reduction aura
-//
-// perkRangedDamageMultiplierFromAurasLocked returns the outgoing-damage
-// multiplier that sanctuary auras impose on an incoming projectile hit. Only
-// projectile-Kind damage is ever reduced (src.Kind == "projectile"); melee,
-// trap, ability, and all other kinds return 1.0 with no work.
-//
-// Algorithm: scan s.Units in slice order for alive, visible, same-team units
-// that own sanctuary and are within their configured radiusPixels of the
-// target. Track the single strongest reduction (max-wins, no-stack) so two
-// overlapping sanctuaries use the better reduction, not the sum. Returns
-// 1.0 - bestReductionPercent (e.g. 0.75 for 25% reduction).
-//
-// Called from applyUnitDamageWithSourceLocked after mark amplification and
-// before flat reduction, so sanctuary reduces the full post-mark damage.
-// Must be called under s.mu write lock.
-// ─────────────────────────────────────────────────────────────────────────────
-func (s *GameState) perkRangedDamageMultiplierFromAurasLocked(target *Unit, src DamageSource) float64 {
-	if src.Kind != "projectile" {
-		return 1.0 // only projectile damage is mitigated by sanctuary
-	}
-	if target == nil {
-		return 1.0
-	}
-
-	def := perkDefByID("sanctuary")
-	if def == nil {
-		return 1.0
-	}
-
-	bestReduction := 0.0
-	for _, u := range s.Units {
-		if u == nil || u.HP <= 0 || !u.Visible {
-			continue
-		}
-		if !containsString(u.PerkIDs, "sanctuary") {
-			continue
-		}
-		// Aura must cover the target, not the source; same-team requirement.
-		if !s.unitsFriendlyLocked(u, target) {
-			continue
-		}
-		radius := def.Config["radiusPixels"]
-		dx := u.X - target.X
-		dy := u.Y - target.Y
-		if dx*dx+dy*dy > radius*radius {
-			continue
-		}
-		reduction := def.Config["damageReductionPercent"]
-		if reduction > bestReduction {
-			bestReduction = reduction
-		}
-	}
-	if bestReduction <= 0 {
-		return 1.0
-	}
-	return 1.0 - bestReduction
-}
+// sanctuary — ranged damage reduction aura — migrated to the generic,
+// data-driven PerkDef.Auras vocabulary (perk_aura_stat_cache.go /
+// statProjectileDamageReduction). See perks_defense.go's Step 3b for the
+// fold site (the src.Kind == "projectile" gate lives there now, since the
+// generic aura cache has no notion of damage kind) and
+// perk_aura_migration_test.go for the characterization proof against the
+// frozen pre-migration algorithm.
 
 // perkAttackSpeedBonusFromBannersLocked returns the total attack-speed bonus
 // this unit receives from all active rallying banners planted by the same player.

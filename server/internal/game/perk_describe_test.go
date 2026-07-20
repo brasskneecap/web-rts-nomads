@@ -237,10 +237,11 @@ func TestDescribePerk_Auras_Synthetic(t *testing.T) {
 	}
 }
 
-// TestDescribePerk_Auras_EnemiesTarget_NoStacking confirms the "enemies"
-// target label and that omitting PerAdditionalSource (zero — the default)
-// produces no stacking clause at all.
-func TestDescribePerk_Auras_EnemiesTarget_NoStacking(t *testing.T) {
+// TestDescribePerk_Auras_EnemiesTarget_NoPerSourceStacking confirms the
+// "enemies" target label and that omitting PerAdditionalSource (zero — the
+// default) renders the max-wins stacking rule instead of an "Each
+// additional..." per-source clause.
+func TestDescribePerk_Auras_EnemiesTarget_NoPerSourceStacking(t *testing.T) {
 	def := PerkDef{
 		ID: "synthetic_enemy_aura",
 		Auras: []PerkAura{{
@@ -252,12 +253,12 @@ func TestDescribePerk_Auras_EnemiesTarget_NoStacking(t *testing.T) {
 		}},
 	}
 	got := describePerk(def)
-	want := "Enemies within 80 gain -3 Armor."
+	want := "Enemies within 80 gain -3 Armor. Multiple sources do not stack; the strongest aura wins."
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 	if strings.Contains(got, "additional") {
-		t.Errorf("no PerAdditionalSource authored — should not render a stacking clause: %q", got)
+		t.Errorf("no PerAdditionalSource authored — should not render a per-source stacking clause: %q", got)
 	}
 }
 
@@ -299,6 +300,47 @@ func TestDescribePerk_ZealousMarch_MentionsRadiusAndStacking(t *testing.T) {
 	}
 	if !strings.Contains(got, "additional") {
 		t.Errorf("zealous_march: expected a stacking clause (PerAdditionalSource > 0) in %q", got)
+	}
+}
+
+// TestDescribePerk_ManaConduit_MentionsRadiusTargetsAndMaxWinsRule is the
+// real-catalog regression this task's Part 1 targets: mana_conduit's
+// tooltipTemplate is deleted once describePerk conveys everything it did —
+// the amount, the radius, who it affects, and the no-stack/max-wins rule.
+// Expectations are derived from the perk's own typed Auras data, never a
+// pinned balance literal.
+func TestDescribePerk_ManaConduit_MentionsRadiusTargetsAndMaxWinsRule(t *testing.T) {
+	def := requirePerkDef(t, "mana_conduit")
+	if len(def.Auras) != 1 || len(def.Auras[0].StatModifiers) != 1 {
+		t.Fatalf("mana_conduit: expected exactly one aura with one stat modifier, got %+v", def.Auras)
+	}
+	aura := def.Auras[0]
+	sm := aura.StatModifiers[0]
+	if aura.PerAdditionalSource != 0 {
+		t.Fatal("mana_conduit: PerAdditionalSource must be 0 for the max-wins assertion below to be meaningful")
+	}
+
+	got := describePerk(def)
+	if strings.TrimSpace(got) == "" {
+		t.Fatal("mana_conduit: generated description is empty")
+	}
+
+	wantRadius := trimFloat(aura.Radius)
+	if !strings.Contains(got, wantRadius) {
+		t.Errorf("mana_conduit: missing radius %q in %q", wantRadius, got)
+	}
+
+	wantAmount := describeAuraStatModifierClause(sm)
+	if !strings.Contains(got, wantAmount) {
+		t.Errorf("mana_conduit: missing amount clause %q in %q", wantAmount, got)
+	}
+
+	if !strings.Contains(got, auraTargetLabel(aura.Targets)) {
+		t.Errorf("mana_conduit: missing target label %q in %q", auraTargetLabel(aura.Targets), got)
+	}
+
+	if !strings.Contains(got, "do not stack") || !strings.Contains(got, "strongest") {
+		t.Errorf("mana_conduit: expected the max-wins stacking rule in %q", got)
 	}
 }
 

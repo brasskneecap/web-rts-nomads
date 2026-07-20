@@ -1489,7 +1489,14 @@ func (s *GameState) tickPierceProjectileLocked(proj *Projectile, dt float64, dea
 			// directly. DamageType rides on the projectile (snapshot of the
 			// attacker's AttackDamageType at fire time) so the popup colors
 			// correctly even after the firing unit is gone.
-			s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "pierce", DamageType: proj.DamageType})
+			// Pierce is a marksman perk that reshapes the ARROW (a fixed
+			// straight-line corridor instead of a homing single-target bolt),
+			// not a bonus/secondary hit — every victim along the corridor,
+			// including the primary, is this attack's own damage. Still
+			// DamageCategoryBasicAttack, matching resolveAttackHitLocked's
+			// treatment below (the normal, attacker-alive path for the same
+			// arrow).
+			s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "pierce", Category: DamageCategoryBasicAttack, DamageType: proj.DamageType})
 			if target.HP <= 0 {
 				target.HP = 0
 				*deadUnitIDs = append(*deadUnitIDs, target.ID)
@@ -1609,9 +1616,19 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		if kind == "" {
 			kind = "item-proc"
 		}
+		// Category mirrors kind's own SourceKind branch: an ability bolt
+		// (fireAbilityProjectileLocked, SourceKind "ability") is
+		// DamageCategoryAbility; a plain equipment/item proc bolt
+		// (SourceKind == "") is DamageCategoryItem. SourceKind only ever
+		// takes these two values (see its doc comment above).
+		category := DamageCategoryItem
+		if proj.SourceKind == "ability" {
+			category = DamageCategoryAbility
+		}
 		landed := s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{
 			AttackerUnitID: proj.OwnerUnitID,
 			Kind:           kind,
+			Category:       category,
 			DamageType:     proj.DamageType,
 			// Minor bolts (Arcane Missiles) suppress the main color hint and
 			// render as a small side-falling popup instead of the big number.
@@ -1682,7 +1699,11 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		// DamageType carried on the projectile (snapshot of attacker's
 		// AttackDamageType at fire time) so the popup colors correctly
 		// whether or not the firing unit is still alive when it lands.
-		s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "projectile", DamageType: proj.DamageType})
+		// Reached only when proj.SkipOnHitEffects is false — every ability/
+		// item-proc bolt sets that flag and returns above, so this path is
+		// exclusively a normal ranged basic-attack arrow whose firer died
+		// mid-flight.
+		s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "projectile", Category: DamageCategoryBasicAttack, DamageType: proj.DamageType})
 		if target.HP <= 0 {
 			target.HP = 0
 			*deadUnitIDs = append(*deadUnitIDs, target.ID)

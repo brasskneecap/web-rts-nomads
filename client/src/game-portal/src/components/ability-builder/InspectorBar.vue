@@ -69,6 +69,42 @@
               :catalogs="builder.catalogs.value"
               @update:model-value="(v) => commitTriggerTiming({ frame: v as number })"
             />
+
+            <!-- Damage Scope: on_damage_dealt-only (see isDamageDealtTrigger).
+                 Hidden for every other trigger type — the server validator
+                 rejects damageScope there outright, so this mirrors that by
+                 never offering what it refuses. -->
+            <template v-if="isDamageDealtTrigger">
+              <p class="ib-subhead">Damage Scope</p>
+              <p class="ib-hint">Empty = fires on any damage this unit deals.</p>
+              <div class="ib-damage-scope__categories" data-test="damage-scope-categories">
+                <label v-for="cat in damageCategoryOptions" :key="cat" class="ed-check">
+                  <input
+                    type="checkbox"
+                    :checked="damageScopeCategories.has(cat)"
+                    @change="toggleDamageCategory(cat, ($event.target as HTMLInputElement).checked)"
+                  />
+                  {{ humanizeDamageCategory(cat) }}
+                </label>
+              </div>
+              <EditorField label="Specific Ability" hint="(blank = any)" :for-id="abilityIdFieldId">
+                <input
+                  :id="abilityIdFieldId"
+                  type="text"
+                  :list="abilityIdListId"
+                  placeholder="ability id"
+                  :value="damageScopeAbilityIdText"
+                  @input="onDamageScopeAbilityIdInput"
+                  @change="commitDamageScopeAbilityId"
+                />
+              </EditorField>
+              <datalist :id="abilityIdListId">
+                <option v-for="id in abilityIdOptions" :key="id" :value="id" />
+              </datalist>
+              <p v-if="damageScopeContradiction" class="ib-warning" data-test="damage-scope-contradiction">
+                {{ damageScopeContradiction }}
+              </p>
+            </template>
           </SectionCard>
           <p v-else class="ib-hint">This trigger no longer exists — select another node.</p>
         </template>
@@ -105,6 +141,49 @@
                   :saved-names="savedNames"
                   @update:model-value="commitActionTarget"
                 />
+                <!-- apply_mark's "icon" field: a VISUAL picker (the actual
+                     overhead art, not an id string), which also derives and
+                     commits iconKind from the chosen id's prefix in the same
+                     write — see commitApplyMarkIcon's doc comment. The
+                     server's separate `iconKind` schema field is filtered
+                     out of fieldSections below for this action type, since
+                     nothing here still needs a manual control for it. -->
+                <EditorField
+                  v-else-if="isApplyMarkAction && f.key === 'icon'"
+                  :label="f.label"
+                >
+                  <OverheadIconPicker
+                    :options="enumsValue.icon ?? []"
+                    :model-value="typeof selectedAction.config?.icon === 'string' ? selectedAction.config.icon : ''"
+                    :aria-label="f.label"
+                    @update:model-value="commitApplyMarkIcon"
+                  />
+                </EditorField>
+                <!-- change_stat's "stat" field: a CUSTOM control, not the
+                     generic schema-driven enum. The server's schema Options
+                     for this field is ListStatIDs() — every registered stat,
+                     including aura-only ones (armorPercent,
+                     projectileDamageReduction) — because change_stat's own
+                     Validate rejects those at save time rather than the
+                     schema hiding them. Mirrors selfStatDefs()'s exclusion
+                     (the same rule a perk's top-level Unit Stat Modifiers
+                     dropdown and the old apply_status "Change Status" editor
+                     both used) so the dropdown never offers a stat this
+                     action would fail validation for. -->
+                <EditorField
+                  v-else-if="isChangeStatAction && f.key === 'stat'"
+                  :label="f.label"
+                  :for-id="changeStatStatFieldId"
+                >
+                  <select
+                    :id="changeStatStatFieldId"
+                    :value="selectedAction.config?.stat ?? ''"
+                    aria-label="Stat"
+                    @change="(e) => commitActionConfig('stat', (e.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="d in selfStatDefsList" :key="d.id" :value="d.id">{{ d.label }}</option>
+                  </select>
+                </EditorField>
                 <SchemaField
                   v-else
                   :field="f"
@@ -155,10 +234,12 @@
 //
 // The action section stays fully schema-driven via schemaForAction — adding
 // a new action config field server-side needs no client change here.
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { AbilityActionDef, AbilityTriggerDef, TargetQueryDef, TriggerType } from '@/game/abilities/program/abilityProgram'
 import { fieldVisible, schemaForAction, type SchemaField as SchemaFieldDescriptor } from '@/game/abilities/program/programSchema'
 import { issuesForPath, type ValidationIssue } from '@/game/abilities/program/programValidation'
+import { selfStatDefs } from '@/game/stats/statRegistry'
+import EditorField from '@/components/editor/EditorField.vue'
 import SectionCard from '@/components/editor/SectionCard.vue'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
 import {
@@ -169,6 +250,9 @@ import {
   namesSavedByAction,
   resolveNode,
 } from './programTree'
+import { humanizeActionType } from './summarizeAction'
+import { iconKindForId } from '@/game/maps/actionIconDefs'
+import OverheadIconPicker from './OverheadIconPicker.vue'
 import SchemaField from './SchemaField.vue'
 
 const builder = useAbilityBuilderContext()
@@ -258,6 +342,107 @@ function commitTriggerTiming(patch: Partial<NonNullable<AbilityTriggerDef['timin
   builder.updateTrigger(selected.value.path, { timing: { ...selectedTrigger.value.timing, ...patch } })
 }
 
+// ── Trigger: on_damage_dealt scope (damageScope) ─────────────────────────
+// Follows the SAME "trigger-type-specific optional field" precedent as
+// Timing above (timingKind) — DamageScope is only ever meaningful on an
+// on_damage_dealt trigger (see AbilityTriggerDef.damageScope's doc comment),
+// so this whole block is gated on isDamageDealtTrigger in the template and
+// never renders for any other trigger type — mirroring the server validator,
+// which rejects damageScope there outright (invalid_damage_scope_placement).
+
+// Fallback for when the schema hasn't loaded yet, mirroring
+// triggerTypeOptions' own fallback above. Matches the server's
+// ProgramEnums()["damageCategories"] (ability_program_enums.go), itself
+// sourced from allDamageCategories (damage_pipeline.go).
+const CURATED_DAMAGE_CATEGORIES = ['basic_attack', 'ability', 'trap', 'building', 'perk', 'item']
+
+const damageCategoryOptions = computed<string[]>(() => {
+  const fromSchema = builder.schema.value?.enums.damageCategories
+  return fromSchema && fromSchema.length > 0 ? fromSchema : CURATED_DAMAGE_CATEGORIES
+})
+
+const isDamageDealtTrigger = computed(() => selectedTrigger.value?.type === 'on_damage_dealt')
+
+const damageScopeCategories = computed<Set<string>>(
+  () => new Set(selectedTrigger.value?.damageScope?.categories ?? []),
+)
+
+// humanizeDamageCategory reuses the same snake_case -> Title Case rule as
+// action/trigger types ("basic_attack" -> "Basic Attack") — the humanization
+// is generic, not action-specific (see FlowTriggerCard.vue's identical reuse
+// for trigger types).
+const humanizeDamageCategory = humanizeActionType
+
+// abilityIdOptions: every authored ability's id, offered as the "Specific
+// Ability" datalist — sourced from the SAME loaded ability list
+// RiderEditor.vue's own ability-id datalist is built from
+// (fetchAuthoredAbilityDefs, surfaced here via useAbilityBuilder's
+// `abilities`), so no separate fetch is needed.
+const abilityIdOptions = computed<string[]>(() => builder.abilities.value.map((a) => a.id))
+
+const abilityIdListId = 'ib-damage-scope-ability-ids'
+const abilityIdFieldId = 'ib-damage-scope-ability-id'
+
+// Local editable copy of damageScope.abilityId, committed on blur/Enter (the
+// same commit-on-change discipline SchemaField's text controls use — see its
+// doc comment: committing per keystroke would flood the undo stack with one
+// entry per character typed). Re-synced whenever the SELECTED trigger's own
+// scope changes externally (switching triggers, undo/redo).
+const damageScopeAbilityIdText = ref(selectedTrigger.value?.damageScope?.abilityId ?? '')
+watch(
+  () => selectedTrigger.value?.damageScope?.abilityId,
+  (v) => {
+    damageScopeAbilityIdText.value = v ?? ''
+  },
+)
+
+function onDamageScopeAbilityIdInput(e: Event) {
+  damageScopeAbilityIdText.value = (e.target as HTMLInputElement).value
+}
+
+// commitDamageScope merges `patch` onto the trigger's EXISTING damageScope
+// and OMITS empty fields entirely: an empty categories selection is dropped
+// (never stored as `[]`), a blank/whitespace abilityId is dropped, and the
+// whole `damageScope` key is omitted once both end up empty — so an
+// untouched on_damage_dealt trigger round-trips with no damageScope key at
+// all, matching this editor's omit-when-default convention (see
+// commitActionOutput's outputs.targets, above).
+function commitDamageScope(patch: { categories?: string[]; abilityId?: string }) {
+  if (!selectedTrigger.value || selected.value.kind !== 'trigger') return
+  const merged = { ...selectedTrigger.value.damageScope, ...patch }
+  const categories = merged.categories && merged.categories.length > 0 ? merged.categories : undefined
+  const abilityId = merged.abilityId?.trim() ? merged.abilityId.trim() : undefined
+  const next = categories || abilityId ? { ...(categories ? { categories } : {}), ...(abilityId ? { abilityId } : {}) } : undefined
+  builder.updateTrigger(selected.value.path, { damageScope: next })
+}
+
+function toggleDamageCategory(cat: string, checked: boolean) {
+  const next = new Set(damageScopeCategories.value)
+  if (checked) next.add(cat)
+  else next.delete(cat)
+  commitDamageScope({ categories: [...next] })
+}
+
+function commitDamageScopeAbilityId() {
+  commitDamageScope({ abilityId: damageScopeAbilityIdText.value })
+}
+
+// damageScopeContradiction: an inline, NON-BLOCKING note mirroring the
+// server's "contradictory_damage_scope" validation rule
+// (ability_program_validate.go) — an abilityId set alongside a non-empty
+// Categories list that excludes "ability" describes a damage instance that
+// can never occur (ability-attributed damage always carries category
+// "ability"). This deliberately does NOT auto-correct the author's Categories
+// selection — silently rewriting a field the author didn't touch would be
+// more surprising than a note; the server remains the final validator at
+// Save.
+const damageScopeContradiction = computed<string>(() => {
+  const scope = selectedTrigger.value?.damageScope
+  if (!scope?.abilityId || !scope.categories || scope.categories.length === 0) return ''
+  if (scope.categories.includes('ability')) return ''
+  return 'A specific ability always deals damage in category "Ability" — add "Ability" to Categories (or clear Categories) so this scope can actually fire.'
+})
+
 // ── Action: schema-driven fields + targeting ────────────────────────────────
 const actionSchema = computed(() => {
   const action = selectedAction.value
@@ -310,6 +495,12 @@ const fieldSections = computed<[string, SchemaFieldDescriptor[]][]>(() => {
   const config = selectedAction.value?.config ?? {}
   const groups = new Map<string, SchemaFieldDescriptor[]>()
   for (const f of fields) {
+    // apply_mark's iconKind is now fully derived from the chosen icon's
+    // prefix (see commitApplyMarkIcon) — the server still publishes it as a
+    // schema field (it's still the stored/validated key), but nothing here
+    // needs a manual control for it any more, so it's dropped from the
+    // rendered fields entirely rather than kept as a dead/hidden control.
+    if (isApplyMarkAction.value && f.key === 'iconKind') continue
     if (!fieldVisible(f, config)) continue
     const section = f.section || 'Properties'
     const list = groups.get(section) ?? []
@@ -324,10 +515,57 @@ function commitActionConfig(key: string, value: unknown) {
   builder.updateActionConfig(selected.value.path, { [key]: value })
 }
 
+// commitApplyMarkIcon: apply_mark's icon/iconKind pairing (see the template's
+// doc comment above the OverheadIconPicker that calls this). iconKind is now
+// DERIVED from the chosen icon id's "buff-"/"debuff-" prefix via
+// iconKindForId, rather than authored separately — the id encodes the
+// channel already (there's no such thing as a "debuff-*" id used as a buff),
+// so asking the author to also pick iconKind was just a second place the two
+// could go stale relative to each other. Clearing the icon (empty string / no
+// selection) drops iconKind in the SAME commit for the same reason. If a
+// future id carries neither prefix, iconKindForId returns undefined and this
+// falls back to whatever iconKind was already stored — never silently wiping
+// a previously-authored value it can't re-derive. This used to be
+// apply_status's own "icon" pairing — that action no longer carries
+// icon/iconKind at all (see applyStatusConfig's doc comment,
+// ability_exec_actions.go): overhead marks are authored via a dedicated
+// apply_mark action nested inside an apply_status_duration instead.
+function commitApplyMarkIcon(value: unknown) {
+  if (!selectedAction.value || selected.value.kind !== 'action') return
+  const icon = typeof value === 'string' ? value : ''
+  if (!icon) {
+    builder.updateActionConfig(selected.value.path, { icon: undefined, iconKind: undefined })
+    return
+  }
+  const iconKind = iconKindForId(icon) ?? selectedAction.value.config?.iconKind
+  builder.updateActionConfig(selected.value.path, { icon, iconKind })
+}
+
 function commitActionTarget(value: unknown) {
   if (!selectedAction.value || selected.value.kind !== 'action') return
   builder.updateAction(selected.value.path, { target: value as TargetQueryDef })
 }
+
+// ── change_stat: custom "Stat" control ───────────────────────────────────────
+// change_stat is ONE stat modifier (stat/op/value/stage), valid only nested
+// inside an apply_status_duration's config.triggers (server-enforced — see
+// ability_status_duration.go's Validate). This used to be apply_status's
+// "Change Status" row-list editor (a list of PerkStatModifier-shaped rows);
+// now that the server model is "one change_stat action per stat change", each
+// action's inspector authors exactly one modifier — no row list needed.
+//
+// The "stat" field itself needs a CUSTOM control rather than the generic
+// schema-driven enum: the server's schema Options for it is ListStatIDs()
+// (every registered stat, including aura-only ones — change_stat's own
+// Validate rejects those at save time instead of the schema pre-filtering
+// them). selfStatDefs() is the single source of truth for "which stats have
+// a fold site outside an aura" (same list a perk's top-level Unit Stat
+// Modifiers section and PerkAura's contributions section both draw from), so
+// this dropdown reuses it directly rather than re-deriving the exclusion.
+const isChangeStatAction = computed(() => selectedAction.value?.type === 'change_stat')
+const isApplyMarkAction = computed(() => selectedAction.value?.type === 'apply_mark')
+const selfStatDefsList = selfStatDefs()
+const changeStatStatFieldId = 'ib-changestat-stat'
 
 // ── Save result (outputs.targets) ────────────────────────────────────────────
 // Action types whose Execute returns a meaningful target SET worth naming
@@ -462,4 +700,26 @@ function commitActionOutput(name: string) {
   line-height: 1.5;
   color: #e0b258;
 }
+
+/* Damage Scope's own mini-heading, distinguishing it from the Trigger card's
+   Type/Name/Timing fields above it without a whole separate SectionCard. */
+.ib-subhead {
+  margin: 6px 0 0;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ed-text-dim);
+}
+
+/* Damage category checkboxes, same wrapping-row treatment as SchemaField's
+   own .sf-checkgroup (not shared across component boundaries — scoped
+   styles don't cross them — so this is its own copy of the same rule). */
+.ib-damage-scope__categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
 </style>

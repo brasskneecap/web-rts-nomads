@@ -197,6 +197,10 @@ func TestDeterminism_SanctuaryMitigationAcrossReplays(t *testing.T) {
 		ally.Visible = true
 		startHP := ally.HP
 
+		// sanctuary is resolved via the per-tick generic aura cache
+		// (perk_aura_stat_cache.go) — must be rebuilt before a direct call
+		// into applyUnitDamageWithSourceLocked outside Update().
+		s.rebuildAuraStatCacheLocked()
 		s.applyUnitDamageWithSourceLocked(ally, 100, DamageSource{Kind: "projectile"})
 		return startHP - ally.HP
 	}

@@ -480,6 +480,7 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 				s.applyUnitDamageWithSourceLocked(target, tickDamage, DamageSource{
 					AttackerUnitID:  unit.ID,
 					Kind:            "ability",
+					Category:        DamageCategoryAbility,
 					DamageType:      def.DamageType.OrPhysical(),
 					SourceAbilityID: def.ID,
 				})

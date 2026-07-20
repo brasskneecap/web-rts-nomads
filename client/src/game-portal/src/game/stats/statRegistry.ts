@@ -19,28 +19,39 @@ export type StatDef = {
    *  number. See the Go registry's doc comment for the full per-stat
    *  reasoning — this mirror must stay in sync with it by hand. */
   isFraction: boolean
+  /** Mirrors Go's statDef.AuraOnly (stat_modifiers.go): true when the stat
+   *  has NO top-level fold site — it is only ever consumed via the aura
+   *  cache, never by a unit's own top-level PerkDef.StatModifiers entry. The
+   *  server REJECTS such a stat at catalog load if it's authored at top
+   *  level (validatePerkDef), so the editor must not offer it there either —
+   *  see selfStatDefs()/allStatDefs() below. It remains valid, and must
+   *  still be offered, inside a PerkAura's stat contributions. */
+  auraOnly: boolean
 }
 
 /** Registered stats in the same order as the Go statRegistry (combat first,
  *  then economy/workers). */
 export const STAT_DEFS: StatDef[] = [
-  { id: 'healthRegen', label: 'Health Regen', isFraction: false },
-  { id: 'manaRegen', label: 'Mana Regen', isFraction: false },
-  { id: 'moveSpeed', label: 'Move Speed', isFraction: false },
-  { id: 'attackSpeed', label: 'Attack Speed', isFraction: false },
-  { id: 'damage', label: 'Damage', isFraction: false },
-  { id: 'armor', label: 'Armor', isFraction: false },
-  { id: 'maxHp', label: 'Max Health', isFraction: false },
-  { id: 'maxMana', label: 'Max Mana', isFraction: false },
-  { id: 'attackRange', label: 'Attack Range', isFraction: false },
-  { id: 'critChance', label: 'Crit Chance', isFraction: true },
-  { id: 'critMultiplier', label: 'Crit Multiplier', isFraction: false },
-  { id: 'goldGatherRate', label: 'Gold Gather Rate', isFraction: false },
-  { id: 'woodGatherRate', label: 'Wood Gather Rate', isFraction: false },
-  { id: 'gatherSpeed', label: 'Gather Speed', isFraction: true },
-  { id: 'workerMoveSpeed', label: 'Worker Move Speed', isFraction: false },
-  { id: 'unitProductionSpeed', label: 'Unit Production Speed', isFraction: true },
-  { id: 'buildingConstructionSpeed', label: 'Building Construction Speed', isFraction: true },
+  { id: 'healthRegen', label: 'Health Regen', isFraction: false, auraOnly: false },
+  { id: 'manaRegen', label: 'Mana Regen', isFraction: false, auraOnly: false },
+  { id: 'moveSpeed', label: 'Move Speed', isFraction: false, auraOnly: false },
+  { id: 'attackSpeed', label: 'Attack Speed', isFraction: false, auraOnly: false },
+  { id: 'damage', label: 'Damage', isFraction: false, auraOnly: false },
+  { id: 'armor', label: 'Armor', isFraction: false, auraOnly: false },
+  { id: 'maxHp', label: 'Max Health', isFraction: false, auraOnly: false },
+  { id: 'maxMana', label: 'Max Mana', isFraction: false, auraOnly: false },
+  { id: 'attackRange', label: 'Attack Range', isFraction: false, auraOnly: false },
+  { id: 'critChance', label: 'Crit Chance', isFraction: true, auraOnly: false },
+  { id: 'critMultiplier', label: 'Crit Multiplier', isFraction: false, auraOnly: false },
+  { id: 'goldGatherRate', label: 'Gold Gather Rate', isFraction: false, auraOnly: false },
+  { id: 'woodGatherRate', label: 'Wood Gather Rate', isFraction: false, auraOnly: false },
+  { id: 'gatherSpeed', label: 'Gather Speed', isFraction: true, auraOnly: false },
+  { id: 'workerMoveSpeed', label: 'Worker Move Speed', isFraction: false, auraOnly: false },
+  { id: 'unitProductionSpeed', label: 'Unit Production Speed', isFraction: true, auraOnly: false },
+  { id: 'buildingConstructionSpeed', label: 'Building Construction Speed', isFraction: true, auraOnly: false },
+  { id: 'projectileDamageReduction', label: 'Projectile Damage Reduction', isFraction: true, auraOnly: true },
+  { id: 'armorPercent', label: 'Percent Armor', isFraction: true, auraOnly: true },
+  { id: 'healingReceived', label: 'Healing Received', isFraction: true, auraOnly: false },
 ]
 
 const LABEL_BY_ID = new Map(STAT_DEFS.map((d) => [d.id, d.label]))
@@ -56,6 +67,23 @@ export function statLabel(id: string): string {
  *  back to false — a bare number is honest, a fabricated percentage is not. */
 export function isFractionStat(id: string): boolean {
   return FRACTION_BY_ID.get(id) ?? false
+}
+
+/** Stat options for a perk's TOP-LEVEL (self) Unit Stat Modifiers section —
+ *  excludes aura-only stats, which the server rejects there (validatePerkDef,
+ *  perk_defs.go) because no top-level fold site ever reads them. Single
+ *  source of truth for "which stats belong in the self-modifiers dropdown";
+ *  do not filter STAT_DEFS inline in a component. */
+export function selfStatDefs(): StatDef[] {
+  return STAT_DEFS.filter((d) => !d.auraOnly)
+}
+
+/** Stat options for a PerkAura's stat contributions — every registered stat,
+ *  including aura-only ones (their valid, intended home). Single source of
+ *  truth for "which stats belong in the aura dropdown"; do not filter
+ *  STAT_DEFS inline in a component. */
+export function allStatDefs(): StatDef[] {
+  return STAT_DEFS
 }
 
 /** Stat operations as authored. */

@@ -537,6 +537,22 @@ func collectAllTriggerTypesForProductionGuard(prog *AbilityProgram) []TriggerTyp
 			for _, child := range ac.Triggers {
 				walkTrigger(child)
 			}
+		case ActionApplyStatusDuration:
+			d, ok := lookupActionDescriptor(ActionApplyStatusDuration)
+			if !ok {
+				return
+			}
+			cfg, err := d.Decode(a.Config)
+			if err != nil {
+				return
+			}
+			adc, ok := cfg.(applyStatusDurationConfig)
+			if !ok {
+				return
+			}
+			for _, child := range adc.Triggers {
+				walkTrigger(child)
+			}
 		}
 	}
 	walkTrigger = func(trig AbilityTriggerDef) {

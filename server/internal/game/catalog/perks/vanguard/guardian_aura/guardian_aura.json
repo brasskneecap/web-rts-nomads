@@ -12,5 +12,17 @@
     "synergyArmorPercentBonus": 0.05,
     "synergyRadiusBonus": 30
   },
+  "auras": [
+    {
+      "radius": 150,
+      "targets": "sameOwner",
+      "stacking": "max",
+      "synergyRadiusPerCompanion": 30,
+      "statModifiers": [
+        { "stat": "armor", "op": "add", "value": 15, "perCompanion": 5 },
+        { "stat": "armorPercent", "op": "add", "value": 0.2, "perCompanion": 0.05 }
+      ]
+    }
+  ],
   "wired": false
 }

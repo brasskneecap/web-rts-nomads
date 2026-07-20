@@ -130,8 +130,10 @@ package game
 //   • perks_defense.go   effectiveArmorLocked    — perkBonusArmorLocked,
 //                                                 perkArmorPercentBonusLocked,
 //                                                 perkBonusArmorFromBannersLocked,
-//                                                 perkBonusArmorFromAurasLocked,
-//                                                 perkArmorPercentBonusFromAurasLocked
+//                                                 unitAuraStatContributionLocked
+//                                                 (guardian_aura's flat/percent
+//                                                 armor, via statArmor /
+//                                                 statArmorPercent)
 //   • progression.go     addUnitXPLocked()      — assignUnitPerkLocked (on rank-up)
 //   • progression.go     applyRankModifiersLocked() — unitPerkStatModifiersLocked
 //                                                 (data-driven StatModifiers fold,
@@ -646,17 +648,15 @@ type UnitPerkState struct {
 	LingeringHexMoveMult          float64
 	LingeringHexAttackSpeedMult   float64
 
-	// Mark of Weakness (autonomous AoE armor + healing-received debuff).
-	// Owner-side cooldown / recipient-side affliction split mirrors
-	// Lingering Hex above. ArmorReduction subtracts from effectiveArmor-
-	// Locked while Remaining > 0; HealingReceivedMult scales every
-	// incoming heal applied via healUnitLocked / applyClericHealLocked.
-	// Both affliction values are cleared in the state.go cross-unit
-	// decay when Remaining reaches 0.
-	MarkOfWeaknessCooldownRemaining   float64
-	MarkOfWeaknessRemaining           float64
-	MarkOfWeaknessArmorReduction      int
-	MarkOfWeaknessHealingReceivedMult float64
+	// Mark of Weakness's owner-side cooldown / recipient-side affliction
+	// fields (MarkOfWeaknessCooldownRemaining/Remaining/ArmorReduction/
+	// HealingReceivedMult) used to live here, mirroring Lingering Hex above.
+	// Removed by the perk's migration to a granted ability
+	// (catalog/abilities/mark_of_weakness): the debuff is now an authored
+	// apply_status(StatModifiers) AbilityStatus (ability_status.go), read
+	// generically by effectiveArmorLocked / healUnitLocked via
+	// unitStatusStatModifiersLocked (perk_stat_modifiers.go) — no PerkState
+	// field, no bespoke cross-unit decay loop.
 
 	// ── Siphoner silver perks ───────────────────────────────────────────────
 	// chain_siphon — damage / heal are stateless (resolved fresh each tick),
@@ -1264,17 +1264,20 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			}
 
 		// ── siphoner bronze autonomous-fire perks ────────────────────────────
-		// Lingering Hex and Mark of Weakness pulse their AoE on a per-unit
-		// cooldown, similar in spirit to the Trapper's auto-trap placement.
-		// The handlers gate on cooldown, mana, and a valid anchor enemy
-		// (preferring the Siphoner's current channel target, else nearest
-		// hostile in castRange). No cast time, no projectile — purely an
-		// affliction stamp + cooldown reset on success.
+		// Lingering Hex pulses its AoE on a per-unit cooldown, similar in
+		// spirit to the Trapper's auto-trap placement. The handler gates on
+		// cooldown, mana, and a valid anchor enemy (preferring the
+		// Siphoner's current channel target, else nearest hostile in
+		// castRange). No cast time, no projectile — purely an affliction
+		// stamp + cooldown reset on success.
+		//
+		// mark_of_weakness intentionally has NO case here anymore: it now
+		// GRANTS a composable ability (catalog/abilities/mark_of_weakness,
+		// auto-cast via the generic tickUnitAutoCastLocked action-bar loop)
+		// instead of driving its own bespoke per-tick pulse — see
+		// perks_siphoner.go's stat-hook-helpers section doc comment.
 		case "lingering_hex":
 			s.tickLingeringHexPerkLocked(unit, def, dt)
-
-		case "mark_of_weakness":
-			s.tickMarkOfWeaknessPerkLocked(unit, def, dt)
 
 		case "amplify_damage":
 			// Siphoner silver: same autonomous AoE pattern as the bronze
@@ -1284,11 +1287,11 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			// damage pipeline via amplifyDamageTakenMultiplierLocked.
 			s.tickAmplifyDamagePerkLocked(unit, def, dt)
 
-		// mana_conduit intentionally has NO case here. It used to be a
-		// self-only per-tick regen, but it's now an aura — every mana
-		// regen tick (tickUnitManaRegenLocked in mana.go) folds in the
-		// recipient-queried aura bonus via manaConduitAuraBonusLocked, so
-		// the cleric and any covered ally automatically benefit. Keeping
+		// mana_conduit intentionally has NO case here. It is a fully
+		// data-driven aura (PerkDef.Auras) resolved by the generic per-tick
+		// cache (perk_aura_stat_cache.go) — mana.go's effectiveManaRegenLocked
+		// reads the aura contribution directly via unitAuraStatContributionLocked,
+		// so the cleric and any covered ally automatically benefit. Keeping
 		// the perk out of this dispatch ensures the bonus isn't double-
 		// applied (per-tick AND via regen).
 		}

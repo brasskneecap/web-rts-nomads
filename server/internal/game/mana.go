@@ -58,17 +58,32 @@ func (s *GameState) tickUnitManaRegenLocked(unit *Unit, dt float64) {
 
 // effectiveManaRegenLocked returns the unit's current passive mana regen
 // rate in mana/second, including any covering Mana Conduit aura bonus from
-// an allied Cleric (max-wins across multiple covering sources). Returns 0
-// when the unit has no mana pool. Shared between the regen tick and the
-// snapshot builder so the HUD's stat row always shows the same effective
-// rate the simulation will apply this tick.
+// an allied Cleric (max-wins across multiple covering sources — mana_conduit
+// carries no PerAdditionalSource, so this is pure max-wins with no stacking
+// term at all, unlike zealous_march). Returns 0 when the unit has no mana
+// pool. Shared between the regen tick and the snapshot builder so the HUD's
+// stat row always shows the same effective rate the simulation will apply
+// this tick.
+//
+// mana_conduit is fully data-driven: PerkDef.Auras (perk_defs.go, catalog
+// JSON) declares the radius/targets/self-inclusion/value, and the generic
+// per-tick cache (perk_aura_stat_cache.go) resolves it for every recipient
+// with zero perk-specific Go — see perks_cleric.go's mana_conduit section.
+// The read below lands at the EXACT arithmetic position the deleted bespoke
+// helper (manaConduitAuraBonusLocked) occupied: added into `rate` BEFORE the
+// zone/perk-stat-modifier (base + add) × mul fold runs. This is load-bearing
+// — see perk_aura_stat_cache.go's "ordering trap" doc and
+// perk_aura_migration_test.go's TestManaConduitMigration_ZoneAuraOrderingGuard
+// for why folding it through the generic zone pipeline instead would change
+// how it composes with an active zone manaRegen aura.
 //
 // Caller holds s.mu.
 func (s *GameState) effectiveManaRegenLocked(unit *Unit) float64 {
 	if unit == nil || unit.MaxMana <= 0 {
 		return 0
 	}
-	rate := unit.ManaRegenPerSecond + s.manaConduitAuraBonusLocked(unit)
+	auraBonus, _ := s.unitAuraStatContributionLocked(unit, statManaRegen)
+	rate := unit.ManaRegenPerSecond + auraBonus
 	// Zone-aura mana regen, folded read-on-demand as (base + add) × mul. Applied
 	// at this shared chokepoint so the regen tick and the HUD stat row agree.
 	//

@@ -1,0 +1,110 @@
+{
+  "id": "mark_of_weakness",
+  "displayName": "Mark of Weakness",
+  "description": "Mark every enemy within 90 of the target with Mark of Weakness for 6s: -50 armor and healing received reduced to 70%.",
+  "type": "spell",
+  "canTargetEnemies": true,
+  "castRange": 240,
+  "manaCost": 15,
+  "cooldown": 14,
+  "category": "offensive",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "closest_enemy_in_range",
+  "defaultAutoCast": true,
+  "icon": "perk-mark-of-weakness",
+  "casterAnimation": "Casting",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 240
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "sel",
+            "type": "select_targets",
+            "target": {
+              "source": "all_in_scene",
+              "origin": "initial_target_position",
+              "relations": [
+                "enemy"
+              ],
+              "radius": 90
+            },
+            "outputs": {
+              "targets": "marked"
+            }
+          },
+          {
+            "id": "mark",
+            "type": "apply_status_duration",
+            "input": {
+              "targets": {
+                "key": "marked"
+              }
+            },
+            "config": {
+              "duration": 6,
+              "stacking": "refresh",
+              "maxStacks": 1,
+              "triggers": [
+                {
+                  "id": "on_apply",
+                  "type": "on_action_complete",
+                  "actions": [
+                    {
+                      "id": "icon",
+                      "type": "apply_mark",
+                      "config": {
+                        "icon": "debuff-mark-of-weakness",
+                        "iconKind": "debuff"
+                      }
+                    },
+                    {
+                      "id": "armor",
+                      "type": "change_stat",
+                      "config": {
+                        "stat": "armor",
+                        "op": "add",
+                        "value": -50
+                      }
+                    },
+                    {
+                      "id": "heal",
+                      "type": "change_stat",
+                      "config": {
+                        "stat": "healingReceived",
+                        "op": "multiply",
+                        "value": 0.7
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "vfx",
+            "type": "play_presentation",
+            "input": {
+              "attach": {
+                "key": "marked"
+              }
+            },
+            "config": {
+              "asset": "shadowburst",
+              "oncePerTarget": true
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

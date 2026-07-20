@@ -1,6 +1,8 @@
 package game
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 // ability_exec_actions.go registers the remaining Phase 3 action executors:
 // summon_unit, apply_force, apply_status, remove_status, modify_resource.
@@ -112,24 +114,40 @@ func (applyForceConfig) actionConfig() {}
 //     (applyProcSlowLocked / ApplyStunLocked / applyAbilityBurnLocked)
 //     EXACTLY as it did before this subsystem existed — byte-identical
 //     behavior, proven by the golden equivalence tests
-//     (TestAbilityCompileGolden_Shatter et al.).
+//     (TestAbilityCompileGolden_Shatter et al.). The three CC primitives
+//     already have their own hardcoded overhead icons (debuff-stunned,
+//     debuff-slowed — activeDebuffIconsLocked).
 //   - AUTHORED (Triggers non-empty): Name/TickInterval/Stacking/MaxStacks/
 //     Triggers (fields derived from the dead StatusDef model type,
 //     ability_program.go) describe a first-class AbilityStatus object
 //     (ability_status.go) that fires its own on_status_tick/on_status_expire
-//     triggers through the shared executor — Status/Multiplier/DPS/School are
-//     ignored on this path (Duration is still read: it seeds the status's
-//     initial Remaining).
+//     triggers through the shared executor — Status/Multiplier/DPS/School
+//     are ignored on this path (Duration is still read: it seeds the
+//     status's initial Remaining). No catalog ability uses this path today
+//     (TestCatalog_NoAbilityUsesStatusTickExpireTriggers) — it stays
+//     editor-reachable/dormant, same as before this task.
 //
-// DESIGN CALL: this file could instead have added a wholly separate action
-// type (the launch_vortex-beside-launch_projectile precedent) for authored
-// statuses. Rejected: a status is ONE concept whether it's a hardcoded slow
-// or an author-defined DoT/buff — unlike a projectile vs. a non-impacting
-// vortex, which are genuinely different mechanics, "apply a status to a unit
-// for a duration" describes both branches here identically. Branching inside
-// one action, gated on the presence of Triggers, is additive (every existing
-// legacy-compiled action decodes Triggers as nil/omitted and takes the exact
-// old code path) and keeps that ONE concept as one ActionType.
+// NOTE ON A REMOVED DESIGN: this struct previously ALSO carried
+// StatModifiers/Icon/IconKind (a same-session design that let apply_status
+// itself own a status's stat changes and overhead icon). That design was
+// replaced by the "duration is its own action" model:
+// apply_status_duration (ability_status_duration.go) now owns a status's
+// LIFETIME, and change_stat/apply_mark (same file) — nested inside it —
+// carry those effects instead, duration-agnostic. mark_of_weakness (the
+// pilot for both designs) was re-authored onto the new shape; see
+// ability_status_duration.go's file doc comment for the full writeup. Do
+// NOT re-add StatModifiers/Icon/IconKind here — that reintroduces the two
+// designs' overlap this replacement was written to remove.
+//
+// DESIGN CALL (kept from the original decision): this file could instead
+// have added a wholly separate action type (the launch_vortex-beside-
+// launch_projectile precedent) for the authored/legacy split above.
+// Rejected: a status is ONE concept whether it's a hardcoded slow or an
+// author-defined DoT/tick-driven effect — unlike a projectile vs. a
+// non-impacting vortex, which are genuinely different mechanics. Branching
+// inside one action, gated on Triggers, is additive (every existing
+// legacy-compiled action decodes it as nil/empty and takes the exact old
+// code path) and keeps that ONE concept as one ActionType.
 type applyStatusConfig struct {
 	Status     string     `json:"status"`
 	Multiplier float64    `json:"multiplier"`
@@ -156,9 +174,8 @@ type applyStatusConfig struct {
 	Stacking  string `json:"stacking,omitempty"`
 	MaxStacks int    `json:"maxStacks,omitempty"`
 	// Triggers carries the compiled on_status_tick / on_status_expire
-	// trigger(s) an authored status fires. THE discriminator between the
-	// legacy and authored branches of Execute (see this struct's doc
-	// comment) — non-empty means authored.
+	// trigger(s) an authored status fires. Non-empty means authored (see
+	// this struct's doc comment for the discriminator).
 	Triggers []AbilityTriggerDef `json:"triggers,omitempty"`
 }
 
@@ -322,8 +339,11 @@ func init() {
 		// Phase 3 supported only the three legacy CC primitives (the ones with
 		// an existing generic gameplay seam). The AbilityStatus subsystem adds
 		// the authored fields below (name/tickInterval/stacking/maxStacks/
-		// triggers) so an author can define a custom buff/debuff instead —
-		// see applyStatusConfig's doc comment for the discriminator.
+		// triggers) so an author can define a custom on_status_tick/expire
+		// buff/debuff instead — see applyStatusConfig's doc comment for the
+		// discriminator. (Stat changes and overhead icons are authored via
+		// apply_status_duration + change_stat/apply_mark instead — see
+		// ability_status_duration.go — not via this action at all.)
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "status", Label: "Status", Control: "enum", Options: []string{"slow", "stun", "burn"}, Section: "Properties"},
 			{Key: "multiplier", Label: "Multiplier", Control: "percentage", Section: "Properties"},
@@ -344,9 +364,9 @@ func init() {
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(applyStatusConfig)
 
-			// AUTHORED path: Triggers non-empty is the discriminator (see
-			// applyStatusConfig's doc comment). Spawns one AbilityStatus per
-			// live target instead of routing to a legacy CC primitive.
+			// AUTHORED path discriminator (see applyStatusConfig's doc
+			// comment): Triggers non-empty. Spawns one AbilityStatus per live
+			// target instead of routing to a legacy CC primitive.
 			if len(c.Triggers) > 0 {
 				applied := make([]int, 0, len(targets))
 				for _, id := range targets {

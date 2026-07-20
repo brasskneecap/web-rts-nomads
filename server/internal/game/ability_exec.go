@@ -51,6 +51,39 @@ type RuntimeAbilityContext struct {
 	// this origin today.
 	ProjectilePosition protocol.Vec2
 	OwnerUnitID        int // owner of the current zone/status/projectile, if any
+	// CurrentStatus is the AbilityStatus an enclosing apply_status_duration
+	// action just spawned (or refreshed — see spawnAbilityStatusLocked's
+	// reference-semantics note below), exposed to that action's own
+	// config.triggers so nested change_stat/apply_mark actions
+	// (ability_status_duration.go) can bind their effect to it without
+	// knowing anything about duration/stacking themselves. Mirrors ZoneCenter/
+	// CurrentEventUnitID's "expose the current container object to its own
+	// nested actions" idiom, except this ONE is a live pointer rather than an
+	// id/value — safe because it is bound and cleared entirely within a
+	// single synchronous apply_status_duration Execute call (never persisted
+	// past it, never read by anything that outlives this tick — see
+	// AI_RULES's "within-tick *Unit parameters are fine" allowance, which
+	// applies identically here).
+	//
+	// REFRESH/STACK-CAP SEMANTICS FOR FREE: apply_status_duration's Execute
+	// always builds a fresh *AbilityStatus and binds CurrentStatus to IT
+	// (never to whatever spawnAbilityStatusLocked's refresh path found and
+	// extended instead), then calls spawnAbilityStatusLocked. On a
+	// "refresh" that collapses onto an already-live status, or a "stack"
+	// application dropped for exceeding MaxStacks, the fresh object is
+	// simply never appended to s.AbilityStatuses — so change_stat/apply_mark
+	// still run (nothing here skips them) but their writes land on an
+	// orphaned struct nothing ever reads, which is exactly the desired
+	// "don't double the stat modifiers/icon a still-live refreshed status
+	// already carries from its original application" outcome, with zero
+	// special-case code.
+	//
+	// Nil outside an apply_status_duration's own config.triggers (every
+	// other ctx in the codebase) — change_stat/apply_mark's Execute treats a
+	// nil CurrentStatus as a no-op trace (validation already rejects
+	// authoring them anywhere reachable with a nil binding, but Execute
+	// stays defensive regardless).
+	CurrentStatus *AbilityStatus
 	// CurrentEventUnitID is the unit ID bound to the "current_event" target
 	// source (SrcCurrentEvent, candidatePoolIDsLocked in
 	// ability_exec_targeting.go) for a trigger whose event centers on one

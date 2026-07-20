@@ -13,5 +13,8 @@
     "manaCost": 15,
     "radius": 90
   },
+  "grantsAbilities": [
+    "mark_of_weakness"
+  ],
   "wired": false
 }

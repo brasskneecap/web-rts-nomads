@@ -463,6 +463,7 @@ func (s *GameState) resolveAbilityAoeAtPointLocked(caster *Unit, def AbilityDef,
 			s.applyUnitDamageWithSourceLocked(u, eff.Damage, DamageSource{
 				AttackerUnitID: caster.ID,
 				Kind:           "ability",
+				Category:       DamageCategoryAbility,
 				DamageType:     dmgType,
 			})
 		}
@@ -751,6 +752,7 @@ func (s *GameState) resolveAbilityCastOnTargetLocked(caster *Unit, def AbilityDe
 			s.applyUnitDamageWithSourceLocked(target, eff.Damage, DamageSource{
 				AttackerUnitID: caster.ID,
 				Kind:           "ability",
+				Category:       DamageCategoryAbility,
 				DamageType:     def.DamageType.OrPhysical(),
 			})
 		}

@@ -280,7 +280,15 @@ function zealousMarchPerk() {
   }
 }
 
-function stubFetchWithAuras(savedPerks: Array<Record<string, unknown>>) {
+// zealousMarchPerkWithRingColor is zealousMarchPerk() with a ringColor
+// override authored on its one aura — the fixture for the Ring Color
+// round-trip / clear tests below.
+function zealousMarchPerkWithRingColor() {
+  const perk = zealousMarchPerk()
+  return { ...perk, auras: [{ ...perk.auras[0], ringColor: '#38bdf8' }] }
+}
+
+function stubFetchWithAuras(savedPerks: Array<Record<string, unknown>>, perk: Record<string, unknown> = zealousMarchPerk()) {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
     if (init?.method === 'POST' && u.endsWith('/perks')) {
@@ -289,7 +297,7 @@ function stubFetchWithAuras(savedPerks: Array<Record<string, unknown>>) {
       return { ok: true, status: 200, json: async () => ({}) }
     }
     if (u.endsWith('/catalog/perks')) {
-      return { ok: true, status: 200, json: async () => ({ perks: [zealousMarchPerk()] }) }
+      return { ok: true, status: 200, json: async () => ({ perks: [perk] }) }
     }
     if (u.endsWith('/catalog/units')) {
       return { ok: true, status: 200, json: async () => ({ units: [{ type: 'acolyte' }], paths: [], pathsByUnit: { acolyte: ['cleric'] } }) }
@@ -551,6 +559,88 @@ describe('PerkEditorPanel', () => {
 
     expect(savedPerks).toHaveLength(1)
     expect(savedPerks[0].auras).toEqual(zealousMarchPerk().auras)
+  })
+
+  it('loads an aura ringColor override, shows it checked with the authored color, and round-trips it unedited through save', async () => {
+    const savedPerks: Array<Record<string, unknown>> = []
+    stubFetchWithAuras(savedPerks, zealousMarchPerkWithRingColor())
+    const wrapper = mount(PerkEditorPanel)
+    await flushPromises()
+
+    await clickHeader(wrapper, 'Acolyte')
+    await clickHeader(wrapper, 'cleric')
+    await wrapper.find('[data-test="perk-row"]').trigger('click')
+    await flushPromises()
+
+    const checkbox = wrapper.find('input[aria-label="Override aura ring color"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    const colorInput = wrapper.find('input[aria-label="Aura ring color"]')
+    expect((colorInput.element as HTMLInputElement).value).toBe('#38bdf8')
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Save')!.trigger('click')
+    await flushPromises()
+
+    expect(savedPerks).toHaveLength(1)
+    expect(savedPerks[0].auras).toEqual(zealousMarchPerkWithRingColor().auras)
+  })
+
+  it('unchecking the ring color override omits ringColor from the saved aura', async () => {
+    const savedPerks: Array<Record<string, unknown>> = []
+    stubFetchWithAuras(savedPerks, zealousMarchPerkWithRingColor())
+    const wrapper = mount(PerkEditorPanel)
+    await flushPromises()
+
+    await clickHeader(wrapper, 'Acolyte')
+    await clickHeader(wrapper, 'cleric')
+    await wrapper.find('[data-test="perk-row"]').trigger('click')
+    await flushPromises()
+
+    const checkbox = wrapper.find('input[aria-label="Override aura ring color"]')
+    await checkbox.setValue(false)
+    // Unchecking hides the color input entirely, not just clears its value.
+    expect(wrapper.find('input[aria-label="Aura ring color"]').exists()).toBe(false)
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Save')!.trigger('click')
+    await flushPromises()
+
+    expect(savedPerks).toHaveLength(1)
+    const auras = savedPerks[0].auras as Array<Record<string, unknown>>
+    expect(auras).toHaveLength(1)
+    expect('ringColor' in auras[0]).toBe(false)
+  })
+
+  it('excludes aura-only stats from the Unit Stat Modifiers dropdown but includes them in the Aura stat dropdown', async () => {
+    // aura-only stats (armorPercent, projectileDamageReduction — statDef.
+    // AuraOnly, stat_modifiers.go) have no top-level fold site: the server
+    // rejects them on a top-level statModifiers entry, so the Unit Stat
+    // Modifiers dropdown must not offer them at all. The IDENTICAL stats
+    // remain valid inside an aura's stat contributions, so the Aura stat
+    // dropdown must keep offering them.
+    stubFetchWithAuras([])
+    const wrapper = mount(PerkEditorPanel)
+    await flushPromises()
+
+    await clickHeader(wrapper, 'Acolyte')
+    await clickHeader(wrapper, 'cleric')
+    await wrapper.find('[data-test="perk-row"]').trigger('click')
+    await flushPromises()
+
+    // Add a Unit Stat Modifiers row to expose its stat <select>.
+    await wrapper.findAll('button').find((b) => b.text() === '+ Add Stat Modifier')!.trigger('click')
+    await flushPromises()
+
+    const selfStatSelect = wrapper.find('select[aria-label="Stat Modifier 1 stat"]')
+    const selfOptionValues = selfStatSelect.findAll('option').map((o) => (o.element as HTMLOptionElement).value)
+    expect(selfOptionValues).not.toContain('armorPercent')
+    expect(selfOptionValues).not.toContain('projectileDamageReduction')
+    expect(selfOptionValues).toContain('maxHp')
+
+    // zealous_march already carries one aura stat row (moveSpeed) — assert
+    // against ITS dropdown's options.
+    const auraStatSelect = wrapper.find('select[aria-label="Aura Stat 1 stat"]')
+    const auraOptionValues = auraStatSelect.findAll('option').map((o) => (o.element as HTMLOptionElement).value)
+    expect(auraOptionValues).toContain('armorPercent')
+    expect(auraOptionValues).toContain('projectileDamageReduction')
   })
 
   it('displays a loaded perk\'s generatedDescription in the Tooltip section, read-only', async () => {

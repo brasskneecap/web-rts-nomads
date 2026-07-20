@@ -53,6 +53,13 @@ export interface PerkAura {
   stacking?: 'max'
   perAdditionalSource?: number
   statModifiers: PerkStatModifier[]
+  // ringColor: PURELY PRESENTATIONAL override for the HUD aura ring's color
+  // (see PerkAura.RingColor, server/internal/game/perk_defs.go). Must be a
+  // valid CSS hex color (#rgb / #rrggbb / #rrggbbaa) when set — the server
+  // rejects anything else. Omitted (not empty string) when the designer
+  // hasn't overridden it, so the ring falls back to the owning player's
+  // color, same as before this field existed.
+  ringColor?: string
 }
 
 export interface AuthoredPerkDef {

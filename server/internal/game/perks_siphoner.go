@@ -40,8 +40,14 @@ const siphonLifeAbilityID = "siphon_life"
 //                      anchor enemy AND enough mana, the AoE stamps every
 //                      enemy within `radius` of the anchor. Pattern mirrors
 //                      tickTrapPlacementLocked (trapper traps).
-//   mark_of_weakness — autonomous AoE armor + healing-received debuff,
-//                      same firing pattern as Lingering Hex.
+//   mark_of_weakness — NOT driven from here anymore. It used to be an
+//                      autonomous AoE armor + healing-received debuff with
+//                      the same firing pattern as Lingering Hex above; it is
+//                      now a perk-granted composable ability
+//                      (catalog/abilities/mark_of_weakness, auto-cast via
+//                      the generic action-bar loop) instead. See this
+//                      file's stat-hook-helpers section doc comment for
+//                      what was deleted.
 //
 // EXTENSION POINTS — adding more Siphoner perks later:
 //   • Silver/Gold perks  → add entries under
@@ -159,9 +165,16 @@ func witheringBeamDamageDebuffMultiplierLocked(unit *Unit) float64 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Lingering Hex / Mark of Weakness — autonomous AoE affliction perks
+// Lingering Hex — autonomous AoE affliction perk
 //
-// Both Bronze affliction perks fire automatically, on their own cadence:
+// (Mark of Weakness used to be documented alongside Lingering Hex here as a
+// second bespoke autonomous-fire perk with the identical shape. It was
+// migrated to a perk-granted composable ability
+// (catalog/abilities/mark_of_weakness) — see perks_siphoner.go's
+// stat-hook-helpers section for what remains. Lingering Hex has not been
+// migrated and still works exactly as described below.)
+//
+// The Bronze affliction perk fires automatically, on its own cadence:
 //   1. tickUnitPerkStateLocked dispatches to the perk's tick handler once
 //      per unit per tick.
 //   2. The handler decays its per-unit cooldown timer. When the cooldown
@@ -222,39 +235,6 @@ func (s *GameState) tickLingeringHexPerkLocked(unit *Unit, def *PerkDef, dt floa
 	}
 	s.applyLingeringHexAoELocked(unit, anchor)
 	unit.PerkState.LingeringHexCooldownRemaining = cfg["cooldownSeconds"]
-}
-
-// tickMarkOfWeaknessPerkLocked is the per-tick autonomous driver for the
-// Mark of Weakness Bronze perk. Same shape as tickLingeringHexPerkLocked.
-//
-// Caller holds s.mu write lock.
-func (s *GameState) tickMarkOfWeaknessPerkLocked(unit *Unit, def *PerkDef, dt float64) {
-	if unit == nil || def == nil {
-		return
-	}
-	if unit.PerkState.MarkOfWeaknessCooldownRemaining > 0 {
-		unit.PerkState.MarkOfWeaknessCooldownRemaining = math.Max(0, unit.PerkState.MarkOfWeaknessCooldownRemaining-dt)
-	}
-	if unit.HP <= 0 {
-		return
-	}
-	if unit.PerkState.MarkOfWeaknessCooldownRemaining > 0 {
-		return
-	}
-	cfg := def.ConfigForRank(unit.Rank)
-	manaCost := int(math.Round(cfg["manaCost"]))
-	if manaCost > 0 && unit.CurrentMana < manaCost {
-		return
-	}
-	anchor := s.siphonerAfflictionAnchorLocked(unit, cfg["castRange"])
-	if anchor == nil {
-		return
-	}
-	if manaCost > 0 && !s.spendUnitManaLocked(unit, manaCost) {
-		return
-	}
-	s.applyMarkOfWeaknessAoELocked(unit, anchor)
-	unit.PerkState.MarkOfWeaknessCooldownRemaining = cfg["cooldownSeconds"]
 }
 
 // siphonerAfflictionAnchorLocked picks the enemy unit a Siphoner Bronze
@@ -360,78 +340,22 @@ func (s *GameState) applyLingeringHexAoELocked(caster, anchor *Unit) {
 	}
 }
 
-// applyMarkOfWeaknessAoELocked finds every visible hostile within the
-// perk's configured radius of the anchor's position and stamps Mark of
-// Weakness onto each. ArmorReduction is integer; HealingReceivedMult is a
-// fraction < 1 (e.g. 0.7 = 30% less incoming healing).
-func (s *GameState) applyMarkOfWeaknessAoELocked(caster, anchor *Unit) {
-	perkDef := perkDefByID("mark_of_weakness")
-	if perkDef == nil || caster == nil || anchor == nil {
-		return
-	}
-	cfg := perkDef.ConfigForRank(caster.Rank)
-	radius := cfg["radius"]
-	duration := cfg["durationSeconds"]
-	armorReduction := int(math.Round(cfg["armorReduction"]))
-	healMult := cfg["healingReceivedMultiplier"]
-	if radius <= 0 || duration <= 0 {
-		return
-	}
-	radiusSq := radius * radius
-	for _, u := range s.Units {
-		if u == nil || u.HP <= 0 || !u.Visible {
-			continue
-		}
-		if !s.playersAreHostileLocked(caster.OwnerID, u.OwnerID) {
-			continue
-		}
-		dx := u.X - anchor.X
-		dy := u.Y - anchor.Y
-		if dx*dx+dy*dy > radiusSq {
-			continue
-		}
-		// Placeholder visual: shadowburst on each marked victim. TODO
-		// (siphoner-fx): swap to a dedicated mark effect when authored.
-		s.queueEffectLocked("shadowburst", u.ID, u.X, u.Y, 1.0, 0.6, "")
-		if duration > u.PerkState.MarkOfWeaknessRemaining {
-			u.PerkState.MarkOfWeaknessRemaining = duration
-		}
-		if armorReduction > u.PerkState.MarkOfWeaknessArmorReduction {
-			u.PerkState.MarkOfWeaknessArmorReduction = armorReduction
-		}
-		// Refresh-stronger for healing-received = lower multiplier wins.
-		if healMult > 0 && (u.PerkState.MarkOfWeaknessHealingReceivedMult == 0 ||
-			healMult < u.PerkState.MarkOfWeaknessHealingReceivedMult) {
-			u.PerkState.MarkOfWeaknessHealingReceivedMult = healMult
-		}
-	}
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Stat-hook helpers used by the shared stat functions
 // (effectiveArmorLocked, healUnitLocked, etc.)
+//
+// Mark of Weakness's own bespoke pulse driver / AoE stamp / armor-reduction
+// and healing-received-multiplier readers used to live here
+// (applyMarkOfWeaknessAoELocked / markOfWeaknessArmorReductionLocked /
+// markOfWeaknessHealingReceivedMultiplierLocked). The perk now GRANTS a
+// composable ability (catalog/abilities/mark_of_weakness) whose program
+// applies the SAME debuff via an authored apply_status(StatModifiers) —
+// armor/healingReceived are read generically by effectiveArmorLocked /
+// healUnitLocked via unitStatusStatModifiersLocked (perk_stat_modifiers.go).
+// The PerkState.MarkOfWeakness* fields and their cross-unit decay
+// (state.go) were removed in the same change — see the mark_of_weakness
+// perk-to-ability migration's report for the full deletion list.
 // ─────────────────────────────────────────────────────────────────────────────
-
-// markOfWeaknessArmorReductionLocked returns the flat armor amount the
-// affliction is currently stripping from the unit. Read by effective-
-// ArmorLocked. 0 when inactive.
-func markOfWeaknessArmorReductionLocked(unit *Unit) int {
-	if unit == nil || unit.PerkState.MarkOfWeaknessRemaining <= 0 {
-		return 0
-	}
-	return unit.PerkState.MarkOfWeaknessArmorReduction
-}
-
-// markOfWeaknessHealingReceivedMultiplierLocked returns the multiplier
-// applied to every incoming heal on this unit (e.g. 0.7 = take 70% of the
-// authored heal amount). Returns 1.0 when inactive so callers can multiply
-// unconditionally.
-func markOfWeaknessHealingReceivedMultiplierLocked(unit *Unit) float64 {
-	if unit == nil || unit.PerkState.MarkOfWeaknessRemaining <= 0 || unit.PerkState.MarkOfWeaknessHealingReceivedMult <= 0 {
-		return 1.0
-	}
-	return unit.PerkState.MarkOfWeaknessHealingReceivedMult
-}
 
 // lingeringHexMoveSpeedFactorLocked returns the multiplicative move-speed
 // factor from Lingering Hex (e.g. 0.75 = 75% of base move speed). Returns
@@ -672,9 +596,18 @@ func (s *GameState) applyChainSiphonBeamsLocked(caster, primary *Unit, primaryDa
 			// apply on chain victims for free. The chain-beam major popup
 			// auto-colors dark purple via the damage-type hint emitted inside
 			// applyUnitDamageWithSourceLocked off DamageType=DamageShadow.
+			// Category is Perk, not Ability: chain_siphon is a perk-granted
+			// fan-out that creates NEW secondary damage instances off of
+			// siphon_life's primary tick (it does carry SourceAbilityID,
+			// since it's siphon_life's own damage in spirit — but per the
+			// perk-vs-ability rule this task settled on, a perk hook that
+			// CREATES a new instance is DamageCategoryPerk; only a REDIRECT/
+			// PROPAGATION of an existing instance forwards the origin's own
+			// Category — see perkRedirectIncomingDamageLocked, perks_auras.go).
 			s.applyUnitDamageWithSourceLocked(t, secondaryDamage, DamageSource{
 				AttackerUnitID:  caster.ID,
 				Kind:            "chain_siphon",
+				Category:        DamageCategoryPerk,
 				DamageType:      DamageShadow,
 				SourceAbilityID: abilityID,
 			})
@@ -815,8 +748,10 @@ func (s *GameState) clearChainSiphonBeamsLocked(unit *Unit) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // tickAmplifyDamagePerkLocked is the per-tick autonomous driver for the
-// Amplify Damage Silver perk. Same shape as tickLingeringHexPerkLocked /
-// tickMarkOfWeaknessPerkLocked.
+// Amplify Damage Silver perk. Same shape as tickLingeringHexPerkLocked (the
+// bespoke Mark of Weakness driver this used to also be compared to,
+// tickMarkOfWeaknessPerkLocked, was deleted by that perk's migration to a
+// granted ability — see perks_siphoner.go's stat-hook-helpers section).
 //
 // Caller holds s.mu write lock.
 func (s *GameState) tickAmplifyDamagePerkLocked(unit *Unit, def *PerkDef, dt float64) {

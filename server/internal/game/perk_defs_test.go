@@ -171,6 +171,119 @@ func TestValidatePerkDef_ZealousMarch_StillValidates(t *testing.T) {
 	}
 }
 
+// TestValidatePerkDef_StatModifiers_RejectsAuraOnlyStatAtTopLevel pins the
+// AuraOnly guard: a stat with no top-level fold site (armorPercent,
+// projectileDamageReduction — statDef.AuraOnly, stat_modifiers.go) must be
+// rejected on a top-level PerkDef.StatModifiers entry, the same "no inert
+// authorable fields" shape as the PerCompanion-on-top-level rejection above.
+func TestValidatePerkDef_StatModifiers_RejectsAuraOnlyStatAtTopLevel(t *testing.T) {
+	for _, stat := range []string{statArmorPercent, statProjectileDamageReduction} {
+		t.Run(stat, func(t *testing.T) {
+			def := validPerkWithStatModifier(PerkStatModifier{
+				Stat: stat, Op: statOpAdd, Value: 0.2,
+			})
+			err := validatePerkDef(def)
+			if err == nil {
+				t.Fatalf("want error for aura-only stat %q at top level, got nil", stat)
+			}
+			if !strings.Contains(err.Error(), stat) {
+				t.Fatalf("error %q does not name the offending stat", err.Error())
+			}
+			if !strings.Contains(err.Error(), "auras[]") {
+				t.Fatalf("error %q does not point the designer at auras[]", err.Error())
+			}
+		})
+	}
+}
+
+// TestValidatePerkDef_AuraStatModifiers_AcceptsAuraOnlyStat confirms the
+// IDENTICAL aura-only stats ARE accepted inside auras[].statModifiers — their
+// valid, intended home. This must not regress alongside the top-level
+// rejection above.
+func TestValidatePerkDef_AuraStatModifiers_AcceptsAuraOnlyStat(t *testing.T) {
+	for _, stat := range []string{statArmorPercent, statProjectileDamageReduction} {
+		t.Run(stat, func(t *testing.T) {
+			def := validPerkWithAuraStatModifier(PerkStatModifier{
+				Stat: stat, Op: statOpAdd, Value: 0.2,
+			})
+			if err := validatePerkDef(def); err != nil {
+				t.Fatalf("want aura-only stat %q inside auras[].statModifiers to pass, got: %v", stat, err)
+			}
+		})
+	}
+}
+
+// TestValidatePerkDef_ShippedAuraPerks_StillValidate guards all four shipped
+// aura perks against the AuraOnly guard added above — none of them may
+// regress just because armorPercent/projectileDamageReduction now reject at
+// top level (none of the four author those stats at top level; this test
+// exists to catch it immediately if a future edit accidentally moves one).
+func TestValidatePerkDef_ShippedAuraPerks_StillValidate(t *testing.T) {
+	for _, id := range []string{"zealous_march", "mana_conduit", "sanctuary", "guardian_aura"} {
+		t.Run(id, func(t *testing.T) {
+			def := requirePerkDef(t, id)
+			if len(def.Auras) == 0 {
+				t.Fatalf("%s has no Auras — fixture perk changed shape", id)
+			}
+			if err := validatePerkDef(&def); err != nil {
+				t.Fatalf("%s must still validate: %v", id, err)
+			}
+		})
+	}
+}
+
+// validPerkWithAuraRingColor returns a base PerkDef with one valid,
+// otherwise-passing PerkAura whose only variable is the supplied RingColor —
+// mirrors validPerkWithAuraStatModifier, isolating the RingColor validation
+// subtests to exactly the field under test.
+func validPerkWithAuraRingColor(color string) *PerkDef {
+	return &PerkDef{
+		ID:          "test_perk",
+		DisplayName: "Test Perk",
+		Auras: []PerkAura{{
+			Radius:    100,
+			Targets:   "allies",
+			RingColor: color,
+		}},
+	}
+}
+
+// TestValidatePerkDef_Aura_RingColor_AcceptsValidHexForms pins the three
+// accepted CSS hex color shapes (#rgb, #rrggbb, #rrggbbaa) plus the
+// empty/absent default.
+func TestValidatePerkDef_Aura_RingColor_AcceptsValidHexForms(t *testing.T) {
+	cases := []string{"", "#fff", "#FFF", "#fef08a", "#FEF08A", "#fef08aff", "#12345678"}
+	for _, color := range cases {
+		t.Run(color, func(t *testing.T) {
+			def := validPerkWithAuraRingColor(color)
+			if err := validatePerkDef(def); err != nil {
+				t.Fatalf("want ringColor %q to pass, got: %v", color, err)
+			}
+		})
+	}
+}
+
+// TestValidatePerkDef_Aura_RingColor_RejectsInvalidValues pins the reject
+// path: a typo'd or non-hex ringColor must fail loudly at load/save time
+// rather than silently falling back to the player color at render time —
+// the same "no silently-ignored authored value" discipline as every other
+// validatePerkDef guard.
+func TestValidatePerkDef_Aura_RingColor_RejectsInvalidValues(t *testing.T) {
+	cases := []string{"red", "fef08a", "#ff", "#fefg08", "#fef08a12345", "rgb(1,2,3)"}
+	for _, color := range cases {
+		t.Run(color, func(t *testing.T) {
+			def := validPerkWithAuraRingColor(color)
+			err := validatePerkDef(def)
+			if err == nil {
+				t.Fatalf("want error for invalid ringColor %q, got nil", color)
+			}
+			if !strings.Contains(err.Error(), color) {
+				t.Fatalf("error %q does not name the offending value %q", err.Error(), color)
+			}
+		})
+	}
+}
+
 func TestValidatePerkDef_StatModifiers_AcceptsValidEntries(t *testing.T) {
 	cases := []struct {
 		name string
@@ -180,6 +293,7 @@ func TestValidatePerkDef_StatModifiers_AcceptsValidEntries(t *testing.T) {
 		{"add, explicit base stage", PerkStatModifier{Stat: statMoveSpeed, Op: statOpAdd, Value: 5, Stage: statStageBase}},
 		{"multiply, final stage", PerkStatModifier{Stat: statMoveSpeed, Op: statOpMultiply, Value: 2, Stage: statStageFinal}},
 		{"multiply on a stat with AllowMultiply=true", PerkStatModifier{Stat: statArmor, Op: statOpMultiply, Value: 1.5}},
+		{"normal (non-aura-only) stat maxHp", PerkStatModifier{Stat: statMaxHp, Op: statOpAdd, Value: 20}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

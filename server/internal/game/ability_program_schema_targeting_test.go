@@ -46,8 +46,19 @@ func TestActionTargetingShape_MatchesExecuteUsage(t *testing.T) {
 		ActionDealDamage:    false, // deal_damage's Execute (ability_program_registry.go)
 		ActionRestoreHealth: false, // restore_health's Execute (ability_program_registry.go)
 		ActionApplyStatus:   false, // apply_status's Execute (ability_exec_actions.go)
-		ActionRemoveStatus:  false, // remove_status's Execute (ability_exec_actions.go)
-		ActionApplyForce:    false, // apply_force's Execute (ability_exec_actions.go)
+		// apply_status_duration reads its incoming `targets` (fed via a
+		// preceding select_targets), spawning one AbilityStatus per unit —
+		// same shape as apply_status, not its own direct query
+		// (ability_status_duration.go).
+		ActionApplyStatusDuration: false,
+		// change_stat / apply_mark ignore `targets` entirely — they operate
+		// on ctx.CurrentStatus (the enclosing apply_status_duration's
+		// spawned AbilityStatus), never on a per-unit query
+		// (ability_status_duration.go).
+		ActionChangeStat:   false,
+		ActionApplyMark:    false,
+		ActionRemoveStatus: false, // remove_status's Execute (ability_exec_actions.go)
+		ActionApplyForce:   false, // apply_force's Execute (ability_exec_actions.go)
 
 		// Ignore `targets` entirely — they act on the caster / spawn at a
 		// position / re-pick targets at a later tick, never on a query the

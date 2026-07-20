@@ -297,6 +297,13 @@ func (s *GameState) applyProjectileDamageLocked(attacker, target *Unit, damage i
 	if target == nil || damage <= 0 {
 		return
 	}
+	// Category deliberately left DamageCategoryUnspecified: this is a generic
+	// single-target projectile-damage helper with no signal (no SourceKind /
+	// SourceAbilityID param) to distinguish a basic attack from an ability
+	// bolt, and it is unreachable from any production call site today (only
+	// exercised directly by projectile_defs_test.go) — see the TODO above
+	// this function for its intended future (AoE/pierce ProjectileDef
+	// support). Classify it when a real caller exists to say which it is.
 	src := DamageSource{Kind: "projectile"}
 	if attacker != nil {
 		src.AttackerUnitID = attacker.ID

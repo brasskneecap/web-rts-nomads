@@ -89,11 +89,44 @@ const (
 	statWorkerMoveSpeed           = "workerMoveSpeed"
 	statUnitProductionSpeed       = "unitProductionSpeed"
 	statBuildingConstructionSpeed = "buildingConstructionSpeed"
+
+	// Aura-only reduction stats — read directly from unitAuraStatContributionLocked
+	// at a bespoke fold site rather than through applyStatStages (see the
+	// stat's own doc note below for why).
+	statProjectileDamageReduction = "projectileDamageReduction"
+
+	// Aura-only bonus stats — same category as statProjectileDamageReduction
+	// above (read directly from unitAuraStatContributionLocked, no
+	// unitPerkStatModifiersLocked/applyStatStages fold site exists for
+	// either). statArmorPercent is guardian_aura's percent-armor dimension;
+	// see its doc note below for why it needs its own id rather than reusing
+	// statArmor (which already has a DIFFERENT, unrelated generic fold site
+	// at effectiveArmorLocked's flat-armor position).
+	statArmorPercent = "armorPercent"
+
+	// statHealingReceived is a multiplier on every heal amount a unit
+	// receives (base 1.0 = "100% of the authored heal lands"; e.g. a
+	// multiply of 0.7 authored on an active AbilityStatus = "take 70% of
+	// incoming healing"). Unlike statArmor/statDamage/etc. this stat has no
+	// per-unit base field at all — the fold site (healUnitLocked) computes
+	// `applyStatStages(1.0, ...)` against the SAME fixed identity baseline
+	// gatherSpeed/unitProductionSpeed use, never a value read off the unit.
+	// Introduced as the pilot consumer of unitStatusStatModifiersLocked
+	// (perk_stat_modifiers.go) — an active AbilityStatus's
+	// StatModifiers{Stat:"healingReceived"} entry is the data-driven
+	// replacement for the bespoke UnitPerkState.MarkOfWeaknessHealingReceived-
+	// Mult field (perks_siphoner.go). Has a real top-level fold site (unlike
+	// statProjectileDamageReduction/statArmorPercent above), so it is NOT
+	// AuraOnly — a status is a different emitter from an aura, and
+	// "healingReceived" makes just as much sense authored directly as a
+	// status's own StatModifiers entry as it would inside a PerkAura.
+	statHealingReceived = "healingReceived"
 )
 
 // statDef describes a registered stat: its id, the human label the editor and
-// HUD show, whether a multiply operation is meaningful for it, and whether an
-// "add" delta should render as a percentage.
+// HUD show, whether a multiply operation is meaningful for it, whether an
+// "add" delta should render as a percentage, and whether the stat only has a
+// meaning as an aura contribution.
 //
 // AllowMultiply is advisory metadata for the editor/UI today (both operations
 // are accepted by validation); it documents intent and drives sensible editor
@@ -112,11 +145,28 @@ const (
 // the exact class of bug this field exists to prevent — see hawk_spirit).
 // Conservative default: false. See stat_modifiers.go / perk_describe.go task
 // notes for the per-stat read-site evidence behind each determination below.
+//
+// AuraOnly is true when the stat has NO top-level fold site at all — nothing
+// in unitPerkStatModifiersLocked's caller list (mana.go, perks_defense.go,
+// perks_attack.go, perks_movement.go, progression.go, state.go,
+// state_combat.go) ever resolves this stat for the OWNING unit's own
+// PerkDef.StatModifiers. The stat is consumed EXCLUSIVELY via the aura cache
+// (unitAuraStatContributionLocked, perk_aura_stat_cache.go) at a bespoke,
+// aura-specific read site — see each AuraOnly stat's own doc note above its
+// registry entry for the exact fold site. A top-level (self)
+// PerkDef.StatModifiers entry naming an AuraOnly stat would be silently
+// inert (the value is computed and stored in the per-stage pool but nothing
+// ever reads that pool for this stat), so validatePerkDef REJECTS it there —
+// same "no inert authorable fields" rule that rejects PerCompanion on a
+// top-level entry. The IDENTICAL stat inside a PerkAura.StatModifiers entry
+// is its valid, intended home and remains accepted. False for every stat
+// that already has a real top-level fold site.
 type statDef struct {
 	ID            string
 	Label         string
 	AllowMultiply bool
 	IsFraction    bool
+	AuraOnly      bool
 }
 
 // statRegistry is the single source of truth for which stats exist. Ordered for
@@ -150,24 +200,57 @@ type statDef struct {
 //   - workerMoveSpeed: folds into the SAME add/mul pool as moveSpeed
 //     (perks_movement.go) and is applied against unit.MoveSpeed, a raw
 //     per-unit base — same reasoning as moveSpeed. False.
+//   - projectileDamageReduction: the VALUE itself is a 0-1 fraction of
+//     incoming projectile damage to negate (sanctuary's 0.25 = "25% less
+//     projectile damage") — not a delta against any per-unit base at all.
+//     The fold site (perks_defense.go) reads it as
+//     multiplier = 1.0 - value directly; there is no base stat it's added
+//     to, so "is an add delta a percentage" is unambiguously yes. True.
+//   - armorPercent: the VALUE itself is a 0-1 fraction of the recipient's
+//     base armor (guardian_aura's 0.20 = "+20% of base armor") — same
+//     "no per-unit base to be ambiguous against" reasoning as
+//     projectileDamageReduction. The fold site (effectiveArmorLocked) reads
+//     it via unitAuraStatContributionLocked and adds it straight into its
+//     own percentBonus accumulator (core = armor × (1+percentBonus) + flat),
+//     never through applyStatStages — same "aura-only, no generic top-level
+//     fold site" category as projectileDamageReduction; a top-level
+//     PerkDef.StatModifiers{Stat:"armorPercent"} entry would be silently
+//     inert today for the identical, already-accepted reason
+//     projectileDamageReduction's would be. True.
+//   - healingReceived: NOT a per-unit field — healUnitLocked's fold site
+//     computes `applyStatStages(1.0, ...)` against a fixed identity baseline
+//     of 1.0 ("100% of the heal lands"), the SAME shape gatherSpeed/
+//     unitProductionSpeed/buildingConstructionSpeed use (not critMultiplier,
+//     whose baseline VARIES per ability — bullseye overrides it to 2.5).
+//     healingReceived's baseline never varies: it is always exactly 1.0 by
+//     definition, so an add delta's percentage meaning is unambiguous
+//     regardless of which unit/status authored it. True. AllowMultiply is
+//     true because the pilot authoring (mark_of_weakness's migration) always
+//     expresses the debuff as a multiply (0.7 = "70% healing received");
+//     add is still permitted (e.g. "+10 percentage points") for symmetry
+//     with every other AllowMultiply stat, but multiply is the expected
+//     idiom here.
 var statRegistry = []statDef{
-	{statHealthRegen, "Health Regen", true, false},
-	{statManaRegen, "Mana Regen", true, false},
-	{statMoveSpeed, "Move Speed", true, false},
-	{statAttackSpeed, "Attack Speed", true, false},
-	{statDamage, "Damage", true, false},
-	{statArmor, "Armor", true, false},
-	{statMaxHp, "Max Health", true, false},
-	{statMaxMana, "Max Mana", true, false},
-	{statAttackRange, "Attack Range", true, false},
-	{statCritChance, "Crit Chance", true, true},
-	{statCritMult, "Crit Multiplier", true, false},
-	{statGoldGatherRate, "Gold Gather Rate", true, false},
-	{statWoodGatherRate, "Wood Gather Rate", true, false},
-	{statGatherSpeed, "Gather Speed", true, true},
-	{statWorkerMoveSpeed, "Worker Move Speed", true, false},
-	{statUnitProductionSpeed, "Unit Production Speed", true, true},
-	{statBuildingConstructionSpeed, "Building Construction Speed", true, true},
+	{statHealthRegen, "Health Regen", true, false, false},
+	{statManaRegen, "Mana Regen", true, false, false},
+	{statMoveSpeed, "Move Speed", true, false, false},
+	{statAttackSpeed, "Attack Speed", true, false, false},
+	{statDamage, "Damage", true, false, false},
+	{statArmor, "Armor", true, false, false},
+	{statMaxHp, "Max Health", true, false, false},
+	{statMaxMana, "Max Mana", true, false, false},
+	{statAttackRange, "Attack Range", true, false, false},
+	{statCritChance, "Crit Chance", true, true, false},
+	{statCritMult, "Crit Multiplier", true, false, false},
+	{statGoldGatherRate, "Gold Gather Rate", true, false, false},
+	{statWoodGatherRate, "Wood Gather Rate", true, false, false},
+	{statGatherSpeed, "Gather Speed", true, true, false},
+	{statWorkerMoveSpeed, "Worker Move Speed", true, false, false},
+	{statUnitProductionSpeed, "Unit Production Speed", true, true, false},
+	{statBuildingConstructionSpeed, "Building Construction Speed", true, true, false},
+	{statProjectileDamageReduction, "Projectile Damage Reduction", false, true, true},
+	{statArmorPercent, "Percent Armor", false, true, true},
+	{statHealingReceived, "Healing Received", true, true, false},
 }
 
 // statRegistryByID is the O(1) lookup index built once at init.
@@ -200,6 +283,18 @@ func statLabel(id string) string {
 func isFractionStat(id string) bool {
 	if d, ok := statRegistryByID[id]; ok {
 		return d.IsFraction
+	}
+	return false
+}
+
+// isAuraOnlyStat reports whether id names a stat that has no top-level fold
+// site (statDef.AuraOnly) — see that field's doc comment. An unknown id
+// conservatively returns false, matching isKnownStat's job of gating unknown
+// ids separately (validatePerkStatModifier rejects unknown stats before this
+// would ever matter).
+func isAuraOnlyStat(id string) bool {
+	if d, ok := statRegistryByID[id]; ok {
+		return d.AuraOnly
 	}
 	return false
 }
@@ -375,6 +470,42 @@ func mergeZoneIntoBaseStage(stages map[string]statStageAccum, zoneAdd, zoneMul f
 	base.Mul *= zoneMul
 	stages[statStageBase] = base
 	return stages
+}
+
+// mergeStatStagePools merges pool b's per-stage (add, mul) contributions into
+// pool a, stage by stage: adds sum, muls multiply — the same composition
+// rule every other merge in this file uses. Used to combine two independent
+// stat-modifier EMITTERS (e.g. unitPerkStatModifiersLocked's owned-perk pool
+// and unitStatusStatModifiersLocked's active-status pool, perk_stat_modifiers.go)
+// into one pool before the zone-aura merge / applyStatStages call, so a
+// read site folds perk + status + zone-aura contributions through the exact
+// same three-stage engine rather than three separate ad-hoc passes.
+//
+// Safe with either argument nil/empty (returns the other unchanged — no
+// allocation on the common "nothing to merge" path). Mutates and returns a
+// in place when a is non-nil, matching mergeZoneIntoBaseStage's "fresh,
+// single-use map" contract: callers must pass an `a` that is not retained or
+// shared elsewhere (unitPerkStatModifiersLocked's return value always is —
+// it allocates a new map per call). When a is nil, allocates a fresh map
+// sized for b rather than returning b itself, so the caller never receives
+// back b's own backing map.
+func mergeStatStagePools(a, b map[string]statStageAccum) map[string]statStageAccum {
+	if len(b) == 0 {
+		return a
+	}
+	if a == nil {
+		a = make(map[string]statStageAccum, len(b))
+	}
+	for stage, bAcc := range b {
+		acc, ok := a[stage]
+		if !ok {
+			acc = statStageAccum{Add: 0, Mul: 1}
+		}
+		acc.Add += bAcc.Add
+		acc.Mul *= bAcc.Mul
+		a[stage] = acc
+	}
+	return a
 }
 
 // playerStatModifierLocked resolves the (add, mul) a player's aggregated zone

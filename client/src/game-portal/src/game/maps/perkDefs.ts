@@ -90,6 +90,14 @@ export type PerkAura = {
   stacking?: 'max'
   perAdditionalSource?: number
   statModifiers: PerkAuraStatModifier[]
+  /**
+   * PURELY PRESENTATIONAL. Overrides the color of this aura's radius ring in
+   * the HUD (see getPerkAuraRing / CanvasRenderer.drawAuraRing). Absent ⇒
+   * the ring falls back to the owning player's color, unchanged from before
+   * this field existed. Authored server-side (PerkAura.RingColor,
+   * server/internal/game/perk_defs.go); never computed client-side.
+   */
+  ringColor?: string
 }
 
 /**
@@ -214,11 +222,18 @@ const AURA_RADIUS_SOURCES: Record<string, AuraRadiusSource> = {
   //     traps live as their own map entities once placed.
 }
 
-export function getPerkAuraRadius(
+/**
+ * Result of resolving a perk's aura ring: radius is always present when
+ * non-null; color is optional (absent ⇒ renderer falls back to the owning
+ * player's color).
+ */
+export type PerkAuraRing = { radius: number; color?: string }
+
+export function getPerkAuraRing(
   perkId: string,
   activeBuffIds?: Set<string>,
   activeEffectNames?: Set<string>,
-): number | null {
+): PerkAuraRing | null {
   const def = PERK_DEF_MAP.get(perkId)
 
   // Prefer the declarative aura schema (PerkDef.auras) when present — it is
@@ -226,17 +241,23 @@ export function getPerkAuraRadius(
   // takes priority even if a legacy config key is also still present, so the
   // server can delete the legacy key without the ring going stale. If a perk
   // ever carries multiple auras, use the largest radius since the ring is
-  // meant to represent the perk's overall reach.
+  // meant to represent the perk's overall reach — and take the COLOR from
+  // that SAME winning aura entry, never a different one. (Mixing radius from
+  // one aura with color from another would draw a ring at a distance the
+  // color's author never intended.)
   if (def?.auras && def.auras.length > 0) {
-    let largest = 0
+    let winner: PerkAura | null = null
     for (const aura of def.auras) {
-      if (aura.radius > largest) largest = aura.radius
+      if (winner === null || aura.radius > winner.radius) winner = aura
     }
-    if (largest > 0) return largest
+    if (winner && winner.radius > 0) {
+      return { radius: winner.radius, color: winner.ringColor }
+    }
   }
 
   // Fall back to the legacy config-key lookup for perks not yet migrated to
-  // the `auras` schema.
+  // the `auras` schema. Legacy perks have no ring-color schema, so color is
+  // always absent here — the renderer falls back to the player color.
   const source = AURA_RADIUS_SOURCES[perkId]
   if (!source) return null
   if (source.onlyWhenActive) {
@@ -247,5 +268,5 @@ export function getPerkAuraRadius(
     if (!buffActive && !effectActive) return null
   }
   const value = def?.config?.[source.key]
-  return typeof value === 'number' && value > 0 ? value : null
+  return typeof value === 'number' && value > 0 ? { radius: value } : null
 }

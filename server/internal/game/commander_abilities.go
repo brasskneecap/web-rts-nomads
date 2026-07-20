@@ -193,6 +193,7 @@ func (s *GameState) applyCommanderAbilityLocked(caster *Player, def CommanderAbi
 		case def.Damage > 0 && s.playersAreHostileLocked(caster.ID, u.OwnerID):
 			s.applyUnitDamageWithSourceLocked(u, def.Damage, DamageSource{
 				Kind:       "commander_ability",
+				Category:   DamageCategoryAbility,
 				DamageType: DamagePhysical,
 			})
 		case def.Heal > 0 && s.playersAreFriendlyLocked(caster.ID, u.OwnerID):

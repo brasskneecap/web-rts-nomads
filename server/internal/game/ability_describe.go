@@ -97,7 +97,213 @@ func describeLegacyAbility(a AbilityDef) string {
 // config — see the channeled ActionBeam case below, and channelSpecFor's
 // identical recovery for the RUNTIME side).
 func describeAbilityProgram(a AbilityDef) string {
+	// on_damage_dealt + restore_health(amountRef) — the "self-heal a fraction
+	// of damage just dealt" reactive-passive shape (blood_sustain, the first
+	// migrated triggered perk; more follow). This has no legacy-field
+	// equivalent to recover (restore_health's AmountRef path deliberately
+	// carries no static HealAmount — see restoreHealthConfig's doc comment),
+	// so it is described directly from the Program rather than routed through
+	// abilityMechanicsShadow's legacy-field recovery.
+	if desc := describeOnDamageDealtLifestealAbility(a); desc != "" {
+		return desc
+	}
+	if desc := describeStatModifierOnlyAbility(a); desc != "" {
+		return desc
+	}
 	return describeLegacyAbility(abilityMechanicsShadow(a))
+}
+
+// describeStatModifierOnlyAbility recognizes a program whose ENTIRE gameplay
+// effect is "select some targets, then apply_status_duration whose
+// config.triggers nest one or more change_stat actions" — no damage, no
+// heal, no summon, no projectile/beam/zone (mark_of_weakness, the pilot
+// ability for this shape — the status-carried-stat-modifiers mechanic has no
+// legacy-field equivalent to recover, exactly like
+// describeOnDamageDealtLifestealAbility's blood_sustain case above). Returns
+// "" for every other program, so every mechanic family that includes a
+// damage/heal/summon/projectile/beam/zone action anywhere in its top-level
+// triggers keeps using abilityMechanicsShadow's flat-field recovery
+// unchanged — the bail-out is deliberately broad (any of those action types
+// anywhere disqualifies the whole ability) rather than narrowly scoped to
+// "the same trigger as the apply_status_duration", so this can never misfire
+// on a damage/heal ability that also happens to apply a stat-modifying
+// status (e.g. a future "deals damage AND weakens armor" spell) — that case
+// falls through to the normal shadow-recovery/legacy-clause path exactly
+// like a slow-on-hit ability, keeping this function's blast radius = zero
+// for every ability that isn't this exact pure-debuff shape. apply_mark
+// (the icon-channel sibling nested alongside change_stat) contributes no
+// clause of its own — it's cosmetic, not a describable magnitude.
+func describeStatModifierOnlyAbility(a AbilityDef) string {
+	if a.Program == nil {
+		return ""
+	}
+	var (
+		mods     []PerkStatModifier
+		duration float64
+		radius   float64
+		found    bool
+	)
+	for _, trig := range a.Program.Triggers {
+		var pendingRadius float64
+		for _, act := range trig.Actions {
+			if !act.IsEnabled() {
+				continue
+			}
+			switch act.Type {
+			case ActionSelectTargets:
+				if act.Target != nil {
+					pendingRadius = act.Target.Radius
+				}
+			case ActionDealDamage, ActionRestoreHealth, ActionSummonUnit,
+				ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley,
+				ActionCreateZone, ActionLoop:
+				// Any of these means this is NOT a pure stat-modifier ability
+				// — bail immediately so the normal recovery path handles it.
+				return ""
+			case ActionApplyStatusDuration:
+				var cfg applyStatusDurationConfig
+				decodeActionConfig(act.Config, &cfg)
+				nested, bail := collectNestedChangeStatMods(cfg.Triggers)
+				if bail {
+					return ""
+				}
+				if len(nested) == 0 {
+					continue
+				}
+				mods = nested
+				duration = cfg.Duration
+				radius = pendingRadius
+				found = true
+			}
+		}
+	}
+	if !found || len(mods) == 0 {
+		return ""
+	}
+
+	// Reuse the SAME describeStatModifierClause the perk-aura/StatModifiers
+	// tooltip prose uses (perk_describe.go) — one formatting function for
+	// "here is a PerkStatModifier as English" regardless of which of the
+	// three emitters (perk / aura / status) authored it, matching this
+	// task's "one shared vocabulary, one validation bar" precedent for
+	// Validate. Stage defaults to statStageBase exactly like that call site.
+	clauses := make([]string, 0, len(mods))
+	for _, m := range mods {
+		stage := m.Stage
+		if stage == "" {
+			stage = statStageBase
+		}
+		clauses = append(clauses, describeStatModifierClause(m, stage))
+	}
+	scope := "the target"
+	if radius > 0 {
+		scope = fmt.Sprintf("all enemies within %s units of the target", trimFloat(radius))
+	}
+	sentence := fmt.Sprintf("Afflicts %s with %s", scope, strings.Join(clauses, ", "))
+	if duration > 0 {
+		sentence += fmt.Sprintf(" for %ss", trimFloat(duration))
+	}
+	return sentence + "."
+}
+
+// collectNestedChangeStatMods walks an apply_status_duration's config.triggers
+// (compiled on_action_complete triggers, ability_status_duration.go) and
+// collects every nested change_stat action into a PerkStatModifier, in
+// authored order. apply_mark is recognized and skipped (cosmetic, no
+// magnitude to recover). Any OTHER nested action type sets bail=true — the
+// caller (describeStatModifierOnlyAbility) treats that identically to one of
+// its own top-level disqualifying action types, so a future
+// apply_status_duration that also, say, deals damage inside its
+// on_action_complete never gets miscategorized as a pure stat-modifier
+// ability.
+func collectNestedChangeStatMods(triggers []AbilityTriggerDef) (mods []PerkStatModifier, bail bool) {
+	for _, trig := range triggers {
+		for _, act := range trig.Actions {
+			if !act.IsEnabled() {
+				continue
+			}
+			switch act.Type {
+			case ActionChangeStat:
+				var cfg changeStatConfig
+				decodeActionConfig(act.Config, &cfg)
+				mods = append(mods, PerkStatModifier{Stat: cfg.Stat, Op: cfg.Op, Value: cfg.Value, Stage: cfg.Stage})
+			case ActionApplyMark:
+				// Cosmetic only — contributes no describable magnitude.
+			default:
+				return nil, true
+			}
+		}
+	}
+	return mods, false
+}
+
+// describeOnDamageDealtLifestealAbility recognizes a program whose top-level
+// triggers include an on_damage_dealt trigger with an enabled restore_health
+// action that names an AmountRef (a bound runtime scalar, not a static
+// amount) targeting the caster. Returns "" for every ability that does not
+// match this exact shape, so every other mechanic family keeps using the
+// shadow-recovery path unchanged.
+func describeOnDamageDealtLifestealAbility(a AbilityDef) string {
+	if a.Program == nil {
+		return ""
+	}
+	for _, trig := range a.Program.Triggers {
+		if trig.Type != TriggerOnDamageDealt {
+			continue
+		}
+		for _, act := range trig.Actions {
+			if !act.IsEnabled() || act.Type != ActionRestoreHealth {
+				continue
+			}
+			var cfg restoreHealthConfig
+			decodeActionConfig(act.Config, &cfg)
+			if cfg.AmountRef == "" {
+				continue
+			}
+			mult := cfg.AmountMult
+			if mult == 0 {
+				mult = 1
+			}
+			pct := int(math.Round(mult * 100))
+			return fmt.Sprintf("Heals the caster for %d%% of the damage dealt%s.", pct, describeDamageScopeFragment(trig.DamageScope))
+		}
+	}
+	return ""
+}
+
+// describeDamageScopeFragment renders an on_damage_dealt trigger's
+// DamageScope as an inline qualifier (" by basic attacks", ...). A nil/empty
+// scope (any damage) renders as "" so the sentence reads "... damage dealt."
+func describeDamageScopeFragment(scope *DamageTriggerScope) string {
+	if scope == nil || len(scope.Categories) == 0 {
+		return ""
+	}
+	words := make([]string, 0, len(scope.Categories))
+	for _, c := range scope.Categories {
+		words = append(words, damageCategoryPluralWord(c))
+	}
+	return " by " + strings.Join(words, " or ")
+}
+
+// damageCategoryPluralWord renders a DamageCategory as an inline plural noun
+// phrase for tooltip prose ("basic attacks", "abilities", ...).
+func damageCategoryPluralWord(c DamageCategory) string {
+	switch c {
+	case DamageCategoryBasicAttack:
+		return "basic attacks"
+	case DamageCategoryAbility:
+		return "abilities"
+	case DamageCategoryTrap:
+		return "traps"
+	case DamageCategoryBuilding:
+		return "buildings"
+	case DamageCategoryPerk:
+		return "perk hits"
+	case DamageCategoryItem:
+		return "item procs"
+	default:
+		return string(c)
+	}
 }
 
 // abilityMechanicsShadow recovers a's mechanic magnitudes (HealAmount,

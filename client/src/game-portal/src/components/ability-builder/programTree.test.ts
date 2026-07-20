@@ -1005,6 +1005,7 @@ describe('addTrigger — nested slot rule', () => {
     ['launch_projectile', 'on_projectile_impact'],
     ['beam', 'on_beam_impact'],
     ['beam', 'on_beam_tick'],
+    ['apply_status_duration', 'on_action_complete'],
   ]
 
   it.each(CONFIG_SLOT)('%s nests a new trigger into config.triggers, not children', (actionType, triggerType) => {

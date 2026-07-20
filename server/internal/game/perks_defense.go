@@ -94,11 +94,23 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	// Applied after mark amplification and before flat reduction so sanctuary
 	// reduces on top of any mark bonus — consistent with the design intent that
 	// sanctuary protects its zone from incoming fire.
-	if sanctuaryMult := s.perkRangedDamageMultiplierFromAurasLocked(target, src); sanctuaryMult < 1.0 {
-		damage = maxInt(0, int(math.Round(float64(damage)*sanctuaryMult)))
-		if damage == 0 {
-			s.perkShareDamageToMarkedLocked(target, origDamage, src)
-			return 0
+	//
+	// sanctuary is data-driven (PerkDef.Auras, perk_defs.go), resolved once
+	// per tick by the generic aura cache (perk_aura_stat_cache.go) and read
+	// here in O(1) via unitAuraStatContributionLocked. The src.Kind ==
+	// "projectile" gate MUST stay HERE at the fold site — the generic aura
+	// cache has no notion of damage kind at all, only "which stat, how much,
+	// from which covering sources"; melee/trap/ability damage must never
+	// reach the aura read. Max-wins-no-stack is already baked into the cache
+	// (sanctuary carries no perAdditionalSource), so the raw contribution IS
+	// the strongest single covering source's reduction fraction.
+	if src.Kind == "projectile" {
+		if reduction, _ := s.unitAuraStatContributionLocked(target, statProjectileDamageReduction); reduction > 0 {
+			damage = maxInt(0, int(math.Round(float64(damage)*(1.0-reduction))))
+			if damage == 0 {
+				s.perkShareDamageToMarkedLocked(target, origDamage, src)
+				return 0
+			}
 		}
 	}
 	// Step 4: Flat per-hit reduction.
@@ -186,6 +198,18 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	if prevHP > 0 && damage > prevHP {
 		s.recordLethalDamageLocked(target, damage)
 	}
+	// Composable on_damage_dealt: fire the attacking unit's trigger(s), if it
+	// owns any ability that declares one matching this instance's scope (see
+	// fireOnDamageDealtLocked, ability_damage_dealt.go, for the cheap-path
+	// argument and the re-entrancy guard). A no-op — single cheap check,
+	// nothing allocated — for the overwhelming common case of an attacker
+	// with no such ability. Placed here, at the single canonical HP-loss
+	// point, as a peer to the record* calls above: every unit-sourced hit
+	// (melee, projectile, pierce, ability, perk bonus hits, Shared Pain
+	// fan-out below) is captured uniformly, and `damage` here is exactly the
+	// post-mitigation amount that landed — the same value recordHitDamageLocked
+	// and the client's floating number use.
+	s.fireOnDamageDealtLocked(target, damage, src)
 	// Shared Pain: redistribute a fraction of the pre-mitigation damage to
 	// other marked enemies. Propagate attribution so indirect kills credit the
 	// original attacker.
@@ -249,13 +273,17 @@ func (s *GameState) healUnitLocked(unit *Unit, amount int) {
 	if unit == nil || amount <= 0 || unit.HP <= 0 {
 		return
 	}
-	// Mark of Weakness (Siphoner bronze) scales every incoming heal applied
-	// to this unit. The check is cheap (one PerkState read) and a no-op when
-	// the debuff isn't active. Applied here — at the canonical heal entry —
-	// so EVERY heal path (passive regen, blood_sustain, applyClericHeal-
-	// Locked overflow, future sources) is consistently throttled without
-	// requiring each call site to remember.
-	if mult := markOfWeaknessHealingReceivedMultiplierLocked(unit); mult < 1.0 {
+	// Status-sourced "healingReceived" stat modifiers (AbilityStatus.
+	// StatModifiers, statHealingReceived — stat_modifiers.go). This is the
+	// SOLE healing-received throttle now: mark_of_weakness (the pilot
+	// authoring this stat) used to fold a bespoke PerkState-backed read
+	// here too, but that read was deleted in the same change that made
+	// mark_of_weakness author this status — leaving both would have
+	// double-applied the debuff (bespoke field × status fold) against a
+	// unit afflicted by the migrated ability. See
+	// TestMarkOfWeakness_Migration_EffectiveArmorAndHealingReceived's
+	// "exactly ONE application" assertion for the regression guard.
+	if mult := applyStatStages(1.0, s.unitStatusStatModifiersLocked(unit, statHealingReceived)); mult != 1.0 {
 		amount = int(math.Round(float64(amount) * mult))
 		if amount <= 0 {
 			return
@@ -539,9 +567,10 @@ func (s *GameState) unitTotalMaxShieldLocked(unit *Unit) int {
 // this unit's own perks (e.g. 0.20 = +20% of base armor). Used in
 // effectiveArmorLocked. Percents stack additively.
 //
-// Currently empty — guardian_aura's percent bonus flows through the aura cache
-// via perkArmorPercentBonusFromAurasLocked. This hook exists for symmetry and
-// as the future home for any self-perk percent-armor sources.
+// Currently empty — guardian_aura's percent bonus flows through the generic
+// aura cache (unitAuraStatContributionLocked, statArmorPercent), read
+// directly in effectiveArmorLocked. This hook exists for symmetry and as the
+// future home for any self-perk percent-armor sources.
 //
 // ADD NEW SELF-PERK PERCENT-ARMOR SOURCES HERE.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -673,6 +702,7 @@ func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) 
 			s.applyUnitDamageWithSourceLocked(attacker, reflected, DamageSource{
 				AttackerUnitID: target.ID,
 				Kind:           "retaliation",
+				Category:       DamageCategoryPerk,
 			})
 			target.PerkState.RetaliationActive = false
 			// Debug: reflected damage counts under the defender's unit bucket.
@@ -806,8 +836,21 @@ func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
 //
 // Where:
 //   - flatBonus    = perkBonusArmorLocked + perkBonusArmorFromBannersLocked +
-//                    perkBonusArmorFromAurasLocked + perkBonusArmorFromBuffsLocked
-//   - percentBonus = perkArmorPercentBonusLocked + perkArmorPercentBonusFromAurasLocked
+//                    guardian_aura's flat contribution (statArmor via the
+//                    generic aura cache) + perkBonusArmorFromBuffsLocked
+//   - percentBonus = perkArmorPercentBonusLocked + guardian_aura's percent
+//                    contribution (statArmorPercent via the generic aura cache)
+//
+// guardian_aura is data-driven (PerkDef.Auras, perk_defs.go), resolved once
+// per tick by the generic aura cache (perk_aura_stat_cache.go) and read here
+// in O(1) via unitAuraStatContributionLocked — see perk_aura_migration_test.go
+// for the characterization proof against the frozen pre-migration
+// rebuildGuardianAuraCacheLocked algorithm. The flat dimension's int()
+// truncation happens here at the read site (matching the legacy per-source
+// truncation: since int() is monotonic non-decreasing for non-negative
+// inputs, int(max(a,b)) == max(int(a),int(b)), so truncating AFTER the
+// cache's max-across-sources fold is equivalent to the legacy per-source
+// truncate-then-max).
 //
 // Percent bonuses stack additively: two sources of +20% = +40% of base armor.
 // This means high-armor units benefit more from percent bonuses, which is the
@@ -819,18 +862,13 @@ func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 	if unit == nil {
 		return 0
 	}
+	auraFlat, _ := s.unitAuraStatContributionLocked(unit, statArmor)
+	auraPercent, _ := s.unitAuraStatContributionLocked(unit, statArmorPercent)
 	flatBonus := s.perkBonusArmorLocked(unit) +
 		s.perkBonusArmorFromBannersLocked(unit) +
-		s.perkBonusArmorFromAurasLocked(unit) +
+		int(auraFlat) +
 		s.perkBonusArmorFromBuffsLocked(unit)
-	percentBonus := s.perkArmorPercentBonusLocked(unit) +
-		s.perkArmorPercentBonusFromAurasLocked(unit)
-	// Mark of Weakness (Siphoner bronze) — flat armor reduction applied
-	// after all positive bonuses so it always lands at face value rather
-	// than being scaled by percent armor sources. Clamp at 0 so a stacked
-	// debuff against a low-armor unit doesn't produce negative armor (the
-	// damage pipeline treats negative armor as "no mitigation", but a
-	// clearly-clamped zero is easier to reason about in the HUD).
+	percentBonus := s.perkArmorPercentBonusLocked(unit) + auraPercent
 	core := float64(unit.Armor)*(1.0+percentBonus) + float64(flatBonus)
 	// Zone-aura armor: a flat add and a multiplier from the owner's controlled
 	// zones, folded as (existing + add) × mul. No active aura ⇒ (0, 1) identity,
@@ -843,11 +881,27 @@ func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 	// zone-only fold.
 	auraAdd, auraMul := s.playerStatModifierLocked(unit.OwnerID, statArmor)
 	armorPerkStages := s.unitPerkStatModifiersLocked(unit, statArmor)
+	// Status-sourced stat modifiers (AbilityStatus.StatModifiers, the third
+	// PerkStatModifier emitter — see perk_stat_modifiers.go's file doc
+	// comment) fold into the SAME pool via mergeStatStagePools, at the same
+	// arithmetic position as the perk-sourced pool above, before the
+	// zone-aura merge. mark_of_weakness (Siphoner bronze, granted as an
+	// ability) is the pilot author of an "armor" StatModifiers entry
+	// ({add, -N}): applied here, after all positive bonuses, so it always
+	// lands at face value rather than being scaled by percent armor
+	// sources — exactly where the old bespoke PerkState-backed flat
+	// subtraction used to apply (see the deletion note in this migration's
+	// report; that bespoke read is GONE, this fold is now the only armor
+	// debuff path, so there is no double-application).
+	armorPerkStages = mergeStatStagePools(armorPerkStages, s.unitStatusStatModifiersLocked(unit, statArmor))
 	if auraAdd != 0 || auraMul != 1 || len(armorPerkStages) > 0 {
 		core = applyStatStages(core, mergeZoneIntoBaseStage(armorPerkStages, auraAdd, auraMul))
 	}
+	// Clamp at 0 so a stacked debuff against a low-armor unit doesn't
+	// produce negative armor (the damage pipeline treats negative armor as
+	// "no mitigation", but a clearly-clamped zero is easier to reason about
+	// in the HUD).
 	result := int(math.Floor(core))
-	result -= markOfWeaknessArmorReductionLocked(unit)
 	if result < 0 {
 		result = 0
 	}

@@ -1,0 +1,38 @@
+{
+  "id": "blood_sustain",
+  "displayName": "Blood Sustain",
+  "type": "passive",
+  "castRange": 0,
+  "icon": "perk-blood-sustain",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "passive",
+      "range": 0
+    },
+    "triggers": [
+      {
+        "id": "on_hit",
+        "type": "on_damage_dealt",
+        "damageScope": {
+          "categories": [
+            "basic_attack"
+          ]
+        },
+        "actions": [
+          {
+            "id": "heal",
+            "type": "restore_health",
+            "target": {
+              "source": "caster"
+            },
+            "config": {
+              "amountRef": "trigger_damage",
+              "amountMult": 0.2
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

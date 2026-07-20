@@ -345,6 +345,22 @@ type Unit struct {
 	// from UnitDef.Abilities). Per-instance auto-cast / cooldown state is
 	// layered on in the action-bar part. Nil for non-caster units.
 	Abilities []string
+	// OnDamageDealtDispatchActive is the RE-ENTRANCY GUARD for the
+	// on_damage_dealt composable trigger (fireOnDamageDealtLocked,
+	// ability_damage_dealt.go): set true for the duration of THIS unit's
+	// on_damage_dealt fire, cleared (deferred) on return. Every deal_damage
+	// action stamps DamageSource.AttackerUnitID = ctx.CasterID (see
+	// ability_program_registry.go's deal_damage Execute), so an
+	// on_damage_dealt trigger whose own actions deal more damage would, with
+	// no guard, immediately re-enter fireOnDamageDealtLocked for the SAME
+	// attacker and recurse without bound. Pattern mirrors
+	// PerkState.SharedPainActive (trap.go's perkShareDamageToMarkedLocked) —
+	// a per-unit flag checked and set BEFORE the recursive call, not a
+	// ctx-scoped depth counter, because each fire builds a brand-new
+	// RuntimeAbilityContext (ctx.depth/opsUsed reset to 0 every time,
+	// mirroring fireOnUnitDeathLocked) so nothing on ctx itself survives
+	// across fires to bound the recursion.
+	OnDamageDealtDispatchActive bool
 	// PoolAbilitiesByRank records the ability rolled from this unit's archetype
 	// ability pool at each rank (arch-mage-spell-system §11), keyed by rank slug
 	// (bronze/silver/gold). The roll is RNG and happens ONCE at rank-up
@@ -1175,18 +1191,14 @@ type GameState struct {
 	// deterministic under a seed.
 	objectiveUnreachableUntil map[string]int
 
-	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
-	// receive from the strongest guardian_aura covering them this tick.
-	// FlatArmor and PercentArmor are taken as max independently across all
-	// covering auras. Rebuilt once per tick in rebuildGuardianAuraCacheLocked.
-	// Zero value (absent key) = no aura.
-	guardianAuraCache map[int]guardianAuraValue
-
 	// auraStatCache maps (recipient unit ID, stat id) to the aggregated
 	// contribution every covering PerkAura emitter grants that stat this
-	// tick — the generic, data-driven sibling of guardianAuraCache. Rebuilt
-	// once per tick in rebuildAuraStatCacheLocked (perk_aura_stat_cache.go).
-	// Absent key = no covering aura for that stat.
+	// tick — the generic, data-driven aura engine (zealous_march,
+	// mana_conduit, sanctuary, guardian_aura all resolve through this one
+	// cache; guardian_aura's former hand-written guardianAuraCache was
+	// deleted when it migrated). Rebuilt once per tick in
+	// rebuildAuraStatCacheLocked (perk_aura_stat_cache.go). Absent key = no
+	// covering aura for that stat.
 	auraStatCache map[auraStatCacheKey]auraStatContribution
 
 	// pendingDeaths is the per-tick queue of units that hit HP<=0 inside
@@ -1402,7 +1414,6 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		unitsByID:                 map[int]*Unit{},
 		buildingsByID:             map[string]*protocol.BuildingTile{},
 		obstaclesByID:             map[string]*protocol.ObstacleTile{},
-		guardianAuraCache:         map[int]guardianAuraValue{},
 		auraStatCache:             map[auraStatCacheKey]auraStatContribution{},
 		objectiveUnreachableUntil: map[string]int{},
 		pendingDeathsSet:          map[int]bool{},
@@ -2892,7 +2903,6 @@ func (s *GameState) Update(dt float64) {
 	profileSection("wave", func() { s.tickWaveLocked(dt) })
 	profileSection("neutralCamps", func() { s.tickNeutralCampsLocked() })
 	profileSection("shopReroll", func() { s.tickShopRerollLocked() })
-	profileSection("guardianAuraCache", func() { s.rebuildGuardianAuraCacheLocked() })
 	profileSection("auraStatCache", func() { s.rebuildAuraStatCacheLocked() })
 	profileSection("combatAI", func() { s.tickCombatAILocked(dt, blocked) })
 	profileSection("unitCombat", func() { s.tickUnitCombatLocked(dt, blocked) })
@@ -3078,14 +3088,12 @@ func (s *GameState) Update(dt float64) {
 			}
 		}
 
-		// Mark of Weakness — armor + healing-received debuff.
-		if unit.PerkState.MarkOfWeaknessRemaining > 0 {
-			unit.PerkState.MarkOfWeaknessRemaining = math.Max(0, unit.PerkState.MarkOfWeaknessRemaining-dt)
-			if unit.PerkState.MarkOfWeaknessRemaining == 0 {
-				unit.PerkState.MarkOfWeaknessArmorReduction = 0
-				unit.PerkState.MarkOfWeaknessHealingReceivedMult = 0
-			}
-		}
+		// Mark of Weakness's armor + healing-received debuff used to decay
+		// here (a cross-unit PerkState field, mirroring Lingering Hex
+		// above). Removed by the perk's migration to a granted ability: the
+		// debuff is now an AbilityStatus (ability_status.go), which decays
+		// itself via tickAbilityStatusesLocked — see that call site later in
+		// this same tick loop.
 
 		// Amplify Damage (Siphoner silver) — damage-taken multiplier. Same
 		// cross-unit decay pattern as the Bronze afflictions above; the

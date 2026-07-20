@@ -149,13 +149,18 @@ func describeStatModifierClause(m PerkStatModifier, stage string) string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // describePerkAuras renders each PerkAura as one sentence: "<Allies|Enemies>
-// within <radius> gain <deltas>." with an optional trailing stacking clause
-// when PerAdditionalSource is nonzero — e.g. "Allies within 192 gain +30%
-// Move Speed. Each additional covering source adds +5% Move Speed." Multiple
-// auras on one perk (none shipped today) become multiple space-joined
-// sentences in authored (slice) order — auras have no stage concept to
-// reorder by (validatePerkDef rejects anything but the base stage; see
-// PerkAura's doc comment).
+// within <radius> gain <deltas>." plus a trailing stacking clause that is
+// ALWAYS present — either "Each additional covering source adds <deltas>."
+// when PerAdditionalSource is nonzero, or "Multiple sources do not stack;
+// the strongest aura wins." when it is zero and Stacking resolves to
+// auraStackingMax (today's only implemented mode). Conveying the stacking
+// rule unconditionally, rather than only when PerAdditionalSource is set, is
+// what let mana_conduit's tooltipTemplate be deleted (perk_describe_test.go)
+// — the old omission silently dropped the "does not stack" rule for any
+// aura with no per-source term. Multiple auras on one perk (none shipped
+// today) become multiple space-joined sentences in authored (slice) order —
+// auras have no stage concept to reorder by (validatePerkDef rejects
+// anything but the base stage; see PerkAura's doc comment).
 func describePerkAuras(auras []PerkAura) string {
 	if len(auras) == 0 {
 		return ""
@@ -180,32 +185,65 @@ func describePerkAuraClause(a PerkAura) string {
 		parts = append(parts, describeAuraStatModifierClause(sm))
 	}
 	sentence := fmt.Sprintf("%s within %s gain %s.", auraTargetLabel(a.Targets), trimFloat(a.Radius), strings.Join(parts, ", "))
+	if stacking := describeAuraStackingClause(a); stacking != "" {
+		sentence += " " + stacking
+	}
+	return sentence
+}
 
-	// PerAdditionalSource is a single scalar shared by every StatModifiers
-	// entry on this aura (see auraEmission / rebuildAuraStatCacheLocked,
-	// perk_aura_stat_cache.go — one PerAdditionalSource per aura, not per
-	// stat), so the stacking clause reuses the same stat labels with the
-	// stacking magnitude substituted for Value.
+// describeAuraStackingClause renders the stacking rule for a — this is
+// ALWAYS non-empty for the one implemented Stacking mode (auraStackingMax),
+// so a perk's generated tooltip never leaves a reader guessing whether
+// multiple covering sources add up.
+//
+//   - PerAdditionalSource != 0 — every covering source beyond the first adds
+//     a smaller, separately-authored bonus. PerAdditionalSource is a single
+//     scalar shared by every StatModifiers entry on this aura (see
+//     auraEmission / rebuildAuraStatCacheLocked, perk_aura_stat_cache.go —
+//     one PerAdditionalSource per aura, not per stat), so the clause reuses
+//     the same stat labels with the stacking magnitude substituted for
+//     Value.
+//   - PerAdditionalSource == 0 (the common case: no per-source term
+//     authored) and Stacking resolves to auraStackingMax (the default when
+//     omitted — see validatePerkDef's switch) — only the single strongest
+//     covering source counts; extra sources contribute nothing.
+//
+// A future non-max Stacking mode would need its own branch here; today
+// validatePerkDef rejects anything but "" / auraStackingMax at load time, so
+// this switch can never fall through silently.
+func describeAuraStackingClause(a PerkAura) string {
 	if a.PerAdditionalSource > 0 {
 		stackParts := make([]string, 0, len(a.StatModifiers))
 		for _, sm := range a.StatModifiers {
 			stackParts = append(stackParts, describeAuraStatModifierClause(PerkStatModifier{Stat: sm.Stat, Op: sm.Op, Value: a.PerAdditionalSource}))
 		}
-		sentence += fmt.Sprintf(" Each additional covering source adds %s.", strings.Join(stackParts, ", "))
+		return fmt.Sprintf("Each additional covering source adds %s.", strings.Join(stackParts, ", "))
 	}
-	return sentence
+	if a.Stacking == "" || a.Stacking == auraStackingMax {
+		return "Multiple sources do not stack; the strongest aura wins."
+	}
+	return ""
 }
 
-// auraTargetLabel turns PerkAura.Targets ("allies"/"enemies") into the
-// capitalized subject of the generated sentence. Defaults to "Allies" for any
-// unrecognized value — validatePerkDef already rejects anything but
-// "allies"/"enemies" at load time, so this only matters for a synthetic
+// auraTargetLabel turns PerkAura.Targets ("allies"/"enemies"/"sameOwner")
+// into the capitalized subject of the generated sentence. "sameOwner" reads
+// as "Your units" rather than "Allies" — the whole point of the distinct
+// Targets value is that it is NARROWER than "allies" (same OWNER, not
+// merely same team; see PerkAura.Targets' doc comment), so reusing the
+// "Allies" label here would misdescribe guardian_aura's actual behavior in
+// team games. Defaults to "Allies" for any other unrecognized value —
+// validatePerkDef already rejects anything but "allies"/"enemies"/
+// "sameOwner" at load time, so this only matters for a synthetic
 // (non-catalog) PerkDef built directly in a test.
 func auraTargetLabel(targets string) string {
-	if targets == "enemies" {
+	switch targets {
+	case "enemies":
 		return "Enemies"
+	case "sameOwner":
+		return "Your units"
+	default:
+		return "Allies"
 	}
-	return "Allies"
 }
 
 // describeAuraStatModifierClause renders one aura StatModifiers entry as

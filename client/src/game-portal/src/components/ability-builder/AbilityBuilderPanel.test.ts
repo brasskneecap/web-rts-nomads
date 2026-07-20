@@ -50,6 +50,7 @@ function stubFetch(abilities: AuthoredAbilityDef[], deleteStatus: 'deleted' | 'r
     const method = init?.method ?? 'GET'
     if (method === 'GET' && u.endsWith('/catalog/abilities')) return jsonResponse({ abilities })
     if (method === 'GET' && u.endsWith('/catalog/action-schema')) return jsonResponse({ actions: [], enums: {} })
+    if (method === 'GET' && u.endsWith('/catalog/action-icons')) return jsonResponse({ icons: [] })
     if (method === 'GET' && u.endsWith('/catalog/effects')) return jsonResponse({ effects: [] })
     if (method === 'GET' && u.endsWith('/catalog/projectiles')) return jsonResponse({ projectiles: [] })
     if (method === 'GET' && u.endsWith('/catalog/damage-types')) return jsonResponse({ damageTypes: [] })
@@ -133,6 +134,7 @@ describe('AbilityBuilderPanel', () => {
       const method = init?.method ?? 'GET'
       if (method === 'GET' && u.endsWith('/catalog/abilities')) return jsonResponse({ abilities })
       if (method === 'GET' && u.endsWith('/catalog/action-schema')) return jsonResponse({ actions: [], enums: {} })
+      if (method === 'GET' && u.endsWith('/catalog/action-icons')) return jsonResponse({ icons: [] })
       if (method === 'GET' && u.endsWith('/catalog/effects')) return jsonResponse({ effects: [] })
       if (method === 'GET' && u.endsWith('/catalog/projectiles')) return jsonResponse({ projectiles: [] })
       if (method === 'GET' && u.endsWith('/catalog/damage-types')) return jsonResponse({ damageTypes: [] })
@@ -188,6 +190,7 @@ describe('AbilityBuilderPanel', () => {
       const method = init?.method ?? 'GET'
       if (method === 'GET' && u.endsWith('/catalog/abilities')) return jsonResponse({ abilities: [composableAbility] })
       if (method === 'GET' && u.endsWith('/catalog/action-schema')) return jsonResponse({ actions: [], enums: {} })
+      if (method === 'GET' && u.endsWith('/catalog/action-icons')) return jsonResponse({ icons: [] })
       if (method === 'GET' && u.endsWith('/catalog/effects')) return jsonResponse({ effects: [] })
       if (method === 'GET' && u.endsWith('/catalog/projectiles')) return jsonResponse({ projectiles: [] })
       if (method === 'GET' && u.endsWith('/catalog/damage-types')) return jsonResponse({ damageTypes: [] })

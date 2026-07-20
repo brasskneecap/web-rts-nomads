@@ -26,6 +26,32 @@
       of the strongest single source's value. Leave blank for none.
     </p>
 
+    <div class="aura-editor__ring-color">
+      <label class="aura-editor__checkbox-label">
+        <input
+          type="checkbox"
+          :checked="ringColorEnabled"
+          aria-label="Override aura ring color"
+          @change="onToggleRingColor(($event.target as HTMLInputElement).checked)"
+        />
+        Override Ring Color
+      </label>
+      <label v-if="ringColorEnabled">
+        Ring Color
+        <input
+          type="color"
+          :value="modelValue.ringColor || DEFAULT_RING_COLOR"
+          aria-label="Aura ring color"
+          @input="patch({ ringColor: ($event.target as HTMLInputElement).value })"
+        />
+      </label>
+    </div>
+    <p class="aura-editor__hint-line">
+      HUD-only: changes the color of this aura's radius ring so it can be told apart from other
+      auras on the same unit. Has no effect on gameplay. Unchecked = ring uses the owning
+      player's color.
+    </p>
+
     <p v-if="modelValue.statRows.length === 0" class="aura-editor__hint-line">No stat contributions.</p>
     <div v-for="(row, idx) in modelValue.statRows" :key="idx" class="aura-editor__stat-row">
       <label>
@@ -92,6 +118,13 @@ export interface AuraRow {
   includeSelf: boolean
   perAdditionalSource: number | ''
   statRows: AuraStatRow[]
+  // ringColor: '' means "no override" (ring uses the owning player's color,
+  // unchanged from before this field existed). A non-empty value is a CSS
+  // hex color authored via the native color picker below. Mirrors the
+  // '' == unset convention every other optional numeric field in this row
+  // uses (see the module doc above) — the parent's aurasFromRows only ever
+  // writes PerkAura.ringColor when this is non-empty.
+  ringColor: string
 }
 
 const props = defineProps<{
@@ -115,6 +148,18 @@ const radiusProxy = computed(computedProxy('radius'))
 const targetsProxy = computed(computedProxy('targets'))
 const includeSelfProxy = computed(computedProxy('includeSelf'))
 const perAdditionalSourceProxy = computed(computedProxy('perAdditionalSource'))
+
+// Ring color: a native <input type="color"> can't express "no value" — it
+// always resolves to SOME color. "Unset" (ring falls back to the owning
+// player's color) is represented by ringColor === '' on the row, and
+// controlled by this separate checkbox rather than trying to overload the
+// color input itself. Checking the box seeds a visible default so the
+// picker doesn't silently start on black; unchecking clears back to ''.
+const DEFAULT_RING_COLOR = '#fef08a'
+const ringColorEnabled = computed(() => props.modelValue.ringColor !== '')
+function onToggleRingColor(enabled: boolean) {
+  patch({ ringColor: enabled ? (props.modelValue.ringColor || DEFAULT_RING_COLOR) : '' })
+}
 
 function numOrBlank(raw: string): number | '' {
   if (raw === '') return ''
@@ -180,6 +225,29 @@ function updateStatRow(idx: number, row: AuraStatRow) {
   flex-direction: row !important;
   align-items: center;
   gap: 6px !important;
+}
+
+.aura-editor__ring-color {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.aura-editor__ring-color label:not(.aura-editor__checkbox-label) {
+  display: grid;
+  gap: 4px;
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 0.75rem;
+}
+
+.aura-editor__ring-color input[type='color'] {
+  width: 48px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
 }
 
 .aura-editor__stat-row {

@@ -295,7 +295,13 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 	// colored-popup system so a fire-typed mage's basic attack pops orange,
 	// a shadow-typed necromancer's attack pops dark purple, etc. Untyped
 	// units (most soldiers, raiders) keep the default white/red popup.
-	s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "melee", DamageType: attacker.AttackDamageType})
+	// This is the SHARED on-hit hub for every basic-attack delivery mode —
+	// direct melee swings (called from the group-melee path below), normal
+	// ranged auto-attack arrows, and pierce-shaped arrows (all land via
+	// resolveAttackHitLocked) — so Kind's "melee" label is stale/misleading
+	// for the ranged cases, but Category is always DamageCategoryBasicAttack
+	// here regardless of delivery mode.
+	s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "melee", Category: DamageCategoryBasicAttack, DamageType: attacker.AttackDamageType})
 	s.onUnitDamagedLocked(attacker, target, damage)
 	s.onPerkDamageTakenLocked(target, attacker, damage)
 
@@ -393,7 +399,10 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 		// Base-stat splash inherits the attacker's damage school — a fire-
 		// typed splasher's AoE reads as fire, etc. Defaults to physical for
 		// untyped attackers (raider_brute today).
-		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "splash", DamageType: attacker.AttackDamageType})
+		// Base-stat splash is a unit's own SplashRadius property (raider_brute,
+		// etc.) — inherent to its basic attack, not a perk-granted bonus hit —
+		// so this is DamageCategoryBasicAttack, matching the primary hit above.
+		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "splash", Category: DamageCategoryBasicAttack, DamageType: attacker.AttackDamageType})
 		s.recordDamageDealtLocked(attacker, u, damage)
 		s.trackBattleDamageLocked(battleSourceFromUnit(attacker), u, damage)
 		if u.HP <= 0 {
@@ -450,8 +459,14 @@ func (s *GameState) applyAbilitySplashDamageLocked(ownerUnitID int, ownerPlayerI
 			continue
 		}
 		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{
-			AttackerUnitID:  ownerUnitID,
-			Kind:            "ability",
+			AttackerUnitID: ownerUnitID,
+			Kind:           "ability",
+			// Always DamageCategoryAbility even when sourceAbilityID is ""
+			// (spawnGroundHazardLocked's meteor path, per this function's own
+			// doc comment) — the whole function is "the ability-cast
+			// counterpart of applySplashDamageLocked," so every caller is an
+			// ability effect regardless of whether attribution was threaded.
+			Category:        DamageCategoryAbility,
 			DamageType:      dmgType,
 			SourceAbilityID: sourceAbilityID,
 		})
@@ -481,6 +496,7 @@ func (s *GameState) applyEquipmentOnHitElementalLocked(attacker, target *Unit) {
 		landed := s.applyUnitDamageWithSourceLocked(target, amt, DamageSource{
 			AttackerUnitID:   attacker.ID,
 			Kind:             "item-elemental",
+			Category:         DamageCategoryItem,
 			DamageType:       dt,
 			SuppressTypeHint: true,
 		})
@@ -1015,7 +1031,7 @@ func (s *GameState) tickBuildingCombatLocked(dt float64) {
 			building.Metadata["attackWindupRemaining"] = windup
 			if windup == 0 {
 				if hit := s.findNearestHostileUnitForBuildingLocked(building, *building.OwnerID, def.AttackRange); hit != nil {
-					s.applyUnitDamageWithSourceLocked(hit, def.Damage, DamageSource{AttackerBuildingID: building.ID, Kind: "building"})
+					s.applyUnitDamageWithSourceLocked(hit, def.Damage, DamageSource{AttackerBuildingID: building.ID, Kind: "building", Category: DamageCategoryBuilding})
 					s.trackBattleDamageLocked(battleSourceFromBuilding(building), hit, def.Damage)
 					if hit.HP <= 0 {
 						hit.HP = 0
