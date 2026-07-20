@@ -443,7 +443,7 @@ func riderEffectSummary(actions []AbilityActionDef) string {
 	return strings.Join(words, " and ")
 }
 
-// riderTriggerLabel turns a TriggerType id into inline prose ("on_beam_tick"
+// riderTriggerLabel turns a TriggerType id into inline prose ("on_tick"
 // -> "beam tick").
 func riderTriggerLabel(t TriggerType) string {
 	return strings.ReplaceAll(strings.TrimPrefix(string(t), "on_"), "_", " ")

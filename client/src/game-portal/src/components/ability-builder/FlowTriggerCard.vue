@@ -76,7 +76,7 @@
             v-model="nestedTypeChoice[a.id]"
             :aria-label="`New nested trigger type for ${a.id}`"
           >
-            <option v-for="t in nestedTriggerTypeOptions(a)" :key="t" :value="t">{{ humanizeTriggerType(t) }}</option>
+            <option v-for="t in nestedTriggerTypeOptions(a)" :key="t" :value="t">{{ nestedTriggerLabel(a, t) }}</option>
           </select>
           <UiButton
             size="sm"
@@ -222,17 +222,39 @@ function actionPath(action: AbilityActionDef): NodePath {
   return [...props.path, { kind: 'action', id: action.id }]
 }
 
-// nestedTriggerTypeOptions surfaces only the trigger types that make sense
-// to nest under a given action's own follow-up slot: create_zone's
-// config.triggers fires on zone lifecycle events (on_zone_tick / _enter /
-// _exit); every OTHER action's `children` slot only ever fires via
-// on_action_complete (see ability_program.go's Children doc comment +
-// TriggerOnActionComplete) — offering a type picker there would just be one
-// option pretending to be a choice, so the template hides the <select>
-// entirely when this returns a single-element array.
+// nestedTriggerTypeOptions surfaces only the trigger types that make sense to
+// nest under a given container action's config.triggers slot. Mirrors the Go
+// side's CONFIG_TRIGGER_ACTION_TYPES containers (programTree.ts / walkAction):
+// each fires a specific set of trigger moments. Every OTHER action's `children`
+// slot only ever fires via on_action_complete (see ability_program.go's
+// Children doc comment) — offering a type picker there would just be one option
+// pretending to be a choice, so the template hides the <select> entirely when
+// this returns a single-element array.
 function nestedTriggerTypeOptions(action: AbilityActionDef): TriggerType[] {
-  if (action.type === 'create_zone') return ['on_zone_tick', 'on_zone_enter', 'on_zone_exit']
-  return ['on_action_complete']
+  switch (action.type) {
+    case 'create_zone':
+      return ['on_tick', 'on_zone_enter', 'on_zone_exit']
+    // Apply Duration's three moments: On Apply (on_action_complete, binds the
+    // status), On Duration Tick (on_tick), On Complete (on_status_expire).
+    case 'apply_status_duration':
+      return ['on_action_complete', 'on_tick', 'on_status_expire']
+    case 'launch_projectile':
+      return ['on_projectile_impact', 'on_tick']
+    case 'beam':
+      return ['on_beam_impact', 'on_tick']
+    default:
+      return ['on_action_complete']
+  }
+}
+
+// nestedTriggerLabel gives the picker a container-appropriate label. Inside an
+// Apply Duration container, on_action_complete IS the "On Apply" moment — but
+// on_action_complete is a GENERIC trigger elsewhere (any action's child), so
+// this contextual relabel lives here in the picker rather than in the global
+// humanizeActionType override table where it would mislabel every other use.
+function nestedTriggerLabel(action: AbilityActionDef, type: TriggerType): string {
+  if (action.type === 'apply_status_duration' && type === 'on_action_complete') return 'On Apply'
+  return humanizeTriggerType(type)
 }
 
 function addNestedTrigger(action: AbilityActionDef) {

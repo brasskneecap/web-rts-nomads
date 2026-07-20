@@ -477,7 +477,7 @@ func TestDescribePerk_Deterministic_SameInputSameOutput(t *testing.T) {
 		AbilityRiders: []AbilityRider{
 			{
 				Target:  "siphon_life",
-				Trigger: TriggerOnBeamTick,
+				Trigger: TriggerOnTick,
 				Actions: []AbilityActionDef{
 					{ID: "a", Type: ActionSelectTargets},
 					{ID: "b", Type: ActionDealDamage},

@@ -73,16 +73,35 @@ type applyStatusDurationConfig struct {
 	Name string `json:"name,omitempty"`
 	// Duration seeds the spawned AbilityStatus's initial Remaining.
 	Duration float64 `json:"duration"`
+	// TickInterval is the cadence (seconds) the spawned AbilityStatus fires its
+	// on_status_tick trigger(s) at — the "On Duration Tick" moment (burn's
+	// per-second damage, etc.). 0/omitted ⇒ the status never ticks (a
+	// mark_of_weakness-shaped container with only an On Apply trigger). Required
+	// (>0) whenever any config.triggers is an on_status_tick — see Validate.
+	// Mirrors createZoneConfig.TickInterval / the runtime cadence driver on
+	// AbilityStatus (ability_status.go).
+	TickInterval float64 `json:"tickInterval,omitempty"`
 	// Stacking / MaxStacks configure AbilityStatus.Stacking/MaxStacks — see
 	// those fields' doc comments (ability_status.go) for the refresh-vs-stack
 	// model. Same vocabulary/defaults as apply_status's identical fields.
 	Stacking  string `json:"stacking,omitempty"`
 	MaxStacks int    `json:"maxStacks,omitempty"`
-	// Triggers carries the compiled on_action_complete trigger(s) that run
-	// once per live target immediately after that target's AbilityStatus is
-	// spawned, with ctx.CurrentStatus bound to it — see this file's doc
-	// comment for why this rides config.triggers rather than
-	// AbilityActionDef.Children.
+	// Triggers carries this container's child triggers across THREE moments:
+	//   - on_action_complete ("On Apply") — run once per live target
+	//     immediately at spawn, with ctx.CurrentStatus bound to that target's
+	//     status (the only moment status-bound effects — change_stat/apply_mark/
+	//     nested apply_status — may live; see this file's doc comment).
+	//   - on_status_tick ("On Duration Tick") — fired every TickInterval by the
+	//     shared ticker (tickAbilityStatusesLocked) from a FRESH per-event
+	//     context (no CurrentStatus binding), for transient per-tick actions
+	//     (deal_damage, …).
+	//   - on_status_expire ("On Complete") — fired exactly once when the status
+	//     ends (natural timeout or target death), also from a fresh context.
+	// The On Apply triggers run here in Execute; the tick/expire triggers are
+	// stored on the spawned AbilityStatus so the ticker drives them (Execute
+	// stores the whole slice — runProgramTriggersLocked filters by type at each
+	// site, so an On Apply trigger stored on the status simply never re-fires
+	// from the ticker).
 	Triggers []AbilityTriggerDef `json:"triggers,omitempty"`
 }
 
@@ -108,11 +127,27 @@ func init() {
 			if c.Stacking != "" && c.Stacking != "refresh" && c.Stacking != "stack" {
 				out = append(out, ValidationIssue{Code: "invalid_property", Message: fmt.Sprintf("unknown stacking %q (want \"refresh\" or \"stack\")", c.Stacking), Severity: "error"})
 			}
+			// TickInterval is the runtime cadence driver for the On Duration Tick
+			// moment, so it must be set whenever a child on_status_tick trigger
+			// exists (mirrors createZoneConfig / the legacy apply_status authored
+			// path's identical requirement). A container with only On Apply /
+			// On Complete triggers needs no cadence.
+			hasTick := false
+			for _, trig := range c.Triggers {
+				if trig.Type == TriggerOnTick {
+					hasTick = true
+					break
+				}
+			}
+			if hasTick && c.TickInterval <= 0 {
+				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "apply_status_duration requires tickInterval > 0 when it has an on_status_tick trigger", Severity: "error"})
+			}
 			return out
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "name", Label: "Name", Control: "text", Section: "Advanced"},
 			{Key: "duration", Label: "Duration", Control: "duration", Section: "Timing"},
+			{Key: "tickInterval", Label: "Tick Interval", Control: "duration", Section: "Timing"},
 			{Key: "stacking", Label: "Stacking", Control: "enum", Options: []string{"refresh", "stack"}, Section: "Advanced"},
 			{Key: "maxStacks", Label: "Max Stacks", Control: "number", Section: "Advanced"},
 			// config.triggers is NOT re-declared here as an inspector field —
@@ -146,8 +181,16 @@ func init() {
 					CasterID:     ctx.CasterID,
 					TargetUnitID: id,
 					Remaining:    c.Duration,
-					Stacking:     c.Stacking,
-					MaxStacks:    c.MaxStacks,
+					TickInterval: c.TickInterval,
+					// Store the child triggers so the shared ticker
+					// (tickAbilityStatusesLocked) fires the on_status_tick /
+					// on_status_expire ones on cadence / at end. The On Apply
+					// (on_action_complete) triggers are run below at spawn; they
+					// stay in this slice harmlessly because runProgramTriggersLocked
+					// filters by type, so the ticker never re-fires them.
+					Triggers:  c.Triggers,
+					Stacking:  c.Stacking,
+					MaxStacks: c.MaxStacks,
 				}
 				// spawnAbilityStatusLocked's refresh/stack-cap paths may
 				// discard st (extending an existing live status instead, or

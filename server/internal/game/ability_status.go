@@ -121,6 +121,31 @@ type AbilityStatus struct {
 	// — see apply_mark's Validate func (ability_status_duration.go).
 	// Meaningless/ignored when Icon is empty.
 	IconKind string
+	// OverlayColor is a CSS color the client paints over the afflicted unit's
+	// sprite (masked to its silhouette, gently pulsing) while this status is
+	// active — the full-body-tint sibling of Icon, set by apply_color_overlay
+	// (ability_color_overlay.go). Empty means no overlay (the zero-value/no-op
+	// case for every status that doesn't author one). Serialized onto
+	// UnitSnapshot.OverlayColor via unitStatusOverlayColorLocked; generalizes
+	// the hardcoded chill/blue overlay so any status can tint its target.
+	OverlayColor string
+}
+
+// unitStatusOverlayColorLocked returns the tint color of the first active
+// AbilityStatus on unitID that authored one (apply_color_overlay), or "" when
+// none. Mirrors the per-unit status scan activeDebuffIconsLocked uses for
+// overhead icons (perks_icons.go). First-writer-wins when a unit somehow
+// carries two color-overlay statuses at once — a deliberate, deterministic
+// pick (append order, never map iteration) rather than blending. Caller holds
+// s.mu.
+func (s *GameState) unitStatusOverlayColorLocked(unitID int) string {
+	for _, st := range s.AbilityStatuses {
+		if st == nil || st.TargetUnitID != unitID || st.OverlayColor == "" {
+			continue
+		}
+		return st.OverlayColor
+	}
+	return ""
 }
 
 func abilityStatusIDString(id int) string {
@@ -158,6 +183,20 @@ func statusStackKey(abilityID, name string) string {
 // before calling this, but this guard keeps the function safe standalone.
 //
 // Caller holds s.mu.
+// statusHasTickTrigger reports whether st carries at least one on_status_tick
+// trigger — the only child-trigger type that actually needs a TickInterval
+// cadence to fire (On Apply runs at spawn, On Complete fires on end). Used to
+// keep the "spawned with no tickInterval" warning from firing for a container
+// whose triggers are all On Apply / On Complete.
+func statusHasTickTrigger(st *AbilityStatus) bool {
+	for _, trig := range st.Triggers {
+		if trig.Type == TriggerOnTick {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *GameState) spawnAbilityStatusLocked(st *AbilityStatus) {
 	if st == nil || st.TargetUnitID == 0 {
 		return
@@ -201,17 +240,17 @@ func (s *GameState) spawnAbilityStatusLocked(st *AbilityStatus) {
 	}
 
 	if st.TickInterval <= 0 {
-		// Only a misconfiguration worth warning about when st ALSO declares
-		// on_status_tick/on_status_expire Triggers — that's the one shape
-		// that actually needs a tick cadence to do anything (apply_status's
-		// authored path). A pure apply_status_duration-spawned status
-		// (ability_status_duration.go) never sets Triggers at all — its
-		// nested change_stat/apply_mark effects run once at spawn time via a
-		// completely separate mechanism (config.triggers, on_action_complete)
-		// and legitimately never tick — so warning here for every ordinary
-		// mark_of_weakness-shaped cast would be pure log spam for expected,
-		// correct behavior.
-		if len(st.Triggers) > 0 {
+		// Only a misconfiguration worth warning about when st carries an
+		// on_status_tick trigger specifically — that's the one shape that needs
+		// a tick cadence to do anything. An apply_status_duration stores ALL its
+		// child triggers here (ability_status_duration.go), including On Apply
+		// (on_action_complete) triggers that run once at spawn and On Complete
+		// (on_status_expire) triggers that fire on end — neither needs a cadence
+		// — so a mark_of_weakness / burn-visual-only container (no On Duration
+		// Tick) legitimately has Triggers set with no TickInterval. Scanning for
+		// on_status_tick specifically keeps this from being log spam for that
+		// expected, correct shape.
+		if statusHasTickTrigger(st) {
 			slog.Warn("ability status spawned with non-positive tickInterval; it will never tick",
 				"abilityId", st.AbilityID, "casterId", st.CasterID)
 		}
@@ -321,7 +360,17 @@ func (s *GameState) tickAbilityStatusesLocked(dt float64) {
 // binding) and EventPosition anchors on its current world position, falling
 // back to the zero position if the target can no longer be resolved (only
 // reachable from the expire path — the tick path always calls this with an
-// already-validated live target). Caller holds s.mu.
+// already-validated live target).
+//
+// Selected ALSO binds the afflicted unit: it is the "previous_action_targets"
+// / default target set, so an On Duration Tick / On Complete action that
+// consumes targets but names none (a bare deal_damage — burn's per-tick hit)
+// defaults to the unit the status is on (resolveActionTargetsLocked's final
+// ctx.Selected fallback, ability_exec.go), instead of resolving to nothing. A
+// tick that wants a DIFFERENT set (an AoE around the unit, say) still overrides
+// with an explicit select_targets. A dead/gone target on the expire path is a
+// harmless no-op downstream (deal_damage re-resolves + validates). Caller holds
+// s.mu.
 func (s *GameState) buildStatusEventContextLocked(st *AbilityStatus) *RuntimeAbilityContext {
 	var pos protocol.Vec2
 	if u := s.getUnitByIDLocked(st.TargetUnitID); u != nil {
@@ -333,6 +382,7 @@ func (s *GameState) buildStatusEventContextLocked(st *AbilityStatus) *RuntimeAbi
 		OwnerUnitID:        st.CasterID,
 		EventPosition:      pos,
 		CurrentEventUnitID: st.TargetUnitID,
+		Selected:           []int{st.TargetUnitID},
 		Named:              map[string]ContextValue{},
 		Trace:              s.previewTrace,
 		now:                s.previewClock,
@@ -343,7 +393,7 @@ func (s *GameState) buildStatusEventContextLocked(st *AbilityStatus) *RuntimeAbi
 // through the shared executor. Caller holds s.mu.
 func (s *GameState) fireAbilityStatusTickLocked(st *AbilityStatus) {
 	ctx := s.buildStatusEventContextLocked(st)
-	s.runProgramTriggersLocked(ctx, st.Triggers, TriggerOnStatusTick)
+	s.runProgramTriggersLocked(ctx, st.Triggers, TriggerOnTick)
 }
 
 // fireAbilityStatusExpireLocked runs st's compiled on_status_expire

@@ -24,7 +24,7 @@ import (
 func buildVortexTestAbilityDef(id string, radius, pullStrength float64, dmgAmount int, mode string) AbilityDef {
 	tickTrig := AbilityTriggerDef{
 		ID:   "tick",
-		Type: TriggerOnProjectileTick,
+		Type: TriggerOnTick,
 		Actions: []AbilityActionDef{
 			{
 				ID:   "sel",

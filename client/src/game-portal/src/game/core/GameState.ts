@@ -105,6 +105,9 @@ export type Unit = {
   coldSlowedRemaining?: number
   /** Effective speed fraction while chilled (0.75 = 25% slower). */
   coldSlowedMultiplier?: number
+  /** CSS hex color the renderer paints over the sprite while an
+   *  apply_color_overlay status is active. Mirrors UnitSnapshot.overlayColor. */
+  overlayColor?: string
   /** Remaining seconds on a burn (fire DoT) — fire_sword proc or Trapper
    *  fire_pit. > 0 ⇒ the renderer paints an animated burning overlay.
    *  Mirrors UnitSnapshot.burningRemaining. */
@@ -225,6 +228,7 @@ export function mapUnitSnapshot(unit: UnitSnapshot): Unit {
     slowedMultiplier: unit.slowedMultiplier,
     coldSlowedRemaining: unit.coldSlowedRemaining,
     coldSlowedMultiplier: unit.coldSlowedMultiplier,
+    overlayColor: unit.overlayColor,
     burningRemaining: unit.burningRemaining,
     arcaneCharge: unit.arcaneCharge,
     burningAnchor: unit.burningAnchor,

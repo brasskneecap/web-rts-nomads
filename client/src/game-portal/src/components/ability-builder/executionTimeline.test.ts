@@ -116,7 +116,7 @@ describe('buildExecutionTimeline', () => {
                 triggers: [
                   {
                     id: 'tick',
-                    type: 'on_zone_tick',
+                    type: 'on_tick',
                     actions: [{ id: 'zd', type: 'deal_damage', config: { amount: 12 } }],
                   },
                 ],
@@ -174,7 +174,7 @@ describe('buildExecutionTimeline', () => {
                     triggers: [
                       {
                         id: 'burn',
-                        type: 'on_zone_tick',
+                        type: 'on_tick',
                         actions: [{ id: 'bdmg', type: 'deal_damage', config: { amount: 12 } }],
                       },
                     ],

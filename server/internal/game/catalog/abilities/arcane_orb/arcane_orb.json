@@ -41,7 +41,7 @@
               "triggers": [
                 {
                   "id": "tick",
-                  "type": "on_projectile_tick",
+                  "type": "on_tick",
                   "actions": [
                     {
                       "id": "sel",

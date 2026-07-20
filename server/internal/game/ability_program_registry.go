@@ -25,6 +25,13 @@ type ActionConfig interface{ actionConfig() }
 type ValidationScope struct {
 	AvailableContext map[string]bool
 	PriorOutputs     map[string]bool
+	// InsideStatusDuration is true when this action is being validated inside
+	// an apply_status_duration's config.triggers (the same lexical position
+	// change_stat/apply_mark require — see walkAction, ability_program_validate.go).
+	// apply_status reads it to flip its "duration" requirement: derived from
+	// the enclosing container when true, required on the config when false
+	// (the legacy standalone/compiler path). Every other descriptor ignores it.
+	InsideStatusDuration bool
 }
 
 // SchemaField describes ONE editable control for the schema-driven editor.

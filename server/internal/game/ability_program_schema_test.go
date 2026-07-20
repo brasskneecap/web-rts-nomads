@@ -27,7 +27,8 @@ func TestActionSchemasCoversRegistry(t *testing.T) {
 	}
 	// play_presentation has a registered descriptor (Phase 6b, Task 1) ->
 	// listed, runnable, with its asset/position/scale/renderLayer/
-	// presentationId fields.
+	// presentationId fields plus bindToStatusDuration (the status-bound visual
+	// half of a data-authored status — ability_exec_presentation.go).
 	pp, ok := byType[ActionPlayPresentation]
 	if !ok {
 		t.Fatalf("play_presentation should be listed")
@@ -35,7 +36,7 @@ func TestActionSchemasCoversRegistry(t *testing.T) {
 	if !pp.Runnable {
 		t.Fatalf("play_presentation should be runnable (has a registered executor)")
 	}
-	wantFields := map[string]bool{"asset": true, "position": true, "scale": true, "renderLayer": true, "presentationId": true}
+	wantFields := map[string]bool{"asset": true, "position": true, "scale": true, "renderLayer": true, "presentationId": true, "bindToStatusDuration": true}
 	if len(pp.Fields) != len(wantFields) {
 		t.Fatalf("play_presentation schema fields = %+v; want keys %v", pp.Fields, wantFields)
 	}

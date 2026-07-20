@@ -148,7 +148,7 @@ func TestCompileCatalogActionTypeShape(t *testing.T) {
 		"heal":            {ActionSelectTargets, ActionRestoreHealth, ActionPlayPresentation},
 		"meteor":          {ActionPlayPresentation},
 		"raise_skeleton":  {ActionSummonUnit},
-		"shatter":         {ActionSelectTargets, ActionDealDamage, ActionApplyStatus, ActionPlayPresentation},
+		"shatter":         {ActionSelectTargets, ActionDealDamage, ActionApplyStatusDuration, ActionPlayPresentation},
 		"siphon_life":     {ActionBeam},
 	}
 
@@ -403,7 +403,7 @@ func collectAllTriggerTypesIncludingLaunchProjectile(prog *AbilityProgram) []Tri
 }
 
 // TestCatalog_OnlyArcaneOrbCompilesProjectileTickTrigger guards
-// on_projectile_tick (TriggerOnProjectileTick): arcane_orb's ticking-vortex
+// on_projectile_tick (TriggerOnTick): arcane_orb's ticking-vortex
 // shape (compileTickingProjectileActions, ability_compile.go) is the ONLY
 // producer today. No other catalog ability's compiled/shipped program may
 // use it, today or as a regression later — mirrors
@@ -418,7 +418,7 @@ func TestCatalog_OnlyArcaneOrbCompilesProjectileTickTrigger(t *testing.T) {
 			prog := catalogProgram(def)
 			usesIt := false
 			for _, tt := range collectAllTriggerTypesIncludingLaunchProjectile(prog) {
-				if tt == TriggerOnProjectileTick {
+				if tt == TriggerOnTick {
 					usesIt = true
 					break
 				}

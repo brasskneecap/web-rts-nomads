@@ -9,7 +9,7 @@ import "fmt"
 // abilities can author it ahead of the descriptor landing in a later task.
 var allActionTypes = []ActionType{
 	ActionSelectTargets, ActionStoreTargets, ActionFilterTargets, ActionDealDamage,
-	ActionRestoreHealth, ActionApplyStatus, ActionApplyStatusDuration, ActionChangeStat, ActionApplyMark,
+	ActionRestoreHealth, ActionApplyStatus, ActionApplyStatusDuration, ActionChangeStat, ActionApplyMark, ActionApplyColorOverlay,
 	ActionRemoveStatus, ActionCreateZone,
 	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionPlaceTrap, ActionMoveUnit, ActionApplyForce,
 	ActionModifyResource, ActionTriggerEvent, ActionPlayPresentation, ActionPlaySound,
@@ -44,8 +44,8 @@ func isKnownActionType(t ActionType) bool {
 // onto an existing TriggerType, so its trigger must be one of these.
 var allTriggerTypes = []TriggerType{
 	TriggerOnCastStart, TriggerOnCastComplete, TriggerOnAnimationMarker,
-	TriggerOnProjectileImpact, TriggerOnProjectileTick, TriggerOnBeamImpact, TriggerOnBeamTick,
-	TriggerOnZoneTick, TriggerOnZoneEnter, TriggerOnZoneExit, TriggerOnStatusTick, TriggerOnStatusExpire,
+	TriggerOnProjectileImpact, TriggerOnBeamImpact, TriggerOnTick,
+	TriggerOnZoneEnter, TriggerOnZoneExit, TriggerOnStatusExpire,
 	TriggerOnDamageDealt, TriggerOnUnitDeath, TriggerOnActionComplete, TriggerOnChargeFull, TriggerCustom,
 }
 
@@ -124,16 +124,15 @@ func validateAbilityProgram(prog *AbilityProgram) []ValidationIssue {
 func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string, channeledBeamAllowed bool, insideStatusDuration bool, loopVars map[string]bool) {
 	w.checkDuplicateID(trig.ID, path)
 
-	if trig.Type == TriggerOnZoneTick || trig.Type == TriggerOnStatusTick {
-		if trig.Timing == nil || trig.Timing.TickInterval <= 0 {
-			w.issues = append(w.issues, ValidationIssue{
-				Path:     path,
-				Code:     "invalid_tick_interval",
-				Message:  "tick trigger requires timing.tickInterval > 0",
-				Severity: "error",
-			})
-		}
-	}
+	// NOTE: an on_tick trigger carries NO tick-interval of its own. The tick
+	// CADENCE is owned entirely by the enclosing ticking container's config
+	// (createZoneConfig.TickInterval, applyStatusDurationConfig.TickInterval,
+	// the projectile/beam config), which is where it is authored AND validated —
+	// see each container's own Validate. A former, redundant trigger-level
+	// timing.tickInterval requirement lived here; it was removed once on_tick
+	// unified the four *_tick types, because it duplicated the container's
+	// interval and surfaced two "Tick Interval" fields in the editor for one
+	// cadence.
 
 	// DamageScope is an on_damage_dealt-ONLY field (see AbilityTriggerDef.DamageScope's
 	// doc comment). An authored scope on any other trigger type would be
@@ -209,11 +208,11 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string, chan
 	// no-op at runtime — rejected outright here instead (this project's
 	// standing "no inert authorable fields" rule, same bar
 	// isAuraOnlyStat/PerCompanion are held to on a stat modifier elsewhere).
-	if (action.Type == ActionChangeStat || action.Type == ActionApplyMark) && !insideStatusDuration {
+	if (action.Type == ActionChangeStat || action.Type == ActionApplyMark || action.Type == ActionApplyColorOverlay) && !insideStatusDuration {
 		w.issues = append(w.issues, ValidationIssue{
 			Path:     path,
 			Code:     "invalid_placement",
-			Message:  string(action.Type) + " must be nested under an apply_status_duration action (its config.triggers) — it binds to the enclosing status's lifetime and is inert anywhere else",
+			Message:  string(action.Type) + " must live in an apply_status_duration's On Apply (on_action_complete) trigger — it binds to the enclosing status's lifetime and is inert in an On Duration Tick / On Complete trigger or anywhere else",
 			Severity: "error",
 		})
 	}
@@ -239,7 +238,7 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string, chan
 				Severity: "error",
 			})
 		} else {
-			for _, issue := range d.Validate(cfg, ValidationScope{}) {
+			for _, issue := range d.Validate(cfg, ValidationScope{InsideStatusDuration: insideStatusDuration}) {
 				if issue.Path == "" {
 					issue.Path = path
 				} else {
@@ -297,13 +296,21 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string, chan
 					}
 				}
 			case ActionApplyStatusDuration:
-				// The ONE place insideStatusDuration is set true: the
-				// container's own config.triggers is exactly where
-				// change_stat/apply_mark are meant to live (see this action's
-				// doc comment, ability_program.go).
+				// The ONE place insideStatusDuration is set true — but ONLY for
+				// the container's On Apply (on_action_complete) child triggers.
+				// That is the sole moment Execute binds ctx.CurrentStatus (it
+				// runs on_action_complete at spawn); the On Duration Tick /
+				// On Complete (on_status_tick / on_status_expire) triggers fire
+				// LATER from a fresh per-event context (tickAbilityStatusesLocked
+				// -> buildStatusEventContextLocked) with no CurrentStatus, so a
+				// status-bound effect (change_stat/apply_mark/nested apply_status)
+				// there would be inert — insideStatusDuration=false makes the
+				// placement check below reject it, matching the "no inert
+				// authorable fields" rule.
 				if adc, ok := cfg.(applyStatusDurationConfig); ok {
 					for i, child := range adc.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false, true, loopVars)
+						onApply := child.Type == TriggerOnActionComplete
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false, onApply, loopVars)
 					}
 				}
 			case ActionLaunchProjectile:

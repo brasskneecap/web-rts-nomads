@@ -343,7 +343,7 @@ type vortexTickMagnitudes struct {
 	damageType   DamageType
 }
 
-// extractVortexTickTrigger returns the first TriggerOnProjectileTick trigger
+// extractVortexTickTrigger returns the first TriggerOnTick trigger
 // in triggers (a launch_projectile config's own Triggers field), mirroring
 // the on_projectile_impact extraction in this action's base Execute. ok is
 // false when none is present (a malformed/incomplete authoring — Validate
@@ -351,7 +351,7 @@ type vortexTickMagnitudes struct {
 // other "declared but not authored" degrade in this executor).
 func extractVortexTickTrigger(triggers []AbilityTriggerDef) (trig AbilityTriggerDef, ok bool) {
 	for _, t := range triggers {
-		if t.Type == TriggerOnProjectileTick {
+		if t.Type == TriggerOnTick {
 			return t, true
 		}
 	}

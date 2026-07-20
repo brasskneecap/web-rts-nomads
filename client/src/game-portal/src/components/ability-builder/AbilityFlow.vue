@@ -41,7 +41,7 @@ const triggers = computed(() => builder.program.value.triggers)
 
 // Curated fallback for when the schema hasn't loaded (or a server predating
 // this enum) — the three most common trigger types an author reaches for.
-const CURATED_TRIGGER_TYPES: TriggerType[] = ['on_cast_complete', 'on_zone_tick', 'on_animation_marker']
+const CURATED_TRIGGER_TYPES: TriggerType[] = ['on_cast_complete', 'on_tick', 'on_animation_marker']
 
 const triggerTypeOptions = computed<TriggerType[]>(() => {
   const fromSchema = builder.schema.value?.enums.triggerTypes

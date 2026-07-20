@@ -28,13 +28,15 @@ export type TriggerType =
   | 'on_cast_complete'
   | 'on_animation_marker'
   | 'on_projectile_impact'
-  | 'on_projectile_tick'
   | 'on_beam_impact'
-  | 'on_beam_tick'
-  | 'on_zone_tick'
+  // on_tick is the single, generic "fire every interval" trigger for every
+  // ticking container (zone / status / projectile / beam) — it replaced the
+  // former on_zone_tick / on_status_tick / on_projectile_tick / on_beam_tick
+  // split (they all did the same job; the differing context is built by the
+  // container, not the trigger type). See TriggerOnTick in ability_program.go.
+  | 'on_tick'
   | 'on_zone_enter'
   | 'on_zone_exit'
-  | 'on_status_tick'
   | 'on_status_expire'
   | 'on_damage_dealt'
   | 'on_unit_death'

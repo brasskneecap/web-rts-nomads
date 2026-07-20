@@ -39,7 +39,7 @@ function makeSchema(): ActionSchemaBundle {
       // "display-only" chip on its action card.
       { type: 'camera_shake', fields: [], runnable: false },
     ],
-    enums: { triggerTypes: ['on_cast_complete', 'on_zone_tick'] },
+    enums: { triggerTypes: ['on_cast_complete', 'on_tick'] },
   }
 }
 
@@ -176,10 +176,10 @@ describe('AbilityFlow', () => {
     const builder = makeBuilderStub({ program: emptyProgram(), schema: makeSchema() })
     const wrapper = mountFlow(builder)
 
-    await wrapper.find('select').setValue('on_zone_tick')
+    await wrapper.find('select').setValue('on_tick')
     await wrapper.find('[data-test="add-trigger-button"]').trigger('click')
 
-    expect(builder.addTrigger).toHaveBeenCalledWith('on_zone_tick')
+    expect(builder.addTrigger).toHaveBeenCalledWith('on_tick')
   })
 
   // Presentations used to render as a standalone read-only section at the
@@ -266,7 +266,7 @@ describe('AbilityFlow', () => {
                     triggers: [
                       {
                         id: 'burn',
-                        type: 'on_zone_tick',
+                        type: 'on_tick',
                         timing: { tickInterval: 1000 },
                         actions: [
                           { id: 'bsel', type: 'select_targets' },

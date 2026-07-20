@@ -2494,6 +2494,7 @@ export class CanvasRenderer {
       maxMana?: number
       attackSpeed?: number
       coldSlowedRemaining?: number
+      overlayColor?: string
       burningRemaining?: number
       burningAnchor?: string
       arcaneCharge?: number
@@ -2903,7 +2904,13 @@ export class CanvasRenderer {
           // silhouette while the unit carries a COLD slow (frost_sword proc,
           // etc.). Physical/trap slows use a separate track and get no overlay.
           if ((unit.coldSlowedRemaining ?? 0) > 0) {
-            this.drawChillOverlay(frame, dx, dy, w, h)
+            this.drawColorOverlay(frame, dx, dy, w, h, 'rgb(150, 214, 255)')
+          }
+          // Authored color overlay: a status that applied an apply_color_overlay
+          // effect tints the unit its chosen color (poison green, burn red, …)
+          // for the status's lifetime — the general form of the chill tint.
+          if (unit.overlayColor) {
+            this.drawColorOverlay(frame, dx, dy, w, h, unit.overlayColor)
           }
           // Burning overlay: an animated flame drawn over the unit while it
           // carries a fire DoT (fire_sword proc or Trapper fire_pit burn). Both
@@ -2955,12 +2962,18 @@ export class CanvasRenderer {
    * the result at a low, gently-pulsing alpha so the sprite reads as frosted
    * rather than solid blue.
    */
-  private drawChillOverlay(
+  // drawColorOverlay masks a solid tint to the sprite silhouette and blits it
+  // over the unit at a gentle pulsing alpha. `color` is any canvas fillStyle
+  // (the fixed icy blue for the chill track, or a status-authored
+  // apply_color_overlay color off the wire). The scratch canvas is shared
+  // across tints.
+  private drawColorOverlay(
     frame: { image: CanvasImageSource; srcX: number; srcY: number; srcW: number; srcH: number },
     dx: number,
     dy: number,
     w: number,
     h: number,
+    color: string,
   ) {
     const srcW = Math.max(1, Math.round(frame.srcW))
     const srcH = Math.max(1, Math.round(frame.srcH))
@@ -2982,9 +2995,9 @@ export class CanvasRenderer {
     // 1) The sprite frame at native size.
     octx.globalCompositeOperation = 'source-over'
     octx.drawImage(frame.image, frame.srcX, frame.srcY, frame.srcW, frame.srcH, 0, 0, srcW, srcH)
-    // 2) Fill icy blue only where the sprite is opaque (mask to silhouette).
+    // 2) Fill the tint only where the sprite is opaque (mask to silhouette).
     octx.globalCompositeOperation = 'source-atop'
-    octx.fillStyle = 'rgb(150, 214, 255)'
+    octx.fillStyle = color
     octx.fillRect(0, 0, srcW, srcH)
     octx.globalCompositeOperation = 'source-over'
     // 3) Blit the tinted silhouette over the unit at low, pulsing alpha.

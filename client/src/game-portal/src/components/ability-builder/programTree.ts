@@ -231,11 +231,11 @@ export function findAction(
 // `triggers` field out of its own config, meaning a nested trigger belongs in
 // `config.triggers` rather than `children`. Mirrors the Go side exactly (see
 // walkAction's switch in ability_program_validate.go):
-//   create_zone            -> createZoneConfig.Triggers      (on_zone_tick/enter/exit)
-//   apply_status           -> applyStatusConfig.Triggers     (on_status_tick/expire;
+//   create_zone            -> createZoneConfig.Triggers      (on_tick/zone_enter/zone_exit)
+//   apply_status           -> applyStatusConfig.Triggers     (on_tick/status_expire;
 //                              non-empty is ALSO the authored-vs-legacy discriminator)
-//   launch_projectile      -> launchProjectileConfig.Triggers (on_projectile_impact)
-//   beam                   -> beamConfig.Triggers             (on_beam_impact | on_beam_tick)
+//   launch_projectile      -> launchProjectileConfig.Triggers (on_projectile_impact | on_tick)
+//   beam                   -> beamConfig.Triggers             (on_beam_impact | on_tick)
 //   apply_status_duration  -> applyStatusDurationConfig.Triggers (on_action_complete,
 //                              run once per live target with ctx.CurrentStatus bound —
 //                              see ability_status_duration.go). This is the "duration is

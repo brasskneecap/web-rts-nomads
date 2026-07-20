@@ -217,6 +217,33 @@ func (s *GameState) playEffectOnUnitLocked(unit *Unit, effectID string) bool {
 	return true
 }
 
+// playEffectOnUnitForDurationLocked is playEffectOnUnitLocked with an explicit
+// duration + size scale override instead of the EffectDef's authored Duration —
+// the unit-anchored sibling of playEffectAtPointForDurationLocked (ability_cast.go).
+// Used by play_presentation's bindToStatusDuration path so a status's visual
+// (burn's fire overlay, etc.) follows the afflicted unit AND lasts exactly the
+// status's Remaining, rather than the effect asset's own fixed animation
+// length. The effect auto-expires via its own DurationTicks (tickEffectsLocked),
+// matching the status the same parallel-timer way chill does. Non-positive
+// duration/scale fall back to queueEffectLocked's 1.0 defaults. Returns false
+// for a nil unit or unregistered effect id.
+//
+// Caller holds s.mu.
+func (s *GameState) playEffectOnUnitForDurationLocked(unit *Unit, effectID string, duration, sizeScale float64) bool {
+	if unit == nil {
+		return false
+	}
+	def, ok := getEffectDef(effectID)
+	if !ok {
+		return false
+	}
+	s.queueEffectLocked(def.ID, unit.ID, unit.X, unit.Y, sizeScale, duration, "" /*variant*/)
+	if n := len(s.activeEffects); n > 0 {
+		s.activeEffects[n-1].Anchor = def.Anchor.OrCenter()
+	}
+	return true
+}
+
 // burningOverlayAnchorLocked returns the client-render anchor for a unit's
 // persistent burning overlay, or "" when the unit is not on fire. The anchor is
 // authored once, server-side, in catalog/effects/burning/burning.json — this is

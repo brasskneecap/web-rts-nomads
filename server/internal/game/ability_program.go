@@ -34,30 +34,30 @@ const (
 	TriggerOnCastComplete     TriggerType = "on_cast_complete"
 	TriggerOnAnimationMarker  TriggerType = "on_animation_marker"
 	TriggerOnProjectileImpact TriggerType = "on_projectile_impact"
-	// TriggerOnProjectileTick fires repeatedly while a "direction" travelMode
-	// launch_projectile bolt is in flight (arcane_orb's migrated shape — see
-	// launchProjectileConfig's TickInterval doc comment, ability_compile.go,
-	// and tickArcaneOrbProjectileLocked, projectile.go, for the firing
-	// cadence). Distinct from on_projectile_impact, which fires at most once,
-	// at the END of a bolt's flight (or on the first hostile it crosses, for
-	// an impact-shaped "direction" bolt) — a ticking bolt never fires impact
-	// at all.
-	TriggerOnProjectileTick TriggerType = "on_projectile_tick"
 	// TriggerOnBeamImpact fires once, a beat after a launch_beam action spawns
 	// a momentary beam — the beam analogue of TriggerOnProjectileImpact. See
 	// launchBeamConfig's doc comment (ability_exec_beam.go) and
 	// fireBeamImpactLocked (beam.go) for the exact firing mechanics.
 	TriggerOnBeamImpact TriggerType = "on_beam_impact"
-	// TriggerOnBeamTick is reserved for a future channeling/ticking beam shape
-	// (Task 3 of the composable-beam plan); not fired by anything in this
-	// task. Declared now alongside TriggerOnBeamImpact so both beam trigger
-	// types exist together rather than trickling in one at a time.
-	TriggerOnBeamTick       TriggerType = "on_beam_tick"
-	TriggerOnZoneTick       TriggerType = "on_zone_tick"
-	TriggerOnZoneEnter      TriggerType = "on_zone_enter"
-	TriggerOnZoneExit       TriggerType = "on_zone_exit"
-	TriggerOnStatusTick     TriggerType = "on_status_tick"
-	TriggerOnStatusExpire   TriggerType = "on_status_expire"
+	// TriggerOnTick is the single, generic "fire every interval" trigger for
+	// EVERY ticking container — zones (create_zone), statuses (Apply Duration),
+	// in-flight projectiles ("direction" launch_projectile bolts), and channel
+	// beams (ability_channel.go). It replaced the former per-container
+	// on_zone_tick / on_status_tick / on_projectile_tick / on_beam_tick split:
+	// all four did the identical job ("run these actions each tick"). What
+	// differed — WHICH unit/position is bound as the current event — is built
+	// by the CONTAINER that fires the trigger, never by the trigger type, and a
+	// tick trigger always lives inside exactly one container's trigger list, so
+	// its location already carries that information. Each container fires its
+	// OWN on_tick children (runProgramTriggersLocked(ctx, triggers,
+	// TriggerOnTick)) with the ctx it built (zone center / afflicted unit /
+	// projectile position / channel caster+target), so collapsing the four
+	// names into one loses nothing. A validator rule (walkTrigger) still
+	// requires timing.tickInterval on any on_tick trigger.
+	TriggerOnTick         TriggerType = "on_tick"
+	TriggerOnZoneEnter    TriggerType = "on_zone_enter"
+	TriggerOnZoneExit     TriggerType = "on_zone_exit"
+	TriggerOnStatusExpire TriggerType = "on_status_expire"
 	TriggerOnDamageDealt    TriggerType = "on_damage_dealt"
 	TriggerOnUnitDeath      TriggerType = "on_unit_death"
 	TriggerOnActionComplete TriggerType = "on_action_complete"
@@ -103,8 +103,16 @@ const (
 	// the enclosing container's expiry clears the icon exactly like it clears
 	// change_stat's stat modifiers, because both write onto the SAME
 	// AbilityStatus object.
-	ActionApplyMark    ActionType = "apply_mark"
-	ActionRemoveStatus ActionType = "remove_status"
+	ActionApplyMark ActionType = "apply_mark"
+	// ActionApplyColorOverlay is apply_mark's full-body-tint sibling: it sets a
+	// chosen tint COLOR on whichever apply_status_duration currently encloses it
+	// (ctx.CurrentStatus), same On Apply binding/validation rule as
+	// ActionChangeStat/ActionApplyMark. The client paints the color over the
+	// afflicted unit's sprite for the status's lifetime (generalizing the
+	// hardcoded chill/blue overlay). No duration of its own — the enclosing
+	// container's expiry clears it, same as change_stat/apply_mark.
+	ActionApplyColorOverlay ActionType = "apply_color_overlay"
+	ActionRemoveStatus      ActionType = "remove_status"
 	ActionCreateZone   ActionType = "create_zone"
 	// ActionLaunchProjectile also covers arcane_orb's moving pull+DoT vortex
 	// shape (TravelMode "direction" + TickInterval > 0 — see

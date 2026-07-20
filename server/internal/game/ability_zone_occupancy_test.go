@@ -193,7 +193,7 @@ func TestAbilityZoneOccupancy_ZeroTickInterval(t *testing.T) {
 
 	spawnTestZone(s, caster, protocol.Vec2{X: 0, Y: 0}, 50, 10, 0 /* tickInterval */, []AbilityTriggerDef{
 		currentEventDamageTrigger("enter", TriggerOnZoneEnter, 10),
-		{ID: "tick", Type: TriggerOnZoneTick, Actions: nil}, // must never fire with TickInterval<=0
+		{ID: "tick", Type: TriggerOnTick, Actions: nil}, // must never fire with TickInterval<=0
 	})
 
 	walker.X = 0

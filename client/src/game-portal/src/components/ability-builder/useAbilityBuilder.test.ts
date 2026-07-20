@@ -378,7 +378,7 @@ describe('useAbilityBuilder nested selection (depth 3)', () => {
                 triggers: [
                   {
                     id: 'burn',
-                    type: 'on_zone_tick',
+                    type: 'on_tick',
                     timing: { tickInterval: 1000 },
                     actions: [{ id: 'bdmg', type: 'deal_damage', config: { amount: 5 } }],
                   },

@@ -1142,7 +1142,7 @@ func (s *GameState) fireComposedProjectileTickLocked(proj *Projectile, curX, cur
 		proj.TickActionTimers = map[string]float64{}
 	}
 
-	const path = "on_projectile_tick"
+	const path = "on_tick"
 	for i := range proj.TickActions {
 		if ctx.opsExhausted() {
 			break
@@ -1247,7 +1247,7 @@ func (s *GameState) fireLegacyProjectileTickLocked(proj *Projectile, curX, curY 
 		}
 	}
 
-	s.runProgramTriggersLocked(ctx, []AbilityTriggerDef{{ID: "tick", Type: TriggerOnProjectileTick, Actions: actions}}, TriggerOnProjectileTick)
+	s.runProgramTriggersLocked(ctx, []AbilityTriggerDef{{ID: "tick", Type: TriggerOnTick, Actions: actions}}, TriggerOnTick)
 }
 
 func (s *GameState) firePierceProjectileLocked(attacker, target *Unit, damage int) {

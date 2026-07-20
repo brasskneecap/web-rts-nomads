@@ -62,7 +62,7 @@ func TestAbilityStatus_TicksOnIntervalAndFiresOnStatusTick(t *testing.T) {
 	defer func() { s.previewTrace = nil }()
 
 	spawnTestStatus(s, caster, target, 1.5, 0.5, []AbilityTriggerDef{
-		currentEventDamageTrigger("tick", TriggerOnStatusTick, 10),
+		currentEventDamageTrigger("tick", TriggerOnTick, 10),
 	})
 
 	for i := 0; i < 15; i++ { // 15 x 0.1s = 1.5s total
@@ -95,7 +95,7 @@ func TestAbilityStatus_TickBindsAfflictedUnit(t *testing.T) {
 	bystander.HP, bystander.MaxHP = 100, 100
 
 	spawnTestStatus(s, caster, afflicted, 1, 0.5, []AbilityTriggerDef{
-		currentEventDamageTrigger("tick", TriggerOnStatusTick, 10),
+		currentEventDamageTrigger("tick", TriggerOnTick, 10),
 	})
 
 	s.tickAbilityStatusesLocked(0.5)
@@ -165,7 +165,7 @@ func TestAbilityStatus_ExpireFiresOnceWhenTargetDies(t *testing.T) {
 		defer func() { s.previewTrace = nil }()
 
 		spawnTestStatus(s, caster, target, 5, 1, []AbilityTriggerDef{
-			currentEventDamageTrigger("tick", TriggerOnStatusTick, 1),
+			currentEventDamageTrigger("tick", TriggerOnTick, 1),
 			currentEventDamageTrigger("expire", TriggerOnStatusExpire, 1),
 		})
 
@@ -197,7 +197,7 @@ func TestAbilityStatus_ExpireFiresOnceWhenTargetDies(t *testing.T) {
 		defer func() { s.previewTrace = nil }()
 
 		spawnTestStatus(s, caster, target, 5, 0.5, []AbilityTriggerDef{
-			currentEventDamageTrigger("tick", TriggerOnStatusTick, 100), // lethal
+			currentEventDamageTrigger("tick", TriggerOnTick, 100), // lethal
 			currentEventDamageTrigger("expire", TriggerOnStatusExpire, 1),
 		})
 
@@ -300,7 +300,7 @@ func TestActionApplyStatus_Authored_SpawnsAbilityStatus(t *testing.T) {
 	enemy := teamCombatUnit(t, s, "p2", 50, 0)
 
 	cfg := `{"status":"custom_poison","duration":5,"tickInterval":1,"triggers":[
-		{"id":"tick","type":"on_status_tick","actions":[]}
+		{"id":"tick","type":"on_tick","actions":[]}
 	]}`
 	tr := runOneActionProgram(t, s, caster.ID, 0, ActionApplyStatus, cfg, []int{enemy.ID})
 
@@ -360,7 +360,7 @@ func TestAbilityStatus_ReentrantApplyStatusDoesNotCorruptAbilityStatuses(t *test
 
 	nestedCfg, err := json.Marshal(applyStatusConfig{
 		Status: "spawned_child", Name: "child", Duration: 5, TickInterval: 1,
-		Triggers: []AbilityTriggerDef{{ID: "childtick", Type: TriggerOnStatusTick, Actions: nil}},
+		Triggers: []AbilityTriggerDef{{ID: "childtick", Type: TriggerOnTick, Actions: nil}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -372,7 +372,7 @@ func TestAbilityStatus_ReentrantApplyStatusDoesNotCorruptAbilityStatuses(t *test
 		Triggers: []AbilityTriggerDef{
 			{
 				ID:   "tick",
-				Type: TriggerOnStatusTick,
+				Type: TriggerOnTick,
 				Actions: []AbilityActionDef{
 					{ID: "sel", Type: ActionSelectTargets, Outputs: map[string]string{"targets": "hit"},
 						Target: &TargetQueryDef{Source: SrcCurrentEvent}},
@@ -452,8 +452,8 @@ func TestAbilityStatus_DeterministicFireOrderAcrossIdenticalSeeds(t *testing.T) 
 		tr := &AbilityExecutionTrace{}
 		s.previewTrace = tr
 
-		spawnTestStatus(s, caster, targetA, 5, 0.5, []AbilityTriggerDef{currentEventDamageTrigger("tickA", TriggerOnStatusTick, 1)})
-		spawnTestStatus(s, caster, targetB, 5, 0.5, []AbilityTriggerDef{currentEventDamageTrigger("tickB", TriggerOnStatusTick, 1)})
+		spawnTestStatus(s, caster, targetA, 5, 0.5, []AbilityTriggerDef{currentEventDamageTrigger("tickA", TriggerOnTick, 1)})
+		spawnTestStatus(s, caster, targetB, 5, 0.5, []AbilityTriggerDef{currentEventDamageTrigger("tickB", TriggerOnTick, 1)})
 		return s, tr
 	}
 
@@ -554,20 +554,22 @@ func TestOnHitProc_BurnStillKeyedPerAttacker(t *testing.T) {
 
 // ── production safety ────────────────────────────────────────────────────
 
-// TestCatalog_NoAbilityUsesStatusTickExpireTriggers is the production-
-// unchanged guard: on_status_tick/on_status_expire are authored-only
-// (reachable solely through the ability editor) — no catalog ability's
-// compiled program may use either, today or as a regression later. Mirrors
-// TestCatalog_NoAbilityUsesZoneEnterExitTriggers /
+// TestCatalog_NoAbilityUsesStatusExpireTrigger is the production-unchanged
+// guard: on_status_expire ("On Complete") is authored-only (reachable solely
+// through the ability editor) — no catalog ability's compiled program may use
+// it, today or as a regression later. (on_status_tick no longer exists as a
+// distinct type: the generic on_tick replaced the four *_tick triggers and IS
+// legitimately compiler-emitted by zones/projectiles/beams, so it is no longer
+// part of this guard.) Mirrors TestCatalog_NoAbilityUsesZoneEnterExitTriggers /
 // TestCatalog_NoAbilityUsesOnUnitDeathTrigger.
-func TestCatalog_NoAbilityUsesStatusTickExpireTriggers(t *testing.T) {
+func TestCatalog_NoAbilityUsesStatusExpireTrigger(t *testing.T) {
 	for _, def := range ListAbilityDefs() {
 		def := def
 		t.Run(def.ID, func(t *testing.T) {
 			prog := catalogProgram(def)
 			for _, tt := range collectAllTriggerTypesForProductionGuard(prog) {
-				if tt == TriggerOnStatusTick || tt == TriggerOnStatusExpire {
-					t.Fatalf("ability %q compiles a %s trigger; on_status_tick/on_status_expire must stay editor-only (never compiler-emitted)", def.ID, tt)
+				if tt == TriggerOnStatusExpire {
+					t.Fatalf("ability %q compiles an on_status_expire trigger; it must stay editor-only (never compiler-emitted)", def.ID)
 				}
 			}
 		})

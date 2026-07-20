@@ -61,7 +61,7 @@ function meteorProgram(): AbilityProgram {
                   triggers: [
                     {
                       id: 'burn',
-                      type: 'on_zone_tick',
+                      type: 'on_tick',
                       timing: { tickInterval: 1000 },
                       actions: [
                         { id: 'bsel', type: 'select_targets' },

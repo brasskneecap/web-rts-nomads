@@ -64,19 +64,31 @@
             }
           },
           {
-            "id": "slow",
-            "type": "apply_status",
+            "id": "chill_dur",
+            "type": "apply_status_duration",
             "input": {
               "targets": {
                 "key": "hits"
               }
             },
             "config": {
-              "status": "slow",
-              "multiplier": 0.5,
               "duration": 3,
-              "dps": 0,
-              "school": "cold"
+              "triggers": [
+                {
+                  "id": "on_apply",
+                  "type": "on_action_complete",
+                  "actions": [
+                    {
+                      "id": "chill",
+                      "type": "apply_status",
+                      "config": {
+                        "status": "chill",
+                        "multiplier": 0.5
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           },
           {

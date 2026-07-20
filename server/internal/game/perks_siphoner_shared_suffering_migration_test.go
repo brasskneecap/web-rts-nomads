@@ -314,7 +314,7 @@ func TestSharedSufferingMigration_RiderValuesMatchConfig(t *testing.T) {
 	var rider *AbilityRider
 	for i := range def.AbilityRiders {
 		r := &def.AbilityRiders[i]
-		if r.Target == "siphon_life" && r.Trigger == TriggerOnBeamTick {
+		if r.Target == "siphon_life" && r.Trigger == TriggerOnTick {
 			rider = r
 			break
 		}

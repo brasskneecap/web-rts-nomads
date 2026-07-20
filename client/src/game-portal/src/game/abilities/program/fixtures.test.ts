@@ -118,7 +118,7 @@ const meteorProgram = {
                 triggers: [
                   {
                     id: 't_burn',
-                    type: 'on_zone_tick',
+                    type: 'on_tick',
                     timing: { tickInterval: 0.5 },
                     actions: [
                       {

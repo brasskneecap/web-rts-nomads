@@ -181,7 +181,7 @@ func compileChannelBeamAction(def AbilityDef) AbilityActionDef {
 func compileChannelBeamTickTrigger(def AbilityDef) AbilityTriggerDef {
 	return AbilityTriggerDef{
 		ID:   "beam_tick",
-		Type: TriggerOnBeamTick,
+		Type: TriggerOnTick,
 		Actions: []AbilityActionDef{
 			{
 				ID:     "dmg",
@@ -321,6 +321,16 @@ type playPresentationAtPointConfig struct {
 	Scale          float64    `json:"scale,omitempty"`
 	RenderLayer    string     `json:"renderLayer,omitempty"` // not yet consumed by Execute (schema/round-trip only)
 	PresentationID string     `json:"presentationId,omitempty"`
+	// BindToStatusDuration makes this a status-bound visual: authored in an
+	// apply_status_duration's On Apply trigger, the effect attaches to the
+	// afflicted unit (ctx.CurrentStatus.TargetUnitID) and lasts exactly the
+	// status's Remaining duration — the persistent-visual half of a
+	// data-authored status (e.g. burn's fire overlay), the sibling of
+	// change_stat/apply_mark. Ignored (and rejected by validation) outside a
+	// status On Apply trigger, where ctx.CurrentStatus is nil. Follows the same
+	// parallel-timer model as chill (the effect's own DurationTicks matches the
+	// status), so no explicit teardown is needed on expiry.
+	BindToStatusDuration bool `json:"bindToStatusDuration,omitempty"`
 }
 
 // ── offensive ───────────────────────────────────────────────────────────
@@ -770,7 +780,7 @@ func compileProjectileTickTrigger(def AbilityDef) AbilityTriggerDef {
 			Config: marshalConfig(applyForceConfig{Strength: def.PullStrength, Duration: arcaneOrbPullRefreshSeconds, Origin: OriginProjectilePos}),
 		},
 	}
-	return AbilityTriggerDef{ID: "tick", Type: TriggerOnProjectileTick, Actions: actions}
+	return AbilityTriggerDef{ID: "tick", Type: TriggerOnTick, Actions: actions}
 }
 
 // compileShatterActions builds the instant point-AoE shape (Shatter):
@@ -941,7 +951,7 @@ func compileMeteorActions(def AbilityDef) ([]AbilityActionDef, []PresentationIns
 func compileMeteorZoneConfig(def AbilityDef) createZoneConfig {
 	burnTrigger := AbilityTriggerDef{
 		ID:     "burn",
-		Type:   TriggerOnZoneTick,
+		Type:   TriggerOnTick,
 		Timing: &TriggerTiming{TickInterval: def.BurnTickIntervalSeconds},
 		Actions: []AbilityActionDef{
 			{

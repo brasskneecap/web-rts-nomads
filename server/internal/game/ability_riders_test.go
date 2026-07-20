@@ -16,7 +16,7 @@ func TestPerkDef_AbilityRiders_DecodesTargetTriggerAndActions(t *testing.T) {
 		"abilityRiders": [
 			{
 				"target": "siphon_life",
-				"trigger": "on_beam_tick",
+				"trigger": "on_tick",
 				"actions": [
 					{"id": "rider_dmg", "type": "deal_damage", "config": {"amount": 5}}
 				]
@@ -36,8 +36,8 @@ func TestPerkDef_AbilityRiders_DecodesTargetTriggerAndActions(t *testing.T) {
 	if rider.Target != "siphon_life" {
 		t.Errorf("target = %q, want siphon_life", rider.Target)
 	}
-	if rider.Trigger != TriggerOnBeamTick {
-		t.Errorf("trigger = %q, want %q", rider.Trigger, TriggerOnBeamTick)
+	if rider.Trigger != TriggerOnTick {
+		t.Errorf("trigger = %q, want %q", rider.Trigger, TriggerOnTick)
 	}
 	if len(rider.Actions) != 1 {
 		t.Fatalf("want 1 action, got %d", len(rider.Actions))
@@ -72,7 +72,7 @@ func validPerkWithRider(rider AbilityRider) *PerkDef {
 func TestValidatePerkDef_AbilityRiders_RejectsEmptyTarget(t *testing.T) {
 	def := validPerkWithRider(AbilityRider{
 		Target:  "",
-		Trigger: TriggerOnBeamTick,
+		Trigger: TriggerOnTick,
 		Actions: []AbilityActionDef{
 			{ID: "a", Type: ActionDealDamage, Config: json.RawMessage(`{"amount":5}`)},
 		},
@@ -98,7 +98,7 @@ func TestValidatePerkDef_AbilityRiders_RejectsUnknownTrigger(t *testing.T) {
 func TestValidatePerkDef_AbilityRiders_RejectsInvalidAction(t *testing.T) {
 	def := validPerkWithRider(AbilityRider{
 		Target:  "siphon_life",
-		Trigger: TriggerOnBeamTick,
+		Trigger: TriggerOnTick,
 		Actions: []AbilityActionDef{
 			{ID: "a", Type: "no_such_action"},
 		},
@@ -111,7 +111,7 @@ func TestValidatePerkDef_AbilityRiders_RejectsInvalidAction(t *testing.T) {
 func TestValidatePerkDef_AbilityRiders_AcceptsValidRider(t *testing.T) {
 	def := validPerkWithRider(AbilityRider{
 		Target:  "siphon_life",
-		Trigger: TriggerOnBeamTick,
+		Trigger: TriggerOnTick,
 		Actions: []AbilityActionDef{
 			{ID: "a", Type: ActionDealDamage, Config: json.RawMessage(`{"amount":5}`)},
 		},
@@ -147,11 +147,11 @@ func TestOwnedRiderFragmentsForLocked_NilSafe(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if got := s.ownedRiderFragmentsForLocked(nil, "siphon_life", TriggerOnBeamTick); got != nil {
+	if got := s.ownedRiderFragmentsForLocked(nil, "siphon_life", TriggerOnTick); got != nil {
 		t.Fatalf("nil caster: got %v, want nil", got)
 	}
 	caster := &Unit{PerkIDs: []string{"test_rider_perk_alpha"}}
-	if got := s.ownedRiderFragmentsForLocked(caster, "", TriggerOnBeamTick); got != nil {
+	if got := s.ownedRiderFragmentsForLocked(caster, "", TriggerOnTick); got != nil {
 		t.Fatalf("empty abilityID: got %v, want nil", got)
 	}
 }
@@ -179,7 +179,7 @@ func TestRunAbilityRidersForCasterLocked_ComposesAndOrdersByPerkID(t *testing.T)
 		ID:          alphaPerkID,
 		DisplayName: "Test Rider Perk Alpha",
 		AbilityRiders: []AbilityRider{
-			{Target: "siphon_life", Trigger: TriggerOnBeamTick, Actions: riderDealDamageAction("alpha_dmg", alphaDamage)},
+			{Target: "siphon_life", Trigger: TriggerOnTick, Actions: riderDealDamageAction("alpha_dmg", alphaDamage)},
 		},
 	}
 	if err := SavePerkDef(alphaPerk); err != nil {
@@ -189,7 +189,7 @@ func TestRunAbilityRidersForCasterLocked_ComposesAndOrdersByPerkID(t *testing.T)
 		ID:          betaPerkID,
 		DisplayName: "Test Rider Perk Beta",
 		AbilityRiders: []AbilityRider{
-			{Target: "siphon_life", Trigger: TriggerOnBeamTick, Actions: riderDealDamageAction("beta_dmg", betaDamage)},
+			{Target: "siphon_life", Trigger: TriggerOnTick, Actions: riderDealDamageAction("beta_dmg", betaDamage)},
 		},
 	}
 	if err := SavePerkDef(betaPerk); err != nil {
@@ -210,7 +210,7 @@ func TestRunAbilityRidersForCasterLocked_ComposesAndOrdersByPerkID(t *testing.T)
 
 	// ownedRiderFragmentsForLocked itself must return fragments in perk-id
 	// order regardless of caster.PerkIDs order.
-	frags := s.ownedRiderFragmentsForLocked(caster, "siphon_life", TriggerOnBeamTick)
+	frags := s.ownedRiderFragmentsForLocked(caster, "siphon_life", TriggerOnTick)
 	if len(frags) != 2 {
 		t.Fatalf("want 2 fragments, got %d", len(frags))
 	}
@@ -229,7 +229,7 @@ func TestRunAbilityRidersForCasterLocked_ComposesAndOrdersByPerkID(t *testing.T)
 	s.previewTrace = tr
 	defer func() { s.previewTrace = nil }()
 
-	s.runAbilityRidersForCasterLocked(caster, target, "siphon_life", TriggerOnBeamTick, 999)
+	s.runAbilityRidersForCasterLocked(caster, target, "siphon_life", TriggerOnTick, 999)
 
 	// Composition: both hits landed.
 	wantHP := 500 - alphaDamage - betaDamage
@@ -266,7 +266,7 @@ func TestRunAbilityRidersForCasterLocked_NoOpWhenNoMatchingRider(t *testing.T) {
 		ID:          "test_rider_perk_gamma",
 		DisplayName: "Test Rider Perk Gamma",
 		AbilityRiders: []AbilityRider{
-			{Target: "siphon_life", Trigger: TriggerOnBeamTick, Actions: riderDealDamageAction("gamma_dmg", 9)},
+			{Target: "siphon_life", Trigger: TriggerOnTick, Actions: riderDealDamageAction("gamma_dmg", 9)},
 		},
 	}
 	if err := SavePerkDef(perk); err != nil {
@@ -284,14 +284,14 @@ func TestRunAbilityRidersForCasterLocked_NoOpWhenNoMatchingRider(t *testing.T) {
 	target.MaxHP = 500
 
 	// Nil caster / target: must not panic.
-	s.runAbilityRidersForCasterLocked(nil, target, "siphon_life", TriggerOnBeamTick, 0)
-	s.runAbilityRidersForCasterLocked(caster, nil, "siphon_life", TriggerOnBeamTick, 0)
+	s.runAbilityRidersForCasterLocked(nil, target, "siphon_life", TriggerOnTick, 0)
+	s.runAbilityRidersForCasterLocked(caster, nil, "siphon_life", TriggerOnTick, 0)
 	if target.HP != 500 {
 		t.Fatalf("target.HP = %d after nil-caster/target calls, want unchanged 500", target.HP)
 	}
 
 	// Wrong ability id: gamma's rider targets siphon_life, not this id.
-	s.runAbilityRidersForCasterLocked(caster, target, "some_other_ability", TriggerOnBeamTick, 0)
+	s.runAbilityRidersForCasterLocked(caster, target, "some_other_ability", TriggerOnTick, 0)
 	if target.HP != 500 {
 		t.Fatalf("target.HP = %d after non-matching abilityID, want unchanged 500", target.HP)
 	}

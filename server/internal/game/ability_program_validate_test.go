@@ -135,14 +135,28 @@ func TestValidateKnownActionWithoutDescriptorIsAllowed(t *testing.T) {
 	}
 }
 
-func TestValidateProgramTickInterval(t *testing.T) {
+// TestValidateProgram_OnTickCarriesNoTriggerTiming documents the removal of the
+// former trigger-level tickInterval requirement: an on_tick trigger no longer
+// carries (or needs) a timing.tickInterval — the tick CADENCE is owned entirely
+// by the enclosing container's config. A create_zone with a valid container
+// TickInterval and an on_tick child with NO trigger timing is clean.
+func TestValidateProgram_OnTickCarriesNoTriggerTiming(t *testing.T) {
+	zoneCfg := createZoneConfig{
+		Radius: 10, Duration: 5, TickInterval: 1,
+		Triggers: []AbilityTriggerDef{
+			{ID: "burn", Type: TriggerOnTick, Actions: []AbilityActionDef{
+				{ID: "bdmg", Type: ActionDealDamage, Config: marshalConfig(dealDamageConfig{Amount: 1})},
+			}},
+		},
+	}
 	prog := &AbilityProgram{
 		Entry: AbilityEntryDef{Type: EntryGroundPoint},
-		Triggers: []AbilityTriggerDef{{ID: "t", Type: TriggerOnZoneTick,
-			Timing: &TriggerTiming{TickInterval: 0}, Actions: []AbilityActionDef{{ID: "a", Type: ActionSelectTargets}}}},
+		Triggers: []AbilityTriggerDef{{ID: "t1", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
+			{ID: "zone", Type: ActionCreateZone, Config: marshalConfig(zoneCfg)},
+		}}},
 	}
-	if !hasCode(validateAbilityProgram(prog), "invalid_tick_interval") {
-		t.Error("want invalid_tick_interval for tickInterval<=0")
+	if hasCode(validateAbilityProgram(prog), "invalid_tick_interval") {
+		t.Error("on_tick must NOT require a trigger-level tickInterval — the container owns the cadence")
 	}
 }
 
@@ -157,72 +171,28 @@ func issueAt(issues []ValidationIssue, path, code string) *ValidationIssue {
 	return nil
 }
 
-// TestValidateProgram_NestedZoneTrigger_TickIntervalChecked verifies that a
-// trigger nested inside a create_zone action's config.triggers gets the same
-// invalid_tick_interval check as a root trigger, at the path grammar the
-// client's indexPathFor mirrors: "<action path>.config.triggers[i]".
-func TestValidateProgram_NestedZoneTrigger_TickIntervalChecked(t *testing.T) {
+// TestValidateProgram_CreateZoneRequiresContainerTickInterval verifies the tick
+// cadence is validated at the CONTAINER now: a create_zone with an on_tick
+// child but tickInterval<=0 is rejected on the create_zone action itself (the
+// nested on_tick trigger no longer carries an interval to check).
+func TestValidateProgram_CreateZoneRequiresContainerTickInterval(t *testing.T) {
 	zoneCfg := createZoneConfig{
-		Radius:       10,
-		Duration:     5,
-		TickInterval: 1,
+		Radius: 10, Duration: 5, TickInterval: 0, // missing cadence
 		Triggers: []AbilityTriggerDef{
-			{
-				ID:     "burn",
-				Type:   TriggerOnZoneTick,
-				Timing: &TriggerTiming{TickInterval: 0}, // invalid
-				Actions: []AbilityActionDef{
-					{ID: "bdmg", Type: ActionDealDamage, Config: marshalConfig(dealDamageConfig{Amount: 1})},
-				},
-			},
+			{ID: "burn", Type: TriggerOnTick, Actions: []AbilityActionDef{
+				{ID: "bdmg", Type: ActionDealDamage, Config: marshalConfig(dealDamageConfig{Amount: 1})},
+			}},
 		},
 	}
 	prog := &AbilityProgram{
 		Entry: AbilityEntryDef{Type: EntryGroundPoint},
-		Triggers: []AbilityTriggerDef{
-			{ID: "t1", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
-				{ID: "zone", Type: ActionCreateZone, Config: marshalConfig(zoneCfg)},
-			}},
-		},
+		Triggers: []AbilityTriggerDef{{ID: "t1", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
+			{ID: "zone", Type: ActionCreateZone, Config: marshalConfig(zoneCfg)},
+		}}},
 	}
 	issues := validateAbilityProgram(prog)
-	wantPath := "triggers[0].actions[0].config.triggers[0]"
-	if got := issueAt(issues, wantPath, "invalid_tick_interval"); got == nil {
-		t.Fatalf("want invalid_tick_interval at %q, got issues: %+v", wantPath, issues)
-	}
-}
-
-// TestValidateProgram_NestedStatusTrigger_TickIntervalChecked mirrors
-// TestValidateProgram_NestedZoneTrigger_TickIntervalChecked for the
-// AbilityStatus subsystem: a trigger nested inside an apply_status action's
-// config.triggers gets the same invalid_tick_interval check as a root
-// trigger, at the same path grammar.
-func TestValidateProgram_NestedStatusTrigger_TickIntervalChecked(t *testing.T) {
-	statusCfg := applyStatusConfig{
-		Status: "custom_poison", Duration: 5, TickInterval: 1,
-		Triggers: []AbilityTriggerDef{
-			{
-				ID:     "tick",
-				Type:   TriggerOnStatusTick,
-				Timing: &TriggerTiming{TickInterval: 0}, // invalid
-				Actions: []AbilityActionDef{
-					{ID: "sdmg", Type: ActionDealDamage, Config: marshalConfig(dealDamageConfig{Amount: 1})},
-				},
-			},
-		},
-	}
-	prog := &AbilityProgram{
-		Entry: AbilityEntryDef{Type: EntryUnit},
-		Triggers: []AbilityTriggerDef{
-			{ID: "t1", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
-				{ID: "status", Type: ActionApplyStatus, Config: marshalConfig(statusCfg)},
-			}},
-		},
-	}
-	issues := validateAbilityProgram(prog)
-	wantPath := "triggers[0].actions[0].config.triggers[0]"
-	if got := issueAt(issues, wantPath, "invalid_tick_interval"); got == nil {
-		t.Fatalf("want invalid_tick_interval at %q, got issues: %+v", wantPath, issues)
+	if got := issueAt(issues, "triggers[0].actions[0]", "empty_required_property"); got == nil {
+		t.Fatalf("want create_zone container tickInterval error at the action path; got %+v", issues)
 	}
 }
 
@@ -287,7 +257,7 @@ func TestValidateProgram_NestedZoneAction_DuplicateIDDetected(t *testing.T) {
 		Triggers: []AbilityTriggerDef{
 			{
 				ID:     "burn",
-				Type:   TriggerOnZoneTick,
+				Type:   TriggerOnTick,
 				Timing: &TriggerTiming{TickInterval: 1},
 				Actions: []AbilityActionDef{
 					// Collides with the root "dmg" action id below.
@@ -421,7 +391,7 @@ func TestValidate_ChanneledBeamPlacement(t *testing.T) {
 
 	// Invalid: channeled beam under a non-on_cast_complete root trigger.
 	wrongRoot := &AbilityProgram{Triggers: []AbilityTriggerDef{
-		{ID: "z", Type: TriggerOnZoneTick, Timing: &TriggerTiming{TickInterval: 1}, Actions: []AbilityActionDef{channeledBeam("ch")}},
+		{ID: "z", Type: TriggerOnTick, Timing: &TriggerTiming{TickInterval: 1}, Actions: []AbilityActionDef{channeledBeam("ch")}},
 	}}
 	if !flagged(wrongRoot) {
 		t.Errorf("channeled beam under non-cast-complete root was NOT flagged")

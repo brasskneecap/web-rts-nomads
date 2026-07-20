@@ -106,6 +106,7 @@ const CATEGORY_BY_TYPE: Record<string, string> = {
   apply_status_duration: 'Combat',
   change_stat: 'Combat',
   apply_mark: 'Combat',
+  apply_color_overlay: 'Combat',
   remove_status: 'Combat',
   create_zone: 'World',
   summon_unit: 'World',

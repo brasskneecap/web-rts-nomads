@@ -31,7 +31,7 @@ func TestAbilityZoneBurnTicks(t *testing.T) {
 
 	zoneCfg := json.RawMessage(`{
 		"name":"Burning Crater","radius":120,"duration":1.0,"tickInterval":0.5,
-		"triggers":[{"id":"tick","type":"on_zone_tick","actions":[
+		"triggers":[{"id":"tick","type":"on_tick","actions":[
 			{"id":"s","type":"select_targets","outputs":{"targets":"hits"},
 				"target":{"source":"all_in_scene","origin":"zone_center","radius":120,"relations":["enemy"]}},
 			{"id":"d","type":"deal_damage","input":{"targets":{"key":"hits"}},"config":{"amount":12,"type":"fire"}}
@@ -86,7 +86,7 @@ func TestAbilityZoneBurnTicks_ExactStepping(t *testing.T) {
 
 	zoneCfg := json.RawMessage(`{
 		"name":"Burning Crater","radius":120,"duration":1.0,"tickInterval":0.5,
-		"triggers":[{"id":"tick","type":"on_zone_tick","actions":[
+		"triggers":[{"id":"tick","type":"on_tick","actions":[
 			{"id":"s","type":"select_targets","outputs":{"targets":"hits"},
 				"target":{"source":"all_in_scene","origin":"zone_center","radius":120,"relations":["enemy"]}},
 			{"id":"d","type":"deal_damage","input":{"targets":{"key":"hits"}},"config":{"amount":12,"type":"fire"}}

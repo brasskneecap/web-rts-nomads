@@ -136,7 +136,7 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
   it('renders a nested trigger as a real recursive FlowTriggerCard and it is selectable', async () => {
     const burn: AbilityTriggerDef = {
       id: 'burn',
-      type: 'on_zone_tick',
+      type: 'on_tick',
       timing: { tickInterval: 1000 },
       actions: [{ id: 'bdmg', type: 'deal_damage', config: { amount: 5 } }],
     }
@@ -147,7 +147,7 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
     // Root + one real nested card, not a dead label.
     const triggerCards = wrapper.findAll('[data-test="flow-trigger-card"]')
     expect(triggerCards).toHaveLength(2)
-    expect(triggerCards[1].text()).toContain('On Zone Tick')
+    expect(triggerCards[1].text()).toContain('On Duration Tick')
     // Its own action renders as a full FlowActionCard underneath it.
     expect(triggerCards[1].find('[data-test="flow-action-card"]').text()).toContain('Deal Damage')
 
@@ -160,7 +160,7 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
   })
 
   it('shows BOTH nested triggers when an action has children AND config.triggers populated (union, not first-match)', () => {
-    const configNested: AbilityTriggerDef = { id: 'cfgT', type: 'on_zone_tick', actions: [] }
+    const configNested: AbilityTriggerDef = { id: 'cfgT', type: 'on_tick', actions: [] }
     const childNested: AbilityTriggerDef = { id: 'childT', type: 'on_action_complete', actions: [] }
     const program = zoneTriggerProgram(configNested, { children: [childNested] })
     const builder = makeBuilderStub({ program })
@@ -171,12 +171,12 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
     const triggerCards = wrapper.findAll('[data-test="flow-trigger-card"]')
     expect(triggerCards).toHaveLength(3)
     const nestedTexts = [triggerCards[1].text(), triggerCards[2].text()]
-    expect(nestedTexts.some((t) => t.includes('On Zone Tick'))).toBe(true)
+    expect(nestedTexts.some((t) => t.includes('On Duration Tick'))).toBe(true)
     expect(nestedTexts.some((t) => t.includes('On Action Complete'))).toBe(true)
   })
 
   it("renders a validation badge on a nested node, proving indexPathFor's path agrees with the Go validator's grammar", () => {
-    const burn: AbilityTriggerDef = { id: 'burn', type: 'on_zone_tick', actions: [] }
+    const burn: AbilityTriggerDef = { id: 'burn', type: 'on_tick', actions: [] }
     const program = zoneTriggerProgram(burn)
     const builder = makeBuilderStub({
       program,
@@ -231,7 +231,7 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
     const zoneAction = builder.program.value.triggers[0].actions[0]
     const cfgTriggers = zoneAction.config?.triggers as AbilityTriggerDef[] | undefined
     expect(cfgTriggers).toHaveLength(1)
-    expect(cfgTriggers?.[0].type).toBe('on_zone_tick')
+    expect(cfgTriggers?.[0].type).toBe('on_tick')
     expect(zoneAction.children ?? []).toHaveLength(0)
   })
 
@@ -314,8 +314,40 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
     expect(durationAction.children ?? []).toHaveLength(0)
   })
 
+  it('offers the three Apply Duration moments (On Apply / On Duration Tick / On Complete) and adds the chosen one to config.triggers', async () => {
+    const builder = useAbilityBuilder()
+    builder.program.value = {
+      entry: { type: 'unit', range: 240 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [{ id: 'dur', type: 'apply_status_duration', config: { duration: 6 } }],
+        },
+      ],
+    }
+    const wrapper = mount(FlowTriggerCard, {
+      props: { trigger: builder.program.value.triggers[0], index: 0, path: [{ kind: 'trigger', id: 't1' }] },
+      global: { provide: { [AbilityBuilderKey as unknown as string]: builder } },
+    })
+
+    // The picker shows all three moments, labelled the way the container reads
+    // (On Apply is on_action_complete relabelled only in THIS container).
+    const select = wrapper.find('.flow-trigger__nested-add select')
+    expect(select.exists()).toBe(true)
+    expect(select.findAll('option').map((o) => o.text())).toEqual(['On Apply', 'On Duration Tick', 'On Expire'])
+
+    // Choosing On Duration Tick and adding nests an on_tick trigger in config.triggers.
+    await select.setValue('on_tick')
+    await wrapper.find('[data-test="flow-trigger-add-nested-trigger"]').trigger('click')
+
+    const cfgTriggers = builder.program.value.triggers[0].actions[0].config?.triggers as AbilityTriggerDef[] | undefined
+    expect(cfgTriggers).toHaveLength(1)
+    expect(cfgTriggers?.[0].type).toBe('on_tick')
+  })
+
   it('offers a type picker for a nested trigger on create_zone but a single fixed type (no picker) for any other action', () => {
-    const burn: AbilityTriggerDef = { id: 'burn', type: 'on_zone_tick', actions: [] }
+    const burn: AbilityTriggerDef = { id: 'burn', type: 'on_tick', actions: [] }
     const zoneProgram = zoneTriggerProgram(burn)
     const zoneBuilder = makeBuilderStub({ program: zoneProgram })
     const zoneWrapper = mountCard(zoneProgram.triggers[0], zoneBuilder)

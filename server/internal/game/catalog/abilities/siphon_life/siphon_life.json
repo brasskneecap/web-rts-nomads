@@ -42,7 +42,7 @@
               "triggers": [
                 {
                   "id": "beam_tick",
-                  "type": "on_beam_tick",
+                  "type": "on_tick",
                   "actions": [
                     {
                       "id": "dmg",

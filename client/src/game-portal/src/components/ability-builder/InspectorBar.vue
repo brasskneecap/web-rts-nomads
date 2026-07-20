@@ -41,10 +41,10 @@
               :catalogs="builder.catalogs.value"
               @update:model-value="(v) => commitTriggerField({ name: v as string })"
             />
-            <!-- Timing shape follows the trigger type: on_animation_marker
-                 wants a marker name, on_zone_tick/on_status_tick want a tick
-                 interval, everything else falls back to the generic `frame`
-                 field. -->
+            <!-- Timing shape follows the trigger type: on_animation_marker wants
+                 a marker name; on_tick has NO timing field (its cadence lives on
+                 the enclosing container — see the hint); everything else falls
+                 back to the generic `frame` field. -->
             <SchemaField
               v-if="timingKind === 'marker'"
               :field="{ key: 'marker', label: 'Marker', control: 'text' }"
@@ -53,14 +53,9 @@
               :catalogs="builder.catalogs.value"
               @update:model-value="(v) => commitTriggerTiming({ marker: v as string })"
             />
-            <SchemaField
-              v-else-if="timingKind === 'tickInterval'"
-              :field="{ key: 'tickInterval', label: 'Tick Interval (ms)', control: 'number' }"
-              :model-value="selectedTrigger.timing?.tickInterval ?? 0"
-              :enums="enumsValue"
-              :catalogs="builder.catalogs.value"
-              @update:model-value="(v) => commitTriggerTiming({ tickInterval: v as number })"
-            />
+            <p v-else-if="timingKind === 'none'" class="ib-hint" data-test="tick-cadence-hint">
+              Fires every tick — set the interval on the container (its Tick Interval).
+            </p>
             <SchemaField
               v-else
               :field="{ key: 'frame', label: 'Frame', control: 'number' }"
@@ -315,7 +310,7 @@ const CURATED_TRIGGER_TYPES: TriggerType[] = [
   'on_cast_start',
   'on_cast_complete',
   'on_animation_marker',
-  'on_zone_tick',
+  'on_tick',
   'on_zone_enter',
   'on_zone_exit',
 ]
@@ -324,11 +319,14 @@ const triggerTypeOptions = computed<string[]>(() => {
   return fromSchema && fromSchema.length > 0 ? fromSchema : CURATED_TRIGGER_TYPES
 })
 
-type TimingKind = 'marker' | 'tickInterval' | 'frame'
+type TimingKind = 'marker' | 'none' | 'frame'
 const timingKind = computed<TimingKind>(() => {
   const t = selectedTrigger.value?.type
   if (t === 'on_animation_marker') return 'marker'
-  if (t === 'on_zone_tick' || t === 'on_status_tick') return 'tickInterval'
+  // on_tick carries NO trigger-level interval — the tick cadence is authored on
+  // the enclosing container (Apply Duration / create_zone / …), so show no
+  // timing field here (a second "Tick Interval" would just be confusing).
+  if (t === 'on_tick') return 'none'
   return 'frame'
 })
 

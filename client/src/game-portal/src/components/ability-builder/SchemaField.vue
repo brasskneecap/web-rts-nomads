@@ -172,6 +172,19 @@
       Nested flow — edit in the flow view. TODO(phase-6): inline editing here.
     </p>
 
+    <!-- color: a native color picker paired with a text field, so a tint can be
+         picked OR typed/pasted (shorthand #rgb, alpha #rrggbbaa). The picker
+         itself only produces #rrggbb; the text field carries the authored value. -->
+    <div v-else-if="field.control === 'color'" class="sf-color">
+      <input
+        type="color"
+        :aria-label="`${field.label} picker`"
+        :value="colorPickerValue"
+        @input="commitColorPicker"
+      />
+      <input :id="fieldId" type="text" :value="localText" placeholder="#96d6ff" @input="onLocalInput" @change="commitText" />
+    </div>
+
     <!-- Unknown control: text fallback so a newer server's control type never
          crashes the editor. -->
     <input v-else :id="fieldId" type="text" :value="localText" @input="onLocalInput" @change="commitText" />
@@ -262,6 +275,22 @@ function onLocalInput(e: Event) {
 
 function commitText() {
   emit('update:modelValue', localText.value)
+}
+
+// colorPickerValue feeds the native <input type="color">, which ONLY accepts a
+// full #rrggbb. Fall back to a sensible default when the authored value isn't
+// a full 6-digit hex (empty, shorthand #rgb, or #rrggbbaa) so the swatch never
+// silently snaps to black.
+const colorPickerValue = computed(() =>
+  /^#[0-9a-fA-F]{6}$/.test(localText.value) ? localText.value : '#96d6ff',
+)
+
+// commitColorPicker mirrors the swatch's #rrggbb into both the local text field
+// and the committed value.
+function commitColorPicker(e: Event) {
+  const v = (e.target as HTMLInputElement).value
+  localText.value = v
+  emit('update:modelValue', v)
 }
 
 function commitNumber() {

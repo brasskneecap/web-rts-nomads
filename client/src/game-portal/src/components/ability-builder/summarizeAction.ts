@@ -13,13 +13,22 @@ import type { ActionSchemaBundle } from '@/game/abilities/program/programSchema'
 // "Saved Value" picker that reads the saved set back.
 const ACTION_TYPE_LABELS: Record<string, string> = {
   store_targets: 'Save Targets',
+  // "Apply Status Duration" reads as jargon; designers call this the duration
+  // container that owns a status's lifetime — "Apply Duration".
+  apply_status_duration: 'Apply Duration',
+  // Trigger moments, named the way a container reads: On Duration Tick (the
+  // generic on_tick), On Expire (on_status_expire). On Apply (on_action_complete)
+  // is NOT overridden — it's a GENERIC trigger reused as any action's child, so
+  // a global "On Apply" would mislabel it elsewhere.
+  on_tick: 'On Duration Tick',
+  on_status_expire: 'On Expire',
 }
 
 // humanizeActionType turns a snake_case action type id into a Title Case
 // label, e.g. "deal_damage" -> "Deal Damage" (with a few overrides above).
 // Unknown/empty types fall back to the raw string so the card never renders
-// blank. Also reused for trigger types — none of which collide with an
-// override key, so the override table is action-only in practice.
+// blank. Also reused for trigger types (FlowTriggerCard / AbilityFlow) — hence
+// the on_tick / on_status_expire trigger-type overrides above.
 export function humanizeActionType(type: string): string {
   if (!type) return ''
   if (ACTION_TYPE_LABELS[type]) return ACTION_TYPE_LABELS[type]

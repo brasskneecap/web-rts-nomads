@@ -1323,6 +1323,12 @@ type UnitSnapshot struct {
 	// while ColdSlowedRemaining > 0. Absent (omitempty) when no chill is active.
 	ColdSlowedRemaining  float64 `json:"coldSlowedRemaining,omitempty"`
 	ColdSlowedMultiplier float64 `json:"coldSlowedMultiplier,omitempty"`
+	// OverlayColor is a CSS hex color (#RGB / #RRGGBB) the client paints over
+	// the unit's sprite while it carries a status that authored an
+	// apply_color_overlay effect (ability_color_overlay.go) — the general,
+	// author-chosen version of the fixed chill/blue overlay. Absent (omitempty)
+	// when no such status is active.
+	OverlayColor string `json:"overlayColor,omitempty"`
 	// BurningRemaining is the greatest remaining duration across the unit's
 	// active burn (fire DoT) stacks — from a fire_sword proc or a Trapper
 	// fire_pit perk. The client paints an animated burning overlay while it is

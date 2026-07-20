@@ -119,7 +119,7 @@ function sharedSufferingPerk() {
     abilityRiders: [
       {
         target: 'siphon_life',
-        trigger: 'on_beam_tick',
+        trigger: 'on_tick',
         actions: [
           {
             id: 'echo_targets',
@@ -188,7 +188,7 @@ function stubFetchWithRider(savedPerks: Array<Record<string, unknown>>) {
               ],
             },
           ],
-          enums: { triggerTypes: ['on_cast_complete', 'on_beam_tick'], actionTypes: ['select_targets', 'deal_damage'] },
+          enums: { triggerTypes: ['on_cast_complete', 'on_tick'], actionTypes: ['select_targets', 'deal_damage'] },
         }),
       }
     }
@@ -464,7 +464,7 @@ describe('PerkEditorPanel', () => {
     const riders = savedPerks[0].abilityRiders as Array<{ target: string; trigger: string; actions: Array<{ id: string; config?: Record<string, unknown> }> }>
     expect(riders).toHaveLength(1)
     expect(riders[0].target).toBe('siphon_life')
-    expect(riders[0].trigger).toBe('on_beam_tick')
+    expect(riders[0].trigger).toBe('on_tick')
     expect(riders[0].actions[1].config).toEqual({ amountRef: 'trigger_damage', amountMult: 0.6, type: 'shadow' })
     // select_targets (untouched) still round-trips its own target query intact.
     expect(riders[0].actions[0]).toEqual(sharedSufferingPerk().abilityRiders[0].actions[0])

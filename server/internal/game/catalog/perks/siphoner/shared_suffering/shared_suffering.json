@@ -11,7 +11,7 @@
   "abilityRiders": [
     {
       "target": "siphon_life",
-      "trigger": "on_beam_tick",
+      "trigger": "on_tick",
       "actions": [
         {
           "id": "echo_targets",

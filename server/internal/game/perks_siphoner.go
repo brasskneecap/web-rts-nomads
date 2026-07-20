@@ -1047,7 +1047,7 @@ func (s *GameState) darkRenewalAllyRecipientLockedExcluding(siphoner *Unit, radi
 // MIGRATED to a data-driven ability rider (see
 // docs/superpowers/plans/2026-07-19-perk-ability-riders-tier-b.md Task 4):
 // catalog/perks/siphoner/shared_suffering/shared_suffering.json's
-// abilityRiders entry (target "siphon_life", trigger "on_beam_tick") now
+// abilityRiders entry (target "siphon_life", trigger "on_tick") now
 // carries the select_targets + deal_damage actions that used to live in
 // applySharedSufferingLocked below, run generically by
 // runAbilityRidersForCasterLocked (ability_riders.go) from the same call

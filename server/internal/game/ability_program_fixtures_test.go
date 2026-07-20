@@ -122,7 +122,7 @@ const meteorV2JSON = `{
                   "owner": { "key": "caster" }, "presentation": "burning_crater",
                   "triggers": [
                     {
-                      "id": "t_burn", "type": "on_zone_tick", "timing": { "tickInterval": 0.5 },
+                      "id": "t_burn", "type": "on_tick", "timing": { "tickInterval": 0.5 },
                       "actions": [
                         {
                           "id": "a_bsel", "type": "select_targets",

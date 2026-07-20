@@ -297,7 +297,7 @@ func (s *GameState) fireAbilityZoneTickLocked(z *AbilityZone) {
 		Trace:         s.previewTrace,
 		now:           s.previewClock,
 	}
-	s.runProgramTriggersLocked(ctx, z.Triggers, TriggerOnZoneTick)
+	s.runProgramTriggersLocked(ctx, z.Triggers, TriggerOnTick)
 }
 
 // fireAbilityZoneOccupancyEventLocked builds the RuntimeAbilityContext for a

@@ -116,7 +116,7 @@ function meteorProgram(): AbilityProgram {
                   triggers: [
                     {
                       id: 'burn',
-                      type: 'on_zone_tick',
+                      type: 'on_tick',
                       timing: { tickInterval: 1000 },
                       actions: [
                         { id: 'bsel', type: 'select_targets' },
@@ -170,7 +170,7 @@ describe('collectSavedContextNames', () => {
                 triggers: [
                   {
                     id: 'zt',
-                    type: 'on_zone_tick',
+                    type: 'on_tick',
                     actions: [{ id: 'za', type: 'select_targets', outputs: { targets: 'zoneHit' } }],
                   },
                 ],
@@ -219,7 +219,7 @@ describe('collectReadContextNames', () => {
                 triggers: [
                   {
                     id: 'zt',
-                    type: 'on_zone_tick',
+                    type: 'on_tick',
                     actions: [
                       { id: 'za', type: 'select_targets', target: { source: 'named_context', originRef: { key: 'zoneRef' } } },
                     ],
@@ -527,7 +527,7 @@ describe('resolveNode', () => {
   it('resolves a config.triggers-nested trigger three levels deep (depth 3)', () => {
     const trigger = triggerAt(meteorProgram(), burnPath)
     expect(trigger.id).toBe('burn')
-    expect(trigger.type).toBe('on_zone_tick')
+    expect(trigger.type).toBe('on_tick')
   })
 
   it('resolves an action inside the deepest nested trigger (depth 3 trigger + action)', () => {
@@ -732,7 +732,7 @@ describe('addTrigger (depth-aware)', () => {
   it('nests under config.triggers for a create_zone parent action, appended after the existing config trigger', () => {
     const before = meteorProgram()
     const snapshot = structuredClone(before)
-    const after = addTrigger(before, zoneActionPath, 'on_zone_tick')
+    const after = addTrigger(before, zoneActionPath, 'on_tick')
 
     expect(before).toEqual(snapshot)
     const zone = actionAt(after, zoneActionPath)
@@ -753,7 +753,7 @@ describe('addTrigger (depth-aware)', () => {
   it('is a no-op for an unresolvable parent action path', () => {
     const before = meteorProgram()
     const garbage: NodePath = [...impactPath, { kind: 'action', id: 'does-not-exist' }]
-    expect(addTrigger(before, garbage, 'on_zone_tick')).toEqual(before)
+    expect(addTrigger(before, garbage, 'on_tick')).toEqual(before)
   })
 })
 
@@ -975,7 +975,7 @@ describe('id minting scans config.triggers, not just children', () => {
               id: 'a1',
               type: 'create_zone',
               config: {
-                triggers: [{ id: 't9', type: 'on_zone_tick', actions: [{ id: 'a2', type: 'select_targets' }] }],
+                triggers: [{ id: 't9', type: 'on_tick', actions: [{ id: 'a2', type: 'select_targets' }] }],
               },
             },
           ],
@@ -1000,11 +1000,11 @@ describe('addTrigger — nested slot rule', () => {
   // Mirrors the four Go configs that decode a Triggers field (beam covers both
   // its momentary on_beam_impact and channeled on_beam_tick shapes).
   const CONFIG_SLOT: [string, string][] = [
-    ['create_zone', 'on_zone_tick'],
-    ['apply_status', 'on_status_tick'],
+    ['create_zone', 'on_tick'],
+    ['apply_status', 'on_tick'],
     ['launch_projectile', 'on_projectile_impact'],
     ['beam', 'on_beam_impact'],
-    ['beam', 'on_beam_tick'],
+    ['beam', 'on_tick'],
     ['apply_status_duration', 'on_action_complete'],
   ]
 

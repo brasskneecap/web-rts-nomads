@@ -127,6 +127,18 @@ func (applyForceConfig) actionConfig() {}
 //     (TestCatalog_NoAbilityUsesStatusTickExpireTriggers) — it stays
 //     editor-reachable/dormant, same as before this task.
 //
+// NESTED CC-EFFECT PATH (the "duration is its own action" model): the CC
+// path above is ALSO how apply_status is meant to be authored today — nested
+// inside an apply_status_duration's config.triggers (ability_status_duration.go),
+// exactly like change_stat/apply_mark. In that position its lifetime is owned
+// by the container: it carries NO duration of its own (the editor drops the
+// field; validation rejects a config duration there — see the Validate func),
+// and Execute derives the CC effect's duration from ctx.CurrentStatus.Remaining.
+// The status vocabulary gains "chill" — the cold-slow that drives the client's
+// icy-blue overlay (ColdSlowedRemaining track, combat_ai_cc.go) and stacks
+// multiplicatively with the physical "slow" track. This is what Shatter uses
+// (catalog/abilities/shatter): apply_status_duration -> apply_status(chill).
+//
 // NOTE ON A REMOVED DESIGN: this struct previously ALSO carried
 // StatModifiers/Icon/IconKind (a same-session design that let apply_status
 // itself own a status's stat changes and overhead icon). That design was
@@ -316,11 +328,30 @@ func init() {
 			err := json.Unmarshal(b, &c)
 			return c, err
 		},
-		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue {
+		Validate: func(cfg ActionConfig, scope ValidationScope) []ValidationIssue {
 			c := cfg.(applyStatusConfig)
 			var out []ValidationIssue
-			if c.Status == "" || c.Duration <= 0 {
-				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "apply_status requires status and duration > 0", Severity: "error"})
+			if c.Status == "" {
+				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "apply_status requires a status", Severity: "error"})
+			}
+			// Duration is CONTEXT-dependent (see applyStatusConfig's doc comment):
+			//   - Nested inside an apply_status_duration (scope.InsideStatusDuration):
+			//     the CC effect's lifetime is owned by the container, so a config
+			//     duration here is inert — reject it (this project's standing "no
+			//     inert authorable fields" rule) rather than silently ignore it.
+			//     A nested apply_status is a pure CC effect and must not also
+			//     declare its own on_status_tick/expire triggers.
+			//   - Standalone (legacy compiler output / authored top-level): the
+			//     config duration is the only source, so it is still required.
+			if scope.InsideStatusDuration {
+				if c.Duration != 0 {
+					out = append(out, ValidationIssue{Code: "invalid_property", Message: "apply_status nested under apply_status_duration derives its duration from the container — remove the duration field", Severity: "error"})
+				}
+				if len(c.Triggers) > 0 {
+					out = append(out, ValidationIssue{Code: "invalid_property", Message: "apply_status nested under apply_status_duration is a plain CC effect and cannot declare its own triggers", Severity: "error"})
+				}
+			} else if c.Duration <= 0 {
+				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "apply_status requires duration > 0 (or nest it under an apply_status_duration to derive one)", Severity: "error"})
 			}
 			// Authored path only (Triggers non-empty): the config's own
 			// TickInterval is the runtime cadence driver (mirrors
@@ -328,9 +359,9 @@ func init() {
 			// must be set whenever there's anything to tick against — even a
 			// status whose only trigger is on_status_expire still needs this to
 			// be a well-formed AbilityStatus once spawned. The legacy path
-			// (Triggers empty) needs no tickInterval at all — stun/slow have no
-			// cadence and burn's ticking is owned entirely by the existing
-			// tickTrapperSilverDebuffsLocked loop.
+			// (Triggers empty) needs no tickInterval at all — stun/slow/chill
+			// have no cadence and burn's ticking is owned entirely by the
+			// existing tickTrapperSilverDebuffsLocked loop.
 			if len(c.Triggers) > 0 && c.TickInterval <= 0 {
 				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "apply_status requires tickInterval > 0 when it declares triggers", Severity: "error"})
 			}
@@ -345,9 +376,12 @@ func init() {
 		// apply_status_duration + change_stat/apply_mark instead — see
 		// ability_status_duration.go — not via this action at all.)
 		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "status", Label: "Status", Control: "enum", Options: []string{"slow", "stun", "burn"}, Section: "Properties"},
+			{Key: "status", Label: "Status", Control: "enum", Options: []string{"chill", "slow", "stun", "burn"}, Section: "Properties"},
 			{Key: "multiplier", Label: "Multiplier", Control: "percentage", Section: "Properties"},
-			{Key: "duration", Label: "Duration", Control: "duration", Section: "Timing"},
+			// No "duration" editor control: apply_status is authored nested under
+			// an apply_status_duration, which owns the effect's lifetime (see
+			// applyStatusConfig's doc comment). The legacy compiler still bakes a
+			// Duration into its standalone output's config JSON directly.
 			{Key: "dps", Label: "DPS", Control: "number", Section: "Properties"},
 			{Key: "school", Label: "School", Control: "enum", Section: "Properties"},
 			{Key: "name", Label: "Name", Control: "text", Section: "Advanced"},
@@ -391,24 +425,45 @@ func init() {
 				return applied
 			}
 
-			// LEGACY path: unchanged three-case switch onto the pre-existing
-			// generic CC primitives. Byte-identical to pre-subsystem behavior
-			// except the "burn" case now calls applyAbilityBurnLocked instead of
-			// applyProcBurnLocked directly — see that function's doc comment
-			// for the key-collision bug fix this is (no currently-shipped
-			// ability uses apply_status "burn", so this changes zero production
-			// behavior today).
+			// CC path: route onto the pre-existing generic CC primitives.
+			//
+			// Effective duration is CONTEXT-dependent:
+			//   - Nested inside an apply_status_duration (ctx.CurrentStatus != nil):
+			//     the container owns the lifetime, so the CC effect runs for the
+			//     status's Remaining — the "duration is its own action" model (see
+			//     ability_status_duration.go). ctx.CurrentStatus.Remaining is the
+			//     container's full authored duration here: apply_status_duration
+			//     runs its config.triggers immediately at spawn, before any
+			//     countdown (spawnAbilityStatusLocked seeds Remaining = duration).
+			//   - Standalone (ctx.CurrentStatus == nil — the legacy compiler's
+			//     output and any top-level authored use): the config's own
+			//     Duration is the only source, byte-identical to before.
+			//
+			// The cold "chill" track and the physical "slow" track are separate
+			// (they stack multiplicatively — slowFactorLocked, combat_ai_cc.go);
+			// "chill" always lands on the cold track (driving the icy overlay),
+			// while "slow" honors School (cold school still routes cold for the
+			// frozen legacy compiler output — applyProcSlowLocked). The "burn"
+			// case calls applyAbilityBurnLocked (not applyProcBurnLocked) — see
+			// that function's doc comment for the key-collision bug fix.
+			duration := c.Duration
+			if ctx.CurrentStatus != nil {
+				duration = ctx.CurrentStatus.Remaining
+			}
 			applied := make([]int, 0, len(targets))
 			for _, id := range targets {
 				switch c.Status {
+				case "chill":
+					// Always the cold track — the icy-overlay slow (blue tint).
+					s.ApplyColdSlowLocked(id, c.Multiplier, duration)
 				case "slow":
 					// applyProcSlowLocked routes cold -> chill track; an empty/other
 					// school routes physical (see combat_ai_cc.go).
-					s.applyProcSlowLocked(id, c.Multiplier, c.Duration, c.School)
+					s.applyProcSlowLocked(id, c.Multiplier, duration, c.School)
 				case "stun":
-					s.ApplyStunLocked(id, c.Duration)
+					s.ApplyStunLocked(id, duration)
 				case "burn":
-					s.applyAbilityBurnLocked(id, c.DPS, c.Duration, ctx.CasterID, ctx.AbilityID)
+					s.applyAbilityBurnLocked(id, c.DPS, duration, ctx.CasterID, ctx.AbilityID)
 				default:
 					ctx.trace("action_skipped", ctx.currentActionPath, map[string]any{"reason": "unknown_status", "status": c.Status})
 					continue

@@ -1137,6 +1137,10 @@ export type UnitSnapshot = {
   coldSlowedRemaining?: number
   /** Effective speed fraction while chilled (e.g. 0.75 = 25% slower). */
   coldSlowedMultiplier?: number
+  /** CSS hex color the renderer paints over the sprite while a status authored
+   *  an apply_color_overlay effect — the general form of the chill/blue overlay.
+   *  Omitted when no such status is active. */
+  overlayColor?: string
   /** Greatest remaining seconds across the unit's active burn (fire DoT) stacks
    *  — from a fire_sword proc or a Trapper fire_pit perk. > 0 ⇒ the renderer
    *  paints an animated burning overlay. Omitted when the unit is not on fire. */

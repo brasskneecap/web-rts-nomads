@@ -11,7 +11,7 @@ import RiderEditor from './RiderEditor.vue'
 function sharedSufferingRider(): AbilityRider {
   return {
     target: 'siphon_life',
-    trigger: 'on_beam_tick',
+    trigger: 'on_tick',
     actions: [
       {
         id: 'echo_targets',
@@ -55,7 +55,7 @@ function makeSchema(): ActionSchemaBundle {
         ],
       },
     ],
-    enums: { triggerTypes: ['on_cast_complete', 'on_beam_tick', 'on_zone_tick'], actionTypes: ['select_targets', 'deal_damage', 'wait'] },
+    enums: { triggerTypes: ['on_cast_complete', 'on_tick', 'on_zone_enter'], actionTypes: ['select_targets', 'deal_damage', 'wait'] },
   }
 }
 
@@ -79,7 +79,7 @@ describe('RiderEditor', () => {
     const wrapper = mountEditor(sharedSufferingRider())
 
     expect((wrapper.find('input[aria-label="Target ability"]').element as HTMLInputElement).value).toBe('siphon_life')
-    expect((wrapper.find('select[aria-label="Trigger"]').element as HTMLSelectElement).value).toBe('on_beam_tick')
+    expect((wrapper.find('select[aria-label="Trigger"]').element as HTMLSelectElement).value).toBe('on_tick')
 
     const cards = wrapper.findAll('[data-test="flow-action-card"]')
     expect(cards).toHaveLength(2)
@@ -97,17 +97,17 @@ describe('RiderEditor', () => {
     const last = emitted![emitted!.length - 1][0] as AbilityRider
     expect(last.target).toBe('frost_bolt')
     // actions/trigger untouched by a target-only edit.
-    expect(last.trigger).toBe('on_beam_tick')
+    expect(last.trigger).toBe('on_tick')
     expect(last.actions).toHaveLength(2)
   })
 
   it('editing the trigger field emits an updated rider', async () => {
     const wrapper = mountEditor(sharedSufferingRider())
-    await wrapper.find('select[aria-label="Trigger"]').setValue('on_zone_tick')
+    await wrapper.find('select[aria-label="Trigger"]').setValue('on_tick')
 
     const emitted = wrapper.emitted('update:modelValue')
     const last = emitted![emitted!.length - 1][0] as AbilityRider
-    expect(last.trigger).toBe('on_zone_tick')
+    expect(last.trigger).toBe('on_tick')
   })
 
   it('selecting the deal_damage action shows its schema-driven fields (amountRef/amountMult/type), and editing amountMult writes back', async () => {
@@ -138,7 +138,7 @@ describe('RiderEditor', () => {
     // untouched by editing a sibling action's config.
     expect(last.actions[0]).toEqual(sharedSufferingRider().actions[0])
     expect(last.target).toBe('siphon_life')
-    expect(last.trigger).toBe('on_beam_tick')
+    expect(last.trigger).toBe('on_tick')
   })
 
   it('adding an action appends it to the rider and removing an action removes it', async () => {
@@ -164,6 +164,6 @@ describe('RiderEditor', () => {
   it('falls back to a curated trigger/action list when schema is null, still including nested-only types like on_beam_tick', () => {
     const wrapper = mountEditor(sharedSufferingRider(), null)
     const options = wrapper.find('select[aria-label="Trigger"]').findAll('option').map((o) => o.element.value)
-    expect(options).toContain('on_beam_tick')
+    expect(options).toContain('on_tick')
   })
 })

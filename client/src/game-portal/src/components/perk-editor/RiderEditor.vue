@@ -181,9 +181,9 @@ const triggerProxy = computed<string>({
 // riders actually need.
 const CURATED_TRIGGER_TYPES: TriggerType[] = [
   'on_cast_start', 'on_cast_complete', 'on_animation_marker',
-  'on_projectile_impact', 'on_projectile_tick', 'on_beam_impact', 'on_beam_tick',
-  'on_zone_tick', 'on_zone_enter', 'on_zone_exit',
-  'on_status_tick', 'on_status_expire', 'on_damage_dealt', 'on_unit_death',
+  'on_projectile_impact', 'on_beam_impact',
+  'on_tick', 'on_zone_enter', 'on_zone_exit',
+  'on_status_expire', 'on_damage_dealt', 'on_unit_death',
   'on_action_complete', 'on_charge_full',
 ]
 const triggerTypeOptions = computed<string[]>(() => {

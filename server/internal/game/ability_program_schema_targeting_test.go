@@ -55,8 +55,9 @@ func TestActionTargetingShape_MatchesExecuteUsage(t *testing.T) {
 		// on ctx.CurrentStatus (the enclosing apply_status_duration's
 		// spawned AbilityStatus), never on a per-unit query
 		// (ability_status_duration.go).
-		ActionChangeStat:   false,
-		ActionApplyMark:    false,
+		ActionChangeStat:        false,
+		ActionApplyMark:         false,
+		ActionApplyColorOverlay: false,
 		ActionRemoveStatus: false, // remove_status's Execute (ability_exec_actions.go)
 		ActionApplyForce:   false, // apply_force's Execute (ability_exec_actions.go)
 

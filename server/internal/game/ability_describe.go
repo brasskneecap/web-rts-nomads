@@ -543,7 +543,7 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 				// baseline, never a live-cast-folded value, same as every
 				// other magnitude here).
 				for _, trig := range cfg.Triggers {
-					if trig.Type != TriggerOnProjectileTick {
+					if trig.Type != TriggerOnTick {
 						continue
 					}
 					vm := vortexMagnitudesFromTrigger(trig)
@@ -577,11 +577,39 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 				m.targetCount = pendingTargetCount
 			}
 		case ActionApplyStatus:
+			// Standalone apply_status (legacy compiler output). Both "slow" and
+			// "chill" are the same recoverable magnitude to the tooltip — a
+			// move/attack slow of some multiplier for some duration; "chill" is
+			// simply the cold-track (icy-overlay) variant.
 			var cfg applyStatusConfig
 			decodeActionConfig(act.Config, &cfg)
-			if cfg.Status == "slow" {
+			if cfg.Status == "slow" || cfg.Status == "chill" {
 				m.slowMultiplier = cfg.Multiplier
 				m.slowDurationSeconds = cfg.Duration
+			}
+		case ActionApplyStatusDuration:
+			// Decomposed shape (Shatter's authored form): the slow lives in a
+			// nested apply_status(chill|slow) inside the container's
+			// config.triggers, and the container — not the nested action — owns
+			// the duration (the nested apply_status carries none). Recover the
+			// multiplier from the nested action and the duration from the
+			// container, so the tooltip prose (and shatterDef's contract test)
+			// see the slow through the new shape exactly as they did the old
+			// top-level apply_status(slow).
+			var cfg applyStatusDurationConfig
+			decodeActionConfig(act.Config, &cfg)
+			for _, trig := range cfg.Triggers {
+				for _, nested := range trig.Actions {
+					if !nested.IsEnabled() || nested.Type != ActionApplyStatus {
+						continue
+					}
+					var sc applyStatusConfig
+					decodeActionConfig(nested.Config, &sc)
+					if sc.Status == "slow" || sc.Status == "chill" {
+						m.slowMultiplier = sc.Multiplier
+						m.slowDurationSeconds = cfg.Duration
+					}
+				}
 			}
 		case ActionSummonUnit:
 			var cfg summonUnitConfig

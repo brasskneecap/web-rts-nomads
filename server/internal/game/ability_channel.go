@@ -208,7 +208,7 @@ func (s *GameState) fireChannelBeamTickLocked(caster, target *Unit, def AbilityD
 	}
 	var actions []AbilityActionDef
 	for _, trig := range cfg.Triggers {
-		if trig.Type == TriggerOnBeamTick {
+		if trig.Type == TriggerOnTick {
 			actions = trig.Actions
 			break
 		}
@@ -229,7 +229,7 @@ func (s *GameState) fireChannelBeamTickLocked(caster, target *Unit, def AbilityD
 		now:                           s.previewClock,
 		damageEffectivenessMultiplier: damageMult,
 	}
-	path := "on_beam_tick"
+	path := "on_tick"
 	for i := range actions {
 		if ctx.opsExhausted() {
 			break
@@ -522,7 +522,7 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 		// JSON and the migration characterization test for the accepted
 		// deltas: no VFX, no minor-popup split, ascended_corruption's overlay
 		// temporarily inert).
-		s.runAbilityRidersForCasterLocked(unit, target, unit.ChannelAbilityID, TriggerOnBeamTick, tickDamage)
+		s.runAbilityRidersForCasterLocked(unit, target, unit.ChannelAbilityID, TriggerOnTick, tickDamage)
 
 		// Withering Beam — accrue continuous-siphon time and stamp stacks
 		// on the target every secondsPerStack. Runs after damage so a
