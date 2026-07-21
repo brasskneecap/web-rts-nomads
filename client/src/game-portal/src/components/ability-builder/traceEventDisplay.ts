@@ -123,6 +123,15 @@ export function summarizeTraceEvent(e: AbilityExecutionTraceEvent): string {
       ].filter(Boolean)
       return parts.join(' · ')
     }
+    case 'trap_placed': {
+      // Same "entity created" shape as zone_created above: what · how big · how long.
+      const parts = [
+        p.trapType != null ? String(p.trapType) : undefined,
+        p.radius != null ? `r${p.radius}` : undefined,
+        p.duration != null ? `${p.duration}s` : undefined,
+      ].filter(Boolean)
+      return parts.join(' · ')
+    }
     case 'status_applied':
       return `unit ${display(p.unit)} ← ${display(p.status)}`
     case 'status_removed':

@@ -285,45 +285,13 @@ func TestAbilityStatus_StackingStack_CreatesIndependentInstancesUpToMaxStacks(t 
 	}
 }
 
-// ── apply_status action integration (the authored/legacy discriminator) ──
+// ── apply_status action integration ──
 
-// TestActionApplyStatus_Authored_SpawnsAbilityStatus drives the REAL
-// apply_status ActionDescriptor (not spawnAbilityStatusLocked directly) with
-// a config carrying Triggers, proving Execute's discriminator (see
-// applyStatusConfig's doc comment) routes to the AbilityStatus path and never
-// touches the legacy CC tracks.
-func TestActionApplyStatus_Authored_SpawnsAbilityStatus(t *testing.T) {
-	s := setupHostileTargetingPair(t)
-	defer s.mu.Unlock()
-
-	caster := teamCombatUnit(t, s, "p1", 0, 0)
-	enemy := teamCombatUnit(t, s, "p2", 50, 0)
-
-	cfg := `{"status":"custom_poison","duration":5,"tickInterval":1,"triggers":[
-		{"id":"tick","type":"on_tick","actions":[]}
-	]}`
-	tr := runOneActionProgram(t, s, caster.ID, 0, ActionApplyStatus, cfg, []int{enemy.ID})
-
-	if len(s.AbilityStatuses) != 1 {
-		t.Fatalf("want 1 AbilityStatus spawned, got %d", len(s.AbilityStatuses))
-	}
-	st := s.AbilityStatuses[0]
-	if st.TargetUnitID != enemy.ID {
-		t.Fatalf("status target = %d, want %d", st.TargetUnitID, enemy.ID)
-	}
-	if !traceHas(tr, "status_applied") {
-		t.Fatalf("missing status_applied trace event: %+v", tr.Events)
-	}
-	if enemy.SlowedRemaining != 0 || enemy.StunnedRemaining != 0 {
-		t.Fatalf("authored apply_status must not touch legacy CC tracks: slow=%v stun=%v", enemy.SlowedRemaining, enemy.StunnedRemaining)
-	}
-}
-
-// TestActionApplyStatus_Legacy_StillRoutesToPrimitives is the parity
-// guard closest to the golden tests: an apply_status action with NO Triggers
-// (the shape every legacy-compiled ability, e.g. shatter, emits) must still
-// take the old three-case switch, completely unaffected by the authored path
-// existing alongside it.
+// TestActionApplyStatus_Legacy_StillRoutesToPrimitives is the parity guard
+// closest to the golden tests: a plain CC apply_status action (the shape every
+// legacy-compiled ability, e.g. shatter, emits) takes the CC switch and lands
+// on the pre-existing slow/stun/burn tracks. (apply_status is ONLY a CC effect
+// now — the authored-status path moved entirely to apply_status_duration.)
 func TestActionApplyStatus_Legacy_StillRoutesToPrimitives(t *testing.T) {
 	s := setupHostileTargetingPair(t)
 	defer s.mu.Unlock()
@@ -358,9 +326,12 @@ func TestAbilityStatus_ReentrantApplyStatusDoesNotCorruptAbilityStatuses(t *test
 	target := teamCombatUnit(t, s, "p2", 50, 0)
 	target.HP, target.MaxHP = 1000, 1000
 
-	nestedCfg, err := json.Marshal(applyStatusConfig{
-		Status: "spawned_child", Name: "child", Duration: 5, TickInterval: 1,
-		Triggers: []AbilityTriggerDef{{ID: "childtick", Type: TriggerOnTick, Actions: nil}},
+	// The nested spawn now goes through apply_status_duration (the sole action
+	// that spawns an AbilityStatus) instead of the retired apply_status
+	// authored path — the re-entrancy concern (a tick trigger appending a status
+	// to s.AbilityStatuses mid-loop) is identical.
+	nestedCfg, err := json.Marshal(applyStatusDurationConfig{
+		Name: "child", Duration: 5,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -376,7 +347,7 @@ func TestAbilityStatus_ReentrantApplyStatusDoesNotCorruptAbilityStatuses(t *test
 				Actions: []AbilityActionDef{
 					{ID: "sel", Type: ActionSelectTargets, Outputs: map[string]string{"targets": "hit"},
 						Target: &TargetQueryDef{Source: SrcCurrentEvent}},
-					{ID: "spawn_child", Type: ActionApplyStatus,
+					{ID: "spawn_child", Type: ActionApplyStatusDuration,
 						Input:  map[string]ContextRef{"targets": {Key: "hit"}},
 						Config: nestedCfg},
 				},

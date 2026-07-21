@@ -1,9 +1,6 @@
 package game
 
-import (
-	"encoding/json"
-	"testing"
-)
+import "testing"
 
 // TestShieldItems_CatalogWiring guards the six new defs: identity, tier,
 // category, and stat invariants (positive armor; block/dodge in (0,1)).
@@ -44,28 +41,29 @@ func TestShieldItems_CatalogWiring(t *testing.T) {
 	}
 }
 
-// TestElementalShields_StruckProcWiring: each elemental shield references its
-// element's shipped proc effect on the onStruck trigger at a valid chance.
+// TestElementalShields_StruckProcWiring: each elemental shield now CASTS its
+// element's ability at the attacker on the onStruck trigger (the full-circle
+// wiring), at a valid chance.
 func TestElementalShields_StruckProcWiring(t *testing.T) {
 	wiring := map[string]string{
-		"fire_shield":      "fire_bolt_ignite",
-		"frost_shield":     "frost_bolt_chill",
-		"lightning_shield": "lightning_chain",
+		"fire_shield":      "fire_bolt",
+		"frost_shield":     "frost_bolt",
+		"lightning_shield": "chain_lightning",
 	}
-	for id, effect := range wiring {
+	for id, ability := range wiring {
 		def, ok := getItemDef(id)
 		if !ok {
 			t.Fatalf("%s not in catalog", id)
 		}
 		p := firstProcFor(t, def, ProcOnStruck)
-		if p.Effect != effect {
-			t.Errorf("%s effect = %q, want %q", id, p.Effect, effect)
+		if p.Ability != ability {
+			t.Errorf("%s ability = %q, want %q", id, p.Ability, ability)
+		}
+		if _, ok := getAbilityDef(p.Ability); !ok {
+			t.Errorf("%s onStruck proc ability %q is not registered", id, p.Ability)
 		}
 		if p.Chance <= 0 || p.Chance > 1 {
 			t.Errorf("%s chance %v not a valid probability in (0,1]", id, p.Chance)
-		}
-		if _, ok := p.ResolveParams(); !ok {
-			t.Errorf("%s onStruck proc does not resolve", id)
 		}
 	}
 }
@@ -96,36 +94,5 @@ func TestShieldRecipes_Wiring(t *testing.T) {
 		if c.RecipeCostGold <= 0 {
 			t.Errorf("item %s recipeCostGold = %d, want > 0", id, c.RecipeCostGold)
 		}
-	}
-}
-
-// TestOnStruckProc_MarshalEmitsResolvedPayload guards the client wire
-// contract for the struck-proc mirror, same as the onHit proc wire test.
-func TestOnStruckProc_MarshalEmitsResolvedPayload(t *testing.T) {
-	def, ok := getItemDef("fire_shield")
-	if !ok {
-		t.Fatal("fire_shield not in catalog")
-	}
-	proc := firstProcFor(t, def, ProcOnStruck)
-	data, err := json.Marshal(proc)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var wire map[string]any
-	if err := json.Unmarshal(data, &wire); err != nil {
-		t.Fatalf("unmarshal wire: %v", err)
-	}
-	params, _ := proc.ResolveParams()
-	if wire["trigger"] != string(ProcOnStruck) {
-		t.Errorf("wire trigger = %v, want %v", wire["trigger"], ProcOnStruck)
-	}
-	if wire["effect"] != proc.Effect {
-		t.Errorf("wire effect = %v, want %v", wire["effect"], proc.Effect)
-	}
-	if wire["damage"] != float64(params.Damage) {
-		t.Errorf("wire damage = %v, want %v (resolved)", wire["damage"], params.Damage)
-	}
-	if wire["damageType"] != string(params.DamageType) {
-		t.Errorf("wire damageType = %v, want %v", wire["damageType"], params.DamageType)
 	}
 }

@@ -146,3 +146,64 @@ func (s *GameState) unitStatusStatModifiersLocked(unit *Unit, stat string) map[s
 	}
 	return stages
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The stat chokepoint.
+//
+// unitStatStagesLocked and effectiveStatLocked are the two shared entry points
+// the per-stat read sites call instead of re-deriving the
+// perk→status→(zone) merge inline. Every read site used to hand-roll the same
+// three lines (unitPerkStatModifiersLocked + playerStatModifierLocked +
+// applyStatStages/mergeZoneIntoBaseStage) and — crucially — most of them
+// FORGOT the status emitter, so a status-authored change_stat only reached
+// armor and healingReceived. These two helpers make the perk+status+zone fold
+// uniform across every stat, which is what lets a status author a plain
+// change_stat(moveSpeed, multiply, 0.5) and have it actually slow the unit
+// (the chill-as-composition goal).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// unitStatStagesLocked composes the full PER-UNIT (add, mul) stage pool for a
+// stat from every emitter that shares the PerkStatModifier vocabulary and
+// attaches to the unit itself — owned perks (unitPerkStatModifiersLocked) AND
+// active statuses (unitStatusStatModifiersLocked) — merged into one pool via
+// mergeStatStagePools. This is the "everything on the unit" half of the
+// chokepoint; effectiveStatLocked layers the OWNER's zone auras on top. Read
+// sites that must exclude zone auras (e.g. the damage HUD number, which has
+// never shown zone auras) call THIS directly instead of effectiveStatLocked.
+//
+// Returns nil (identity — applyStatStages treats a nil/absent stage as a
+// no-op) when nothing on the unit modifies stat. Caller holds s.mu.
+func (s *GameState) unitStatStagesLocked(unit *Unit, stat string) map[string]statStageAccum {
+	return mergeStatStagePools(
+		s.unitPerkStatModifiersLocked(unit, stat),
+		s.unitStatusStatModifiersLocked(unit, stat),
+	)
+}
+
+// effectiveStatLocked folds a unit's base value for a registered stat through
+// every emitter that shares the stat vocabulary — owned perks, active
+// statuses, and the owner's zone auras — via the shared three-stage engine
+// (applyStatStages), per the canonical (base + Σadd) × Πmul rule with
+// intrinsic/base/final staging. THE single chokepoint the uniform per-stat
+// read sites call.
+//
+// Covering PerkAuras (unitAuraStatContributionLocked) are deliberately NOT
+// folded here: several stats (moveSpeed, critChance, attackSpeed, armor) fold
+// their aura contribution at a DIFFERENT arithmetic position (see the
+// "ordering trap" doc on perk_aura_stat_cache.go), so aura folding stays
+// bespoke at those read sites. effectiveStatLocked covers the perk+status+zone
+// pool that IS uniform across every stat; a read site with a bespoke aura fold
+// pre-composes its aura contribution into `base` before calling this (see
+// effectiveArmorLocked) or resolves the aura separately (moveSpeed).
+//
+// Returns base unchanged for a nil unit or an unregistered stat — so a read
+// site that calls this when nothing modifies the stat behaves exactly as
+// before the chokepoint existed. Caller holds s.mu.
+func (s *GameState) effectiveStatLocked(unit *Unit, base float64, stat string) float64 {
+	if unit == nil || !isKnownStat(stat) {
+		return base
+	}
+	stages := s.unitStatStagesLocked(unit, stat)
+	add, mul := s.playerStatModifierLocked(unit.OwnerID, stat)
+	return applyStatStages(base, mergeZoneIntoBaseStage(stages, add, mul))
+}

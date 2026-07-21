@@ -1,7 +1,7 @@
 {
   "id": "frost_shield",
   "displayName": "Frost Shield",
-  "description": "+35 armor. +15% block chance. 10% chance when hit to launch a frostbolt (25 cold damage) at the attacker, chilling them (25% slower attack and move speed for 2s).",
+  "description": "+35 armor. +15% block chance. 10% chance when hit to cast Frost Bolt at the attacker, chilling them (slowed attack and move speed).",
   "iconKey": "frost_shield",
   "kind": "equipment",
   "tier": "rare",
@@ -15,7 +15,7 @@
     {
       "trigger": "onStruck",
       "chance": 0.1,
-      "effect": "frost_bolt_chill"
+      "ability": "frost_bolt"
     }
   ],
   "crafting": {

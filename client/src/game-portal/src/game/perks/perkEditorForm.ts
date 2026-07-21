@@ -16,6 +16,12 @@ export interface AbilityModifier {
   healMult?: number
   manaCostMult?: number
   rangeMult?: number
+  // cooldownMult scales the target ability's cooldown (folded server-side in
+  // effectiveSpellLocked). < 1 = comes off cooldown faster. The Trapper's
+  // rapid_deployment is the shipped consumer: it shortens all four trap
+  // abilities' cooldowns. Must stay in sync with MULT_KEYS in
+  // PerkEditorPanel.vue — a mult missing there is silently dropped on save.
+  cooldownMult?: number
 }
 
 // AbilityRider mirrors the Go AbilityRider struct: extra action fragments a
@@ -72,6 +78,10 @@ export interface AuthoredPerkDef {
   icon?: string
   path?: string
   requiresPerk?: string
+  // requiresAbility gates this perk on the unit already KNOWING an ability
+  // (the ability-era analogue of requiresPerk). Used by the trap-specific
+  // silver perks now that the four traps are pool abilities.
+  requiresAbility?: string
   config?: Record<string, number>
   configByRank?: Record<string, Record<string, number>>
   effect?: PerkEffectShape | null
@@ -92,7 +102,7 @@ export interface AuthoredPerkDef {
 
 const MODELED_KEYS = [
   'id', 'displayName', 'description', 'tooltipTemplate', 'tooltipTemplateByTrap',
-  'tooltipTemplateByOwnedPerk', 'icon', 'path', 'requiresPerk',
+  'tooltipTemplateByOwnedPerk', 'icon', 'path', 'requiresPerk', 'requiresAbility',
   'config', 'configByRank', 'effect', 'grantsAbilities',
   'abilityModifiers', 'abilityRiders', 'statModifiers', 'auras', 'wired', 'generatedDescription',
 ] as const

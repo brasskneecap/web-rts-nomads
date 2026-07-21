@@ -62,10 +62,6 @@ type TrapModifiers struct {
 	// Trap.TriggerRadius.
 	RadiusMultiplier float64
 
-	// CooldownMultiplier scales placeIntervalSeconds when the placement
-	// cooldown is reset after planting.
-	CooldownMultiplier float64
-
 	// EffectMultiplier scales per-trap effect magnitudes:
 	//   - DamagePerSecond (caltrops, fire_pit)
 	//   - BurstDamage (explosive_trap)
@@ -81,7 +77,6 @@ func newTrapModifiers() TrapModifiers {
 	return TrapModifiers{
 		DurationMultiplier: 1.0,
 		RadiusMultiplier:   1.0,
-		CooldownMultiplier: 1.0,
 		EffectMultiplier:   1.0,
 	}
 }
@@ -117,8 +112,10 @@ func (s *GameState) trapModifiersForUnitLocked(unit *Unit) TrapModifiers {
 			m.DurationMultiplier *= def.Config["durationMultiplier"]
 		case "wider_nets":
 			m.RadiusMultiplier *= def.Config["radiusMultiplier"]
-		case "rapid_deployment":
-			m.CooldownMultiplier *= def.Config["cooldownMultiplier"]
+		// rapid_deployment is no longer a global trap modifier: placement
+		// cadence is the trap ability's cooldown, and rapid_deployment now
+		// shortens it as a data perk via AbilityModifier.CooldownMult (see its
+		// catalog JSON). It intentionally has no case here.
 		case "amplified_effects":
 			m.EffectMultiplier *= def.Config["effectMultiplier"]
 
@@ -375,63 +372,78 @@ func (s *GameState) EffectiveTrapSnapshotLocked(unit *Unit) *protocol.EffectiveT
 	return snap
 }
 
+// unitTrapAbilityIDLocked returns the trap ability id the unit knows (one of
+// caltrops / fire_pit / explosive_trap / marker_trap), or "" if none. A Trapper
+// rolls exactly one trap from its bronze ability pool, so at most one matches.
+// This replaced the old "scan PerkIDs for a bronze trap perk" resolution once
+// the four traps became pool abilities. Caller holds s.mu.
+func unitTrapAbilityIDLocked(unit *Unit) string {
+	if unit == nil {
+		return ""
+	}
+	for _, id := range unit.Abilities {
+		switch id {
+		case "caltrops", "fire_pit", "explosive_trap", "marker_trap":
+			return id
+		}
+	}
+	return ""
+}
+
 // DebugEffectiveTrapStats computes the effective planted-trap stats for the
-// unit's currently owned Bronze trap perk (if any). Returns zero-value and
-// false if the unit owns no trap perk.
+// unit's currently owned trap ABILITY (if any). Returns zero-value and false if
+// the unit knows no trap ability.
+//
+// The base stats come from the trap ability's place_trap action config
+// (trapConfigFromAbilityLocked) — the single source of truth now that the
+// bronze trap perks are gone — with fire_pit's per-rank overrides applied via
+// toTrapConfig(unit.Rank), then the same Silver/Gold perk modifiers folded on
+// top exactly as before. The placement interval folds the ability-cooldown
+// modifier (rapid_deployment, now an AbilityModifier.CooldownMult) instead of
+// the retired TrapModifiers.CooldownMultiplier.
 //
 // Safe to call under s.mu write lock.
 func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, bool) {
-	if unit == nil {
+	trapID := unitTrapAbilityIDLocked(unit)
+	if trapID == "" {
 		return EffectiveTrapStats{}, false
 	}
-	var def *PerkDef
-	for _, id := range unit.PerkIDs {
-		switch id {
-		case "caltrops", "fire_pit", "explosive_trap", "marker_trap":
-			def = perkDefByID(id)
-		}
-		if def != nil {
-			break
-		}
-	}
-	if def == nil {
+	tc, ok := trapConfigFromAbilityLocked(trapID, unit.Rank)
+	if !ok {
 		return EffectiveTrapStats{}, false
 	}
 	m := s.trapModifiersForUnitLocked(unit)
-	specific := s.trapSpecificModifiersForUnitLocked(unit, def.ID)
-	// Read rank-merged config so tooltip numbers match what the trap code
-	// (trap.go) actually uses at plant time — fire_pit's silver/gold overrides
-	// bump damagePerSecond and radius, and those must surface here too.
-	cfg := def.ConfigForRank(unit.Rank)
+	specific := s.trapSpecificModifiersForUnitLocked(unit, trapID)
+	cdMods := s.abilityScalarModifiersForCasterLocked(unit, trapID)
 	out := EffectiveTrapStats{
-		PerkID:          def.ID,
-		DurationSeconds: cfg["durationSeconds"] * m.DurationMultiplier,
-		PlaceInterval:   cfg["placeIntervalSeconds"] * m.CooldownMultiplier,
+		PerkID:          trapID,
+		DurationSeconds: tc.DurationSeconds * m.DurationMultiplier,
+		PlaceInterval:   tc.PlaceIntervalSeconds * cdMods.CooldownMult,
 	}
-	switch def.ID {
+	switch trapID {
 	case "caltrops":
-		out.Radius = cfg["radius"] * m.RadiusMultiplier
-		out.DamagePerSecond = cfg["damagePerSecond"] * m.EffectMultiplier
-		out.SlowMultiplier = amplifySlow(cfg["slowMultiplier"], m.EffectMultiplier)
+		out.Radius = tc.Radius * m.RadiusMultiplier
+		out.DamagePerSecond = tc.DamagePerSecond * m.EffectMultiplier
+		out.SlowMultiplier = amplifySlow(tc.SlowMultiplier, m.EffectMultiplier)
 		out.BarbedFieldRampPerSec = specific.BarbedFieldRampPerSec * m.EffectMultiplier
 		out.BarbedFieldMaxBonusDPS = specific.BarbedFieldMaxBonusDPS * m.EffectMultiplier
 	case "fire_pit":
-		out.Radius = cfg["radius"] * m.RadiusMultiplier
-		out.DamagePerSecond = cfg["damagePerSecond"] * m.EffectMultiplier
+		out.Radius = tc.Radius * m.RadiusMultiplier
+		out.DamagePerSecond = tc.DamagePerSecond * m.EffectMultiplier
 		// Burn DPS in lasting_flames mode == fire pit's DamagePerSecond, so
 		// it's already reflected in out.DamagePerSecond. Only the duration
 		// needs its own debug field.
 		out.LastingFlamesBurnDuration = specific.LastingFlamesBurnDuration * m.DurationMultiplier
 	case "explosive_trap":
-		out.Radius = cfg["explosionRadius"] * m.RadiusMultiplier
-		out.TriggerRadius = cfg["triggerRadius"] * m.RadiusMultiplier
-		base := int(cfg["burstDamage"])
+		out.Radius = tc.ExplosionRadius * m.RadiusMultiplier
+		out.TriggerRadius = tc.TriggerRadius * m.RadiusMultiplier
+		base := int(tc.BurstDamage)
 		out.BurstDamage = int(float64(base)*m.EffectMultiplier + 0.5)
 		out.AftershockDelaySeconds = specific.AftershockDelaySeconds
 	case "marker_trap":
-		out.Radius = cfg["radius"] * m.RadiusMultiplier
-		out.MarkMultiplier = cfg["markMultiplier"] * m.EffectMultiplier
-		out.MarkDuration = cfg["markDuration"] * m.EffectMultiplier
+		out.Radius = tc.Radius * m.RadiusMultiplier
+		out.MarkMultiplier = tc.MarkMultiplier * m.EffectMultiplier
+		out.MarkDuration = tc.MarkDuration * m.EffectMultiplier
 		out.ExposedWeakenedMultiplier = specific.ExposedWeakenedMultiplier * m.EffectMultiplier
 	}
 	return out, true

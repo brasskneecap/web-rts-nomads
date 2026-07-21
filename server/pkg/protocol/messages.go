@@ -1318,11 +1318,6 @@ type UnitSnapshot struct {
 	StunnedRemaining float64 `json:"stunnedRemaining,omitempty"`
 	SlowedRemaining  float64 `json:"slowedRemaining,omitempty"`
 	SlowedMultiplier float64 `json:"slowedMultiplier,omitempty"`
-	// ColdSlowedRemaining / ColdSlowedMultiplier are the cold (chill) slow track,
-	// separate from the physical slow above. The client paints an icy overlay
-	// while ColdSlowedRemaining > 0. Absent (omitempty) when no chill is active.
-	ColdSlowedRemaining  float64 `json:"coldSlowedRemaining,omitempty"`
-	ColdSlowedMultiplier float64 `json:"coldSlowedMultiplier,omitempty"`
 	// OverlayColor is a CSS hex color (#RGB / #RRGGBB) the client paints over
 	// the unit's sprite while it carries a status that authored an
 	// apply_color_overlay effect (ability_color_overlay.go) — the general,

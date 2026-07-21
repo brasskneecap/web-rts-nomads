@@ -51,15 +51,12 @@ export type ItemEffect =
 /** The combat event that rolls a proc. */
 export type ItemProcTrigger = 'onHit' | 'onStruck'
 
-/** One proc as served on the wire: the trigger + chance, the effect reference,
- *  and the RESOLVED payload the tooltip renders. */
+/** One proc as served on the wire: the trigger + chance, and the ability it
+ *  casts at what it hits (the bespoke proc-effect path was removed). */
 export type ItemProcWire = {
   trigger: ItemProcTrigger
   chance: number
-  effect?: string
-  damage: number
-  damageType: string
-  projectileID: string
+  ability: string
 }
 
 /**

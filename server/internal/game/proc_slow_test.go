@@ -1,7 +1,6 @@
 package game
 
 import (
-	"math"
 	"testing"
 
 	"webrts/server/pkg/protocol"
@@ -21,14 +20,13 @@ func TestOnHitProc_ChillSlowsOnLand(t *testing.T) {
 	s.nextUnitID++
 	s.addUnitLocked(target)
 
-	proc := EquipmentProc{Chance: 1.0, Params: ProcEffectParams{
+	procParams := ProcEffectParams{
 		Damage: 25, DamageType: DamageCold, ProjectileID: "frost_bolt",
 		SlowMultiplier: 0.75, SlowDurationSeconds: 2,
-	}}
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{proc}
+	}
 
-	// Fire the proc, then land the bolt (its own projectile).
-	s.rollEquipmentProcsLocked(attacker, target)
+	// Fire the proc effect directly, then land the bolt (its own projectile).
+	s.executeProcEffectLocked(procSourceFromUnit(attacker), target, procParams)
 	if len(s.Projectiles) != 1 {
 		t.Fatalf("expected 1 proc bolt, got %d", len(s.Projectiles))
 	}
@@ -40,29 +38,25 @@ func TestOnHitProc_ChillSlowsOnLand(t *testing.T) {
 	dead := []int{}
 	s.landProjectileLocked(s.Projectiles[0], target, &dead)
 
-	// A cold-typed proc lands on the COLD track, not the physical one.
-	if target.ColdSlowedMultiplier != proc.Params.SlowMultiplier {
-		t.Errorf("ColdSlowedMultiplier = %v, want %v (25%% slower on attack + move speed)", target.ColdSlowedMultiplier, proc.Params.SlowMultiplier)
+	// The proc's slow lands on the one generic slow track (the separate cold
+	// track was retired). Move + attack speed both scale by SlowMultiplier.
+	if target.SlowedMultiplier != procParams.SlowMultiplier {
+		t.Errorf("SlowedMultiplier = %v, want %v (25%% slower on attack + move speed)", target.SlowedMultiplier, procParams.SlowMultiplier)
 	}
-	if target.ColdSlowedRemaining != proc.Params.SlowDurationSeconds {
-		t.Errorf("ColdSlowedRemaining = %v, want %v", target.ColdSlowedRemaining, proc.Params.SlowDurationSeconds)
-	}
-	// The physical track must stay untouched — the chill is separate.
-	if target.SlowedRemaining != 0 {
-		t.Errorf("cold chill must not touch the physical slow track, got SlowedRemaining=%v", target.SlowedRemaining)
+	if target.SlowedRemaining != procParams.SlowDurationSeconds {
+		t.Errorf("SlowedRemaining = %v, want %v", target.SlowedRemaining, procParams.SlowDurationSeconds)
 	}
 	// slowFactorLocked is the single seam both movement and attack cadence read,
-	// so confirming it reflects the chill proves both speeds are reduced.
-	if got := slowFactorLocked(target); got != proc.Params.SlowMultiplier {
-		t.Errorf("effective slow factor = %v, want %v", got, proc.Params.SlowMultiplier)
+	// so confirming it reflects the slow proves both speeds are reduced.
+	if got := slowFactorLocked(target); got != procParams.SlowMultiplier {
+		t.Errorf("effective slow factor = %v, want %v", got, procParams.SlowMultiplier)
 	}
 }
 
-// TestSlow_ColdAndPhysicalStackSeparately asserts the two slow categories are
-// tracked independently and compose multiplicatively — a unit carrying both a
-// trap (physical) slow and a chill is slowed by their product, and each track
-// keeps its own timer.
-func TestSlow_ColdAndPhysicalStackSeparately(t *testing.T) {
+// TestSlow_RefreshStrongerAndLonger asserts the single slow track's refresh
+// policy: a second slow keeps the stronger (lower) multiplier and the longer
+// remaining duration, independently.
+func TestSlow_RefreshStrongerAndLonger(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0xF207)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -71,21 +65,13 @@ func TestSlow_ColdAndPhysicalStackSeparately(t *testing.T) {
 	s.nextUnitID++
 	s.addUnitLocked(u)
 
-	// Physical slow (e.g. a trap) and a cold chill, different strengths/timers.
-	const physMult, physDur = 0.7, 3.0
-	const coldMult, coldDur = 0.75, 2.0
-	s.ApplySlowLocked(u.ID, physMult, physDur)
-	s.ApplyColdSlowLocked(u.ID, coldMult, coldDur)
-
-	if u.SlowedMultiplier != physMult || u.SlowedRemaining != physDur {
-		t.Errorf("physical track: mult=%v rem=%v, want %v / %v", u.SlowedMultiplier, u.SlowedRemaining, physMult, physDur)
+	s.ApplySlowLocked(u.ID, 0.7, 3.0)  // weaker but longer
+	s.ApplySlowLocked(u.ID, 0.5, 1.0)  // stronger but shorter
+	if u.SlowedMultiplier != 0.5 {     // refresh-stronger keeps the lower mult
+		t.Errorf("SlowedMultiplier = %v, want 0.5 (refresh-stronger)", u.SlowedMultiplier)
 	}
-	if u.ColdSlowedMultiplier != coldMult || u.ColdSlowedRemaining != coldDur {
-		t.Errorf("cold track: mult=%v rem=%v, want %v / %v", u.ColdSlowedMultiplier, u.ColdSlowedRemaining, coldMult, coldDur)
-	}
-	// Effective factor stacks multiplicatively.
-	if got, want := slowFactorLocked(u), physMult*coldMult; math.Abs(got-want) > 1e-9 {
-		t.Errorf("stacked slow factor = %v, want %v (%v × %v)", got, want, physMult, coldMult)
+	if u.SlowedRemaining != 3.0 { // refresh-longer keeps the greater duration
+		t.Errorf("SlowedRemaining = %v, want 3.0 (refresh-longer)", u.SlowedRemaining)
 	}
 }
 
@@ -101,8 +87,7 @@ func TestOnHitProc_NoChillWhenUnset(t *testing.T) {
 	s.nextUnitID++
 	s.addUnitLocked(target)
 
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
-	s.rollEquipmentProcsLocked(attacker, target)
+	s.executeProcEffectLocked(procSourceFromUnit(attacker), target, ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"})
 	dead := []int{}
 	s.landProjectileLocked(s.Projectiles[0], target, &dead)
 
@@ -111,23 +96,30 @@ func TestOnHitProc_NoChillWhenUnset(t *testing.T) {
 	}
 }
 
-// TestFrostSword_ProcIsWiredToChill guards the shipped catalog: the frost_sword
-// proc carries a valid chill (a real slow multiplier in (0,1) for a positive
-// duration). Asserted as invariants, not pinned numbers.
-func TestFrostSword_ProcIsWiredToChill(t *testing.T) {
+// TestFrostSword_ProcCastsFrostBolt guards the shipped catalog: the frost_sword
+// proc now CASTS the Frost Bolt ability (the full-circle wiring) rather than
+// firing a bespoke proc effect. Asserts the wiring is an ability reference to a
+// registered cold ability whose program carries the chill composition.
+func TestFrostSword_ProcCastsFrostBolt(t *testing.T) {
 	def, ok := getItemDef("frost_sword")
 	if !ok {
 		t.Fatal("frost_sword not in catalog")
 	}
 	p := firstProcFor(t, def, ProcOnHit)
-	params, ok := p.ResolveParams()
+	if p.Ability == "" {
+		t.Fatalf("frost_sword proc should cast an ability, got ability=%q", p.Ability)
+	}
+	adef, ok := getAbilityDef(p.Ability)
 	if !ok {
-		t.Fatalf("frost_sword proc effect %q is not a registered proc effect", p.Effect)
+		t.Fatalf("frost_sword proc ability %q is not a registered ability", p.Ability)
 	}
-	if !(params.SlowMultiplier > 0 && params.SlowMultiplier < 1) {
-		t.Errorf("frost_sword chill needs a slow multiplier in (0,1), got %v", params.SlowMultiplier)
+	if adef.DamageType != DamageCold {
+		t.Errorf("frost_sword proc ability %q damageType = %q, want cold", p.Ability, adef.DamageType)
 	}
-	if params.SlowDurationSeconds <= 0 {
-		t.Errorf("frost_sword chill needs a positive duration, got %v", params.SlowDurationSeconds)
+	// The cold ability must chill: its program carries a change_stat that
+	// multiplies moveSpeed (the composed slow) — recovered by the same tooltip
+	// shadow that shatterDef uses.
+	if m := abilityMechanicsShadow(adef); m.SlowMultiplier <= 0 || m.SlowMultiplier >= 1 {
+		t.Errorf("frost_sword's ability %q should chill (slow multiplier in (0,1)), got %v", p.Ability, m.SlowMultiplier)
 	}
 }

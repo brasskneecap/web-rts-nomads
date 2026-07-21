@@ -502,9 +502,8 @@ func (s *GameState) applyBeamPendingDamageLocked(b *Beam, deadUnitIDs *[]int) {
 		DamageType:      b.DamageType,
 		SourceAbilityID: b.SourceAbilityID,
 	})
-	// On-hit slow: routed to the cold (chill) or physical track by the beam's
-	// damage type. No-op on zero / out-of-range values.
-	s.applyProcSlowLocked(target.ID, b.SlowMultiplier, b.SlowDurationSeconds, b.DamageType)
+	// On-hit slow (generic slow track). No-op on zero / out-of-range values.
+	s.ApplySlowLocked(target.ID, b.SlowMultiplier, b.SlowDurationSeconds)
 	// On-hit burn: ignite the target with a fire DoT, credited to the original
 	// wielder (AttackerUnitID). No-op when the proc carries no burn.
 	s.applyProcBurnLocked(target.ID, b.BurnDamagePerSecond, b.BurnDurationSeconds, b.AttackerUnitID)

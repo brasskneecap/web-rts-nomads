@@ -35,20 +35,20 @@ import "math"
 // helper so the colored-popup system on the client paints each trap's
 // damage in its thematic color uniformly:
 //
-//   caltrops       → Physical (sharp metal spikes) by default; Lightning
-//                    when Ascendant Infusion's Electrified Caltrops
-//                    upgrade is active (the spikes channel current). The
-//                    Spike Surge expiry effect (Overload Protocol) stays
-//                    physical — that branch can't coexist with Electrified
-//                    because a trapper owns at most one Gold perk.
-//   fire_pit       → Fire      (orange) — the trap IS a fire pit, every
-//                    branch (Reactive Flames, Flame Collapse, base DoT)
-//                    is a flame effect.
-//   explosive_trap → Fire      (orange) — explosions / scattered bomblets
-//                    / Cataclysm are all fiery.
-//   marker_trap    → Shadow    (dark purple) — base marker_trap deals no
-//                    damage; only Final Exposure (Overload) and Shared
-//                    Pain (Infusion) emit damage, both shadow-themed.
+//	caltrops       → Physical (sharp metal spikes) by default; Lightning
+//	                 when Ascendant Infusion's Electrified Caltrops
+//	                 upgrade is active (the spikes channel current). The
+//	                 Spike Surge expiry effect (Overload Protocol) stays
+//	                 physical — that branch can't coexist with Electrified
+//	                 because a trapper owns at most one Gold perk.
+//	fire_pit       → Fire      (orange) — the trap IS a fire pit, every
+//	                 branch (Reactive Flames, Flame Collapse, base DoT)
+//	                 is a flame effect.
+//	explosive_trap → Fire      (orange) — explosions / scattered bomblets
+//	                 / Cataclysm are all fiery.
+//	marker_trap    → Shadow    (dark purple) — base marker_trap deals no
+//	                 damage; only Final Exposure (Overload) and Shared
+//	                 Pain (Infusion) emit damage, both shadow-themed.
 //
 // Returns DamagePhysical for unknown trap types — defensive default so a
 // new trap added without an entry here renders as plain physical damage
@@ -137,8 +137,8 @@ type Trap struct {
 	// upgrade active" — the trap behaves exactly like the Bronze baseline.
 
 	// barbed_field (caltrops): ramping bonus DPS per second-in-zone.
-	BarbedFieldRampPerSec    float64
-	BarbedFieldMaxBonusDPS   float64
+	BarbedFieldRampPerSec  float64
+	BarbedFieldMaxBonusDPS float64
 
 	// exposed_weakness (marker_trap): fraction of outgoing-damage reduction
 	// stamped on marked victims alongside the usual mark. Composes via the
@@ -195,9 +195,9 @@ type Trap struct {
 	// overload_protocol → Spike Surge (caltrops).
 	// On trap expiry: burst damage + strong slow applied to all enemies still
 	// inside the caltrops zone. Fired once in tickTrapsLocked just before cull.
-	OverloadSpikeSurgeBurstDamage   int
-	OverloadSpikeSurgeSlowMult      float64
-	OverloadSpikeSurgeSlowDuration  float64
+	OverloadSpikeSurgeBurstDamage  int
+	OverloadSpikeSurgeSlowMult     float64
+	OverloadSpikeSurgeSlowDuration float64
 
 	// overload_protocol → Flame Collapse (fire_pit).
 	// On trap expiry: AoE explosion at the center with a re-applied burn to
@@ -276,26 +276,6 @@ type TrapConfig struct {
 	BurstDamage          float64 // explosive_trap "burstDamage" (int-cast at use)
 	MarkMultiplier       float64
 	MarkDuration         float64
-}
-
-// trapConfigFromPerkLocked builds a TrapConfig from a bronze trap PerkDef at a
-// unit's rank — the config source used by the perk-driven placement path. It
-// reproduces exactly the ConfigForRank reads plantOneTrapLocked did inline.
-func trapConfigFromPerkLocked(def *PerkDef, rank string) TrapConfig {
-	cfg := def.ConfigForRank(rank)
-	return TrapConfig{
-		TrapType:             def.ID,
-		DurationSeconds:      cfg["durationSeconds"],
-		PlaceIntervalSeconds: cfg["placeIntervalSeconds"],
-		Radius:               cfg["radius"],
-		ExplosionRadius:      cfg["explosionRadius"],
-		TriggerRadius:        cfg["triggerRadius"],
-		DamagePerSecond:      cfg["damagePerSecond"],
-		SlowMultiplier:       cfg["slowMultiplier"],
-		BurstDamage:          cfg["burstDamage"],
-		MarkMultiplier:       cfg["markMultiplier"],
-		MarkDuration:         cfg["markDuration"],
-	}
 }
 
 // tickTrapsLocked advances all active trap lifetimes by dt seconds, removing
@@ -1669,9 +1649,9 @@ func (s *GameState) perkShareDamageToMarkedLocked(source *Unit, rawDamage int, s
 // effect is adaptive per trap type:
 //
 //   - caltrops  → Spike Surge: burst damage + strong slow to all enemies still
-//                 inside the caltrops radius.
+//     inside the caltrops radius.
 //   - fire_pit  → Flame Collapse: AoE explosion at the center + reapplied burn
-//                 to all affected enemies (integrates with existing burn DoT).
+//     to all affected enemies (integrates with existing burn DoT).
 //
 // No effect for explosive_trap (Cataclysm Blast uses the aftershock plumbing
 // which fires on detonation, not expiry) or marker_trap (Final Exposure fires
@@ -1908,75 +1888,9 @@ func trapVisualScaleMultiplier(trap *Trap) float64 {
 	return 0
 }
 
-// tickTrapPlacementLocked is the per-tick auto-placement driver for Trapper
-// perks. It decays TrapPlaceCooldownRemaining; once the cooldown is exhausted
-// the trap is "armed" and will drop the moment a hostile enters the trapper's
-// AttackRange. Placement at the trapper's feet only matters if an enemy is
-// actually approaching that position, so passive idle placement (every N
-// seconds regardless of the situation) was scrapped in favour of this gate.
-//
-// The cooldown still ticks down while no hostile is in range, so the trap is
-// ready to drop the instant a fight starts — there is no additional delay
-// when an enemy finally walks in. Friendly units are never hit by traps
-// (trap.go damage paths filter on OwnerID), so there's no risk of self-harm
-// mid-fight.
-//
-// Called from tickUnitPerkStateLocked for each trap perk case.
-// Must be called under s.mu write lock.
-func (s *GameState) tickTrapPlacementLocked(unit *Unit, def *PerkDef, dt float64) {
-	if unit == nil || def == nil {
-		return
-	}
-
-	// Decay placement cooldown.
-	if unit.PerkState.TrapPlaceCooldownRemaining > 0 {
-		unit.PerkState.TrapPlaceCooldownRemaining = math.Max(0, unit.PerkState.TrapPlaceCooldownRemaining-dt)
-	}
-
-	// Dead unit: no placement.
-	if unit.HP <= 0 {
-		return
-	}
-
-	// Cooldown still running: wait.
-	if unit.PerkState.TrapPlaceCooldownRemaining > 0 {
-		return
-	}
-
-	// Trap is armed but hold until a hostile is actually close enough that
-	// dropping at the trapper's feet will matter.
-	if !s.trapperHasHostileInRangeLocked(unit) {
-		return
-	}
-
-	// Plant the trap and reset the cooldown.
-	tc := trapConfigFromPerkLocked(def, unit.Rank)
-	s.plantTrapLocked(unit, tc)
-	mods := s.trapModifiersForUnitLocked(unit)
-	unit.PerkState.TrapPlaceCooldownRemaining = tc.PlaceIntervalSeconds * mods.CooldownMultiplier
-}
-
-// trapperHasHostileInRangeLocked is the "is a fight brewing" check that gates
-// trap drops. Returns true when at least one alive, visible, hostile unit is
-// within the trapper's AttackRange. Uses AttackRange rather than a per-trap
-// radius so the gate is consistent across all four bronze trap perks and
-// doesn't need per-perk tuning — a trapper drops a trap when they would
-// otherwise start firing arrows.
-func (s *GameState) trapperHasHostileInRangeLocked(trapper *Unit) bool {
-	if trapper == nil || trapper.AttackRange <= 0 {
-		return false
-	}
-	rangeSq := trapper.AttackRange * trapper.AttackRange
-	for _, other := range s.Units {
-		if other == nil || other == trapper || other.HP <= 0 || !other.Visible {
-			continue
-		}
-		if !s.playersAreHostileLocked(other.OwnerID, trapper.OwnerID) {
-			continue
-		}
-		if distanceSquared(trapper.X, trapper.Y, other.X, other.Y) <= rangeSq {
-			return true
-		}
-	}
-	return false
-}
+// Trap placement is no longer a per-tick perk driver: the four traps are
+// auto-cast abilities (catalog/abilities/<trap>) whose place_trap action calls
+// plantTrapLocked when the ability fires. The old tickTrapPlacementLocked /
+// trapperHasHostileInRangeLocked pair (a cooldown timer gated on a hostile in
+// AttackRange) was replaced by the ability system's cooldown + autocast
+// closest_enemy_in_range selector.

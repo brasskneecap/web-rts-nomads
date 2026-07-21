@@ -14,11 +14,8 @@ function stubCatalogFetch(items: unknown[] = []) {
     const map: Record<string, unknown> = {
       '/catalog/items': { items },
       '/catalog/recipes': { recipes: [] },
-      '/catalog/procs': {
-        procs: [
-          { id: 'fire_bolt_ignite', damage: 25, damageType: 'fire', projectileID: 'fire_bolt', burnDamagePerSecond: 8 },
-          { id: 'lightning_chain', damage: 30, damageType: 'lightning', projectileID: 'lightning_bolt', bounceCount: 2 },
-        ],
+      '/catalog/abilities': {
+        abilities: [{ id: 'fire_bolt' }, { id: 'chain_lightning' }, { id: 'frost_bolt' }],
       },
     }
     const key = Object.keys(map).find((k) => String(url).endsWith(k))
@@ -46,7 +43,7 @@ const addProcButton = (wrapper: ReturnType<typeof mount>) =>
   wrapper.findAll('button').find((b) => b.text() === '+ Add Proc')!
 
 describe('ItemEditorPanel — procs', () => {
-  it('starts with no procs and adds one per click, each with its own trigger and effect', async () => {
+  it('starts with no procs and adds one per click, each with its own trigger and ability', async () => {
     const wrapper = await mountWithNewItem()
     expect(wrapper.text()).toContain('No procs')
     expect(wrapper.findAll('.proc-block')).toHaveLength(0)
@@ -57,48 +54,29 @@ describe('ItemEditorPanel — procs', () => {
     const blocks = wrapper.findAll('.proc-block')
     expect(blocks).toHaveLength(2)
 
-    // Each block owns an independent trigger + effect select — two procs on the
+    // Each block owns an independent trigger + ability select — two procs on the
     // same trigger is a legal, and the interesting, case.
     await blocks[0].find('select#ie-proc-0-trigger').setValue('onHit')
-    await blocks[0].find('select#ie-proc-0-effect').setValue('fire_bolt_ignite')
+    await blocks[0].find('select#ie-proc-0-ability').setValue('fire_bolt')
     await blocks[1].find('select#ie-proc-1-trigger').setValue('onHit')
-    await blocks[1].find('select#ie-proc-1-effect').setValue('lightning_chain')
+    await blocks[1].find('select#ie-proc-1-ability').setValue('chain_lightning')
 
-    expect((wrapper.find('select#ie-proc-0-effect').element as HTMLSelectElement).value).toBe('fire_bolt_ignite')
-    expect((wrapper.find('select#ie-proc-1-effect').element as HTMLSelectElement).value).toBe('lightning_chain')
+    expect((wrapper.find('select#ie-proc-0-ability').element as HTMLSelectElement).value).toBe('fire_bolt')
+    expect((wrapper.find('select#ie-proc-1-ability').element as HTMLSelectElement).value).toBe('chain_lightning')
   })
 
   it('removes the proc the user asked for, not the last one', async () => {
     const wrapper = await mountWithNewItem()
     await addProcButton(wrapper).trigger('click')
     await addProcButton(wrapper).trigger('click')
-    await wrapper.find('select#ie-proc-0-effect').setValue('fire_bolt_ignite')
-    await wrapper.find('select#ie-proc-1-effect').setValue('lightning_chain')
+    await wrapper.find('select#ie-proc-0-ability').setValue('fire_bolt')
+    await wrapper.find('select#ie-proc-1-ability').setValue('chain_lightning')
 
     // Remove the FIRST proc; the second must survive and shift up into index 0.
     await wrapper.findAll('.proc-block__remove')[0].trigger('click')
 
     expect(wrapper.findAll('.proc-block')).toHaveLength(1)
-    expect((wrapper.find('select#ie-proc-0-effect').element as HTMLSelectElement).value).toBe('lightning_chain')
-  })
-
-  it('summarises override count on the row and reveals the fields behind the pencil', async () => {
-    const wrapper = await mountWithNewItem()
-    await addProcButton(wrapper).trigger('click')
-    await wrapper.find('select#ie-proc-0-effect').setValue('fire_bolt_ignite')
-
-    // Collapsed by default: the row reports no overrides and the fields are hidden.
-    expect(wrapper.find('.proc-row__ovr').text()).toBe('no overrides')
-    expect(wrapper.find('#ie-proc-0-damage').exists()).toBe(false)
-
-    await wrapper.findAll('.proc-row__act')[0].trigger('click')
-    const damage = wrapper.find('#ie-proc-0-damage')
-    expect(damage.exists()).toBe(true)
-    // The effect's own value shows as the placeholder — blank means "inherit".
-    expect(damage.attributes('placeholder')).toBe('25')
-
-    await damage.setValue('40')
-    expect(wrapper.find('.proc-row__ovr').text()).toBe('1 override')
+    expect((wrapper.find('select#ie-proc-0-ability').element as HTMLSelectElement).value).toBe('chain_lightning')
   })
 
   it('shows the description as read-only generated text, matching the match tooltip', async () => {
@@ -106,29 +84,28 @@ describe('ItemEditorPanel — procs', () => {
     await wrapper.find('#ie-display-name').setValue('Storm Brand')
     await wrapper.find('#ie-mod-damage').setValue('5')
     await addProcButton(wrapper).trigger('click')
-    await wrapper.find('select#ie-proc-0-effect').setValue('fire_bolt_ignite')
+    await wrapper.find('select#ie-proc-0-ability').setValue('fire_bolt')
 
     const desc = wrapper.find('#ie-description')
     // Not authorable — it is derived from the stats.
     expect(desc.attributes('readonly')).toBeDefined()
     // Same text the in-game tooltip builds (comma-joined stat block).
     expect((desc.element as HTMLTextAreaElement).value)
-      .toBe('+5 Damage, 10% on hit: 25 Fire bolt')
+      .toBe('+5 Damage, 10% on hit: cast fire_bolt')
   })
 
-  it('renders the live preview card from the draft, resolving proc effects client-side', async () => {
+  it('renders the live preview card from the draft, showing the proc ability', async () => {
     const wrapper = await mountWithNewItem()
     await wrapper.find('#ie-display-name').setValue('Storm Brand')
     await wrapper.find('#ie-cost-gold').setValue('35')
     await addProcButton(wrapper).trigger('click')
-    await wrapper.find('select#ie-proc-0-effect').setValue('lightning_chain')
+    await wrapper.find('select#ie-proc-0-ability').setValue('chain_lightning')
     await wrapper.find('#ie-proc-0-chance').setValue('25')
 
     const preview = wrapper.find('.ipc')
     expect(preview.text()).toContain('Storm Brand')
     expect(preview.text()).toContain('Common')
-    // Damage/element come from the proc-effect catalog, not from the form.
-    expect(preview.text()).toContain('25% on hit: 30 Lightning bolt')
+    expect(preview.text()).toContain('25% on hit: cast chain_lightning')
     // Cost is "Cost:" + the gold coin + the number (no "Gold" word).
     expect(preview.find('.ipc__cost').text()).toBe('Cost: 35')
     expect(preview.find('.ipc__coin').exists()).toBe(true)

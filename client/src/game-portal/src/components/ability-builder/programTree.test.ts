@@ -1001,7 +1001,6 @@ describe('addTrigger — nested slot rule', () => {
   // its momentary on_beam_impact and channeled on_beam_tick shapes).
   const CONFIG_SLOT: [string, string][] = [
     ['create_zone', 'on_tick'],
-    ['apply_status', 'on_tick'],
     ['launch_projectile', 'on_projectile_impact'],
     ['beam', 'on_beam_impact'],
     ['beam', 'on_tick'],

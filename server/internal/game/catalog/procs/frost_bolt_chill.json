@@ -1,9 +1,0 @@
-{
-  "id": "frost_bolt_chill",
-  "damage": 25,
-  "damageType": "cold",
-  "projectileID": "frost_bolt",
-  "projectileScale": 2,
-  "slowMultiplier": 0.75,
-  "slowDurationSeconds": 2
-}

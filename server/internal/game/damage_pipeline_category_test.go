@@ -333,14 +333,13 @@ func TestDamageCategory_EquipmentProcBolt_IsItem(t *testing.T) {
 	defer s.mu.Unlock()
 
 	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{
-		{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}},
-	}
 	target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 25, MaxHP: 500}
 	s.nextUnitID++
 	s.addUnitLocked(target)
 
-	s.rollEquipmentProcsLocked(attacker, target)
+	// A proc-fired bolt (the beam/projectile firing primitive still used by
+	// chain bounces) must attribute its kill to the item damage category.
+	s.executeProcEffectLocked(procSourceFromUnit(attacker), target, ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"})
 	if len(s.Projectiles) != 1 {
 		t.Fatalf("expected 1 proc projectile, got %d", len(s.Projectiles))
 	}
@@ -372,12 +371,9 @@ func TestDamageCategory_TrapTick_IsTrap(t *testing.T) {
 	enemy.MaxHP = 500
 	enemy.HP = 1 // guaranteed lethal from a single caltrops DoT proc, whatever the authored DPS
 
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
-	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"]
+	cfg := mustTrapAbilityConfig(t, "caltrops", "")
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond
 
 	s.tickTrapEffectsLocked(1.0) // large dt guarantees a DoT proc fires this tick
 

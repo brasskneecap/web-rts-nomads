@@ -93,19 +93,19 @@ func TestItemOverlay_OverlayWinsOverEmbed(t *testing.T) {
 }
 
 // TestRenderItemDefJSON_AuthoredFormNotWireForm guards the disk format: a def
-// with a proc REFERENCE must serialize the reference (effect id), never the
-// resolved wire payload (damageType/projectileID), which would freeze resolved
-// values as overrides on reload.
+// with a proc must serialize the ability REFERENCE, never a resolved wire
+// payload (damageType/projectileID) — those don't exist any more, and a proc
+// carries only trigger/chance/ability.
 func TestRenderItemDefJSON_AuthoredFormNotWireForm(t *testing.T) {
 	def := &ItemDef{ID: "x", DisplayName: "X", IconKey: "x", Kind: ItemKindEquipment, Tier: ItemTierRare,
-		Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Effect: "fire_bolt_ignite"}}}
+		Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Ability: "fire_bolt"}}}
 	raw, err := renderItemDefJSON(def)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	s := string(raw)
-	if !strings.Contains(s, `"effect": "fire_bolt_ignite"`) {
-		t.Errorf("disk form must keep the effect reference:\n%s", s)
+	if !strings.Contains(s, `"ability": "fire_bolt"`) {
+		t.Errorf("disk form must keep the ability reference:\n%s", s)
 	}
 	if strings.Contains(s, "damageType") || strings.Contains(s, "projectileID") {
 		t.Errorf("disk form must NOT contain resolved wire fields:\n%s", s)
@@ -119,7 +119,7 @@ func TestRenderItemDefJSON_AuthoredFormNotWireForm(t *testing.T) {
 		t.Fatalf("round-trip should keep exactly 1 proc, got %d: %+v", len(back.Procs), back.Procs)
 	}
 	p := back.Procs[0]
-	if p.Trigger != ProcOnHit || p.Effect != "fire_bolt_ignite" || p.Damage != 0 {
+	if p.Trigger != ProcOnHit || p.Ability != "fire_bolt" {
 		t.Errorf("round-trip drifted: %+v", p)
 	}
 }

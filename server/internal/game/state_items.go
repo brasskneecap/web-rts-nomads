@@ -27,7 +27,9 @@ type EquippedItem struct {
 // the seeded perk RNG) and Params is the fully-resolved effect payload.
 type EquipmentProc struct {
 	Chance float64
-	Params ProcEffectParams
+	// Ability is the id of the composable ability this proc casts at its target
+	// (castAbilityAsProcLocked). Resolved from ItemProc at equip time.
+	Ability string
 }
 
 // UnitEquipmentBonus accumulates the flat stat bonuses from all equipped items.
@@ -258,11 +260,10 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 		// Catalog order is preserved, which keeps the seeded RNG stream stable.
 		for i := range def.Procs {
 			p := &def.Procs[i]
-			params, ok := p.ResolveParams()
-			if !ok {
+			if p.Ability == "" {
 				continue
 			}
-			entry := EquipmentProc{Chance: p.Chance, Params: params}
+			entry := EquipmentProc{Chance: p.Chance, Ability: p.Ability}
 			switch p.Trigger {
 			case ProcOnHit:
 				unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, entry)

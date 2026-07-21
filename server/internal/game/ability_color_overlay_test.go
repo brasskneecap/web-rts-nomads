@@ -7,7 +7,7 @@ import (
 // ═════════════════════════════════════════════════════════════════════════════
 // apply_color_overlay — the status-authored full-body tint (the general form of
 // the chill/blue overlay). Sibling of apply_mark: On-Apply-only, writes onto
-// ctx.CurrentStatus, serialized to the client via unitStatusOverlayColorLocked.
+// ctx.CurrentStatus, serialized to the client via unitOverlayColorLocked.
 // ═════════════════════════════════════════════════════════════════════════════
 
 // TestApplyColorOverlay_SetsStatusColorAndSerializes proves a bound
@@ -30,12 +30,36 @@ func TestApplyColorOverlay_SetsStatusColorAndSerializes(t *testing.T) {
 	if got := s.AbilityStatuses[0].OverlayColor; got != "#33cc55" {
 		t.Fatalf("status OverlayColor = %q; want #33cc55", got)
 	}
-	if got := s.unitStatusOverlayColorLocked(target.ID); got != "#33cc55" {
-		t.Fatalf("unitStatusOverlayColorLocked = %q; want #33cc55 (the wire value)", got)
+	if got := s.unitOverlayColorLocked(target); got != "#33cc55" {
+		t.Fatalf("unitOverlayColorLocked = %q; want #33cc55 (the wire value)", got)
 	}
-	// A unit with no color-overlay status resolves to "".
-	if got := s.unitStatusOverlayColorLocked(caster.ID); got != "" {
-		t.Fatalf("caster has no overlay status; got %q, want \"\"", got)
+	// A unit with no color-overlay status and no cold slow resolves to "".
+	if got := s.unitOverlayColorLocked(caster); got != "" {
+		t.Fatalf("caster has no overlay; got %q, want \"\"", got)
+	}
+}
+
+// TestOverlayColor_StatusPrecedence proves the one-place tint decision: with no
+// authored overlay a unit has no tint (the cold-slow track and its default-blue
+// fallback were retired), and an authored apply_color_overlay status paints the
+// unit its chosen color.
+func TestOverlayColor_StatusPrecedence(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	u := teamCombatUnit(t, s, "p2", 50, 0)
+
+	// No overlay status → no tint (a plain slow no longer tints anything).
+	s.ApplySlowLocked(u.ID, 0.5, 3)
+	if got := s.unitOverlayColorLocked(u); got != "" {
+		t.Fatalf("slowed-but-unauthored unit overlay = %q; want \"\" (no cold-track fallback)", got)
+	}
+
+	// An authored status overlay paints the unit.
+	spawnTestStatusWithMods(s, u, 3, nil)
+	s.AbilityStatuses[len(s.AbilityStatuses)-1].OverlayColor = "#33cc55"
+	if got := s.unitOverlayColorLocked(u); got != "#33cc55" {
+		t.Fatalf("overlay with authored status = %q; want #33cc55", got)
 	}
 }
 

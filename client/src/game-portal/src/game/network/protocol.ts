@@ -1129,14 +1129,8 @@ export type UnitSnapshot = {
    *  Scales attack + move speed by slowedMultiplier. Not visualized today.
    *  Omitted when not slowed. */
   slowedRemaining?: number
-  /** Effective speed fraction while physically slowed (e.g. 0.7 = 30% slower). */
+  /** Effective speed fraction while slowed (e.g. 0.7 = 30% slower). */
   slowedMultiplier?: number
-  /** Remaining seconds on a COLD (chill) slow — a separate track from the
-   *  physical slow above. > 0 ⇒ the renderer paints an icy overlay. Omitted when
-   *  not chilled. */
-  coldSlowedRemaining?: number
-  /** Effective speed fraction while chilled (e.g. 0.75 = 25% slower). */
-  coldSlowedMultiplier?: number
   /** CSS hex color the renderer paints over the sprite while a status authored
    *  an apply_color_overlay effect — the general form of the chill/blue overlay.
    *  Omitted when no such status is active. */

@@ -10,22 +10,13 @@
 // wins, otherwise inherit the effect def" — and it is the only place the client
 // re-implements a server rule. Keep the two in step.
 import type { ItemDef, ItemProcWire } from '../maps/itemDefs'
-import type { ProcEffectDef } from './itemEditorApi'
 import type { ItemEditorForm, ProcForm } from './itemEditorForm'
 
-function resolveProc(proc: ProcForm, effects: ProcEffectDef[]): ItemProcWire | null {
-  const def = effects.find((e) => e.id === proc.effect)
-  if (!def) return null // no effect chosen yet, or an unknown id — nothing to show
-  return {
-    trigger: proc.trigger,
-    chance: proc.chancePct / 100,
-    effect: def.id,
-    // Overrides are nullable in the form ("inherit"); a null falls back to the
-    // effect def's own value.
-    damage: proc.damage ?? def.damage,
-    damageType: def.damageType,
-    projectileID: def.projectileID,
-  }
+function resolveProc(proc: ProcForm): ItemProcWire | null {
+  // A proc casts an ability at what it hits; emit the reference so the
+  // tooltip/summary can render "casts <ability>".
+  if (!proc.ability) return null
+  return { trigger: proc.trigger, chance: proc.chancePct / 100, ability: proc.ability }
 }
 
 /**
@@ -33,7 +24,7 @@ function resolveProc(proc: ProcForm, effects: ProcEffectDef[]): ItemProcWire | n
  * saveRequestFromForm's omission rules (zero stats and empty elemental rows are
  * dropped) so the preview shows exactly what a save would produce.
  */
-export function previewDefFromForm(form: ItemEditorForm, effects: ProcEffectDef[]): ItemDef {
+export function previewDefFromForm(form: ItemEditorForm): ItemDef {
   const m = form.mods
   const def: ItemDef = {
     id: form.id,
@@ -75,7 +66,7 @@ export function previewDefFromForm(form: ItemEditorForm, effects: ProcEffectDef[
   if (elemental.length > 0) def.onHitElemental = elemental.map((e) => ({ ...e }))
 
   const procs = form.procs
-    .map((p) => resolveProc(p, effects))
+    .map((p) => resolveProc(p))
     .filter((p): p is ItemProcWire => p !== null)
   if (procs.length > 0) def.procs = procs
 

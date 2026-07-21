@@ -196,39 +196,12 @@ func TestValidateProgram_CreateZoneRequiresContainerTickInterval(t *testing.T) {
 	}
 }
 
-// TestValidateProgram_ApplyStatus_RequiresConfigTickIntervalWhenTriggersPresent
-// verifies apply_status's own tickInterval requirement (the cadence driver
-// AbilityStatus reads at runtime — see applyStatusConfig's doc comment): an
-// authored status (Triggers non-empty) with no top-level tickInterval is
-// flagged, mirroring create_zone's identical unconditional requirement.
-func TestValidateProgram_ApplyStatus_RequiresConfigTickIntervalWhenTriggersPresent(t *testing.T) {
-	statusCfg := applyStatusConfig{
-		Status:   "custom_poison",
-		Duration: 5,
-		// TickInterval intentionally omitted despite carrying Triggers.
-		Triggers: []AbilityTriggerDef{
-			{ID: "expire", Type: TriggerOnStatusExpire, Actions: nil},
-		},
-	}
-	prog := &AbilityProgram{
-		Entry: AbilityEntryDef{Type: EntryUnit},
-		Triggers: []AbilityTriggerDef{
-			{ID: "t1", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
-				{ID: "status", Type: ActionApplyStatus, Config: marshalConfig(statusCfg)},
-			}},
-		},
-	}
-	issues := validateAbilityProgram(prog)
-	wantPath := "triggers[0].actions[0]"
-	if got := issueAt(issues, wantPath, "empty_required_property"); got == nil {
-		t.Fatalf("want empty_required_property (missing tickInterval) at %q, got issues: %+v", wantPath, issues)
-	}
-}
-
-// TestValidateProgram_LegacyApplyStatus_NoTickIntervalRequired proves the new
-// check is scoped to the authored path only: a legacy-shaped apply_status
-// (Triggers empty — e.g. shatter's compiled slow rider) with no tickInterval
-// must NOT be flagged; it has no cadence to validate.
+// TestValidateProgram_LegacyApplyStatus_NoTickIntervalRequired proves a plain
+// CC apply_status (e.g. shatter's compiled slow rider) validates cleanly: it is
+// a one-shot chill/slow/stun/burn effect with no cadence of its own, so it
+// carries no tickInterval and must not be flagged for one. (apply_status no
+// longer has an authored-status path at all — that role moved entirely to
+// apply_status_duration.)
 func TestValidateProgram_LegacyApplyStatus_NoTickIntervalRequired(t *testing.T) {
 	statusCfg := applyStatusConfig{Status: "slow", Multiplier: 0.5, Duration: 3}
 	prog := &AbilityProgram{

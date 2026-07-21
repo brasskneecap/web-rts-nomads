@@ -232,8 +232,6 @@ export function findAction(
 // `config.triggers` rather than `children`. Mirrors the Go side exactly (see
 // walkAction's switch in ability_program_validate.go):
 //   create_zone            -> createZoneConfig.Triggers      (on_tick/zone_enter/zone_exit)
-//   apply_status           -> applyStatusConfig.Triggers     (on_tick/status_expire;
-//                              non-empty is ALSO the authored-vs-legacy discriminator)
 //   launch_projectile      -> launchProjectileConfig.Triggers (on_projectile_impact | on_tick)
 //   beam                   -> beamConfig.Triggers             (on_beam_impact | on_tick)
 //   apply_status_duration  -> applyStatusDurationConfig.Triggers (on_action_complete,
@@ -248,7 +246,6 @@ export function findAction(
 // never sees it.
 const CONFIG_TRIGGER_ACTION_TYPES: ReadonlySet<string> = new Set([
   'create_zone',
-  'apply_status',
   'launch_projectile',
   'beam',
   'apply_status_duration',

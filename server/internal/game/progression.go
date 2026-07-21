@@ -564,10 +564,9 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// into the same merge via mergeZoneIntoBaseStage/applyStatStages. No perk
 	// authors statModifiers today, so this is byte-identical to the prior
 	// zone-only fold.
-	hpAdd, hpMul := s.playerStatModifierLocked(unit.OwnerID, statMaxHp)
-	hpPerkStages := s.unitPerkStatModifiersLocked(unit, statMaxHp)
-	if hpAdd != 0 || hpMul != 1 || len(hpPerkStages) > 0 {
-		effectiveHP := applyStatStages(float64(unit.MaxHP), mergeZoneIntoBaseStage(hpPerkStages, hpAdd, hpMul))
+	// Perk + status + zone-aura "maxHp" pool, folded through the shared
+	// chokepoint. Identity => MaxHP unchanged, byte-identical to before.
+	if effectiveHP := s.effectiveStatLocked(unit, float64(unit.MaxHP), statMaxHp); effectiveHP != float64(unit.MaxHP) {
 		unit.MaxHP = maxInt(1, int(math.Round(effectiveHP)))
 	}
 
@@ -575,18 +574,14 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// the catalog base (MaxMana is otherwise only ever def.MaxMana) so losing the
 	// zone reverts the pool; mana fraction is preserved across the change.
 	if def, ok := getUnitDef(unit.UnitType); ok && def.MaxMana > 0 {
-		mnAdd, mnMul := s.playerStatModifierLocked(unit.OwnerID, statMaxMana)
-		mnPerkStages := s.unitPerkStatModifiersLocked(unit, statMaxMana)
+
 		// Path/rank max-mana multiplier scales the catalog base first (mirrors the
 		// MaxHP path multiplier above), then zone-aura add/mul (and any base-stage
 		// perk stat modifiers, merged with mergeZoneIntoBaseStage) apply on top.
 		// No perk authors statModifiers today, so this is byte-identical to the
 		// prior zone-only fold.
 		baseMana := float64(def.MaxMana) * pathDef.MaxMPMultiplier
-		effectiveMana := baseMana
-		if mnAdd != 0 || mnMul != 1 || len(mnPerkStages) > 0 {
-			effectiveMana = applyStatStages(baseMana, mergeZoneIntoBaseStage(mnPerkStages, mnAdd, mnMul))
-		}
+		effectiveMana := s.effectiveStatLocked(unit, baseMana, statMaxMana)
 		newMaxMana := maxInt(0, int(math.Round(effectiveMana)))
 		if newMaxMana != unit.MaxMana {
 			manaFraction := 1.0

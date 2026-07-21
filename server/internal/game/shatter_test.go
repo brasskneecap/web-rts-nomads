@@ -43,12 +43,11 @@ func TestShatter_DefContract(t *testing.T) {
 	if def.DamageAmount <= 0 {
 		t.Errorf("damageAmount = %v; want > 0", def.DamageAmount)
 	}
-	if def.SlowMultiplier <= 0 || def.SlowMultiplier >= 1 {
-		t.Errorf("slowMultiplier = %v; want in (0,1)", def.SlowMultiplier)
-	}
-	if def.SlowDurationSeconds <= 0 {
-		t.Errorf("slowDurationSeconds = %v; want > 0", def.SlowDurationSeconds)
-	}
+	// Shatter's chill is no longer a recovered SlowMultiplier/SlowDurationSeconds
+	// mechanic — it is authored as an apply_status_duration composition
+	// (change_stat moveSpeed + change_stat attackSpeed + apply_color_overlay), so
+	// the legacy shadow fields are 0 here by design. The slow's behaviour is
+	// covered directly by TestShatter_PointCastDamagesAndChillsClusterNotFar.
 	// Design intent: less direct damage than Fireball.
 	if fb := fireballDef(t); def.DamageAmount >= fb.DamageAmount {
 		t.Errorf("shatter damage %d not less than fireball damage %d (design: weaker direct hit, stronger CC)", def.DamageAmount, fb.DamageAmount)
@@ -91,26 +90,34 @@ func TestShatter_PointCastDamagesAndChillsClusterNotFar(t *testing.T) {
 		if e.HP >= start[e.ID] {
 			t.Errorf("in-radius unit at (%v,%v) HP %d not reduced from %d — AoE should have hit", e.X, e.Y, e.HP, start[e.ID])
 		}
-		// Chilled = the COLD slow track (drives the icy overlay + move/attack
-		// slow). Assert it landed on the cold track, at the authored strength.
-		if e.ColdSlowedRemaining <= 0 {
-			t.Errorf("in-radius unit at (%v,%v) not chilled: ColdSlowedRemaining = %v", e.X, e.Y, e.ColdSlowedRemaining)
+		// Chill is now an apply_status_duration COMPOSITION, not the cold-slow
+		// track: a status carrying change_stat(moveSpeed) + change_stat(attackSpeed)
+		// + apply_color_overlay. Assert its observable effects — the icy overlay
+		// and a real move/attack-speed reduction folded at the (now status-aware)
+		// read sites — rather than the retired ColdSlowedRemaining field.
+		e.MoveSpeed = 100  // give the move read site a positive base to scale
+		e.AttackSpeed = 1.0 // and the attack read site
+		if got := s.unitOverlayColorLocked(e); got != "#96d6ff" {
+			t.Errorf("in-radius unit at (%v,%v) not tinted: overlay = %q, want #96d6ff", e.X, e.Y, got)
 		}
-		if e.ColdSlowedMultiplier != def.SlowMultiplier {
-			t.Errorf("chill multiplier = %v; want %v (from catalog)", e.ColdSlowedMultiplier, def.SlowMultiplier)
+		if mult := s.perkMoveSpeedMultiplierLocked(e); mult >= 1.0 {
+			t.Errorf("in-radius unit at (%v,%v) move speed not slowed: multiplier = %v, want < 1", e.X, e.Y, mult)
 		}
-		// Reuse of the existing Chilled seam means the PHYSICAL slow track is
-		// never touched — proves we did not invent a parallel slow.
+		if bonus := s.perkAttackSpeedBonusLocked(e); bonus >= 0 {
+			t.Errorf("in-radius unit at (%v,%v) attack speed not slowed: bonus = %v, want < 0 (chill reduces it)", e.X, e.Y, bonus)
+		}
+		// The composition never touches the PHYSICAL slow track — proves we did
+		// not invent a parallel slow.
 		if e.SlowedRemaining != 0 {
-			t.Errorf("cold chill leaked onto the physical slow track: SlowedRemaining = %v", e.SlowedRemaining)
+			t.Errorf("chill leaked onto the physical slow track: SlowedRemaining = %v", e.SlowedRemaining)
 		}
 	}
 
 	if far.HP != start[far.ID] {
 		t.Errorf("far unit HP %d changed from %d — outside AoE radius", far.HP, start[far.ID])
 	}
-	if far.ColdSlowedRemaining != 0 {
-		t.Errorf("far unit chilled (ColdSlowedRemaining = %v) — outside AoE radius", far.ColdSlowedRemaining)
+	if got := s.unitOverlayColorLocked(far); got != "" {
+		t.Errorf("far unit tinted (overlay = %q) — outside AoE radius", got)
 	}
 
 	// A world-anchored ground burst is queued at the cast point so the cast is

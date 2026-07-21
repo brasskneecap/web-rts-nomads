@@ -7,20 +7,14 @@ import type { ItemDef, ItemProcTrigger } from '../maps/itemDefs'
 import type { EditorSaveRequest } from './itemEditorApi'
 
 /** One row of the editor's proc list. Existence IS enablement — a proc the
- *  user removes is spliced out of the list, not flagged off. */
+ *  user removes is spliced out of the list, not flagged off. A proc CASTS a
+ *  composable ability at what it hits (the bespoke proc-effect path was
+ *  removed). */
 export type ProcForm = {
   trigger: ItemProcTrigger
-  effect: string
+  /** The composable ability this proc casts at its target. */
+  ability: string
   chancePct: number
-  damage: number | null
-  projectileScale: number | null
-  bounceCount: number | null
-  bounceRange: number | null
-  bounceDamageFalloff: number | null
-  slowMultiplier: number | null
-  slowDurationSeconds: number | null
-  burnDamagePerSecond: number | null
-  burnDurationSeconds: number | null
 }
 
 export type ConsumableForm = {
@@ -101,9 +95,7 @@ const blankConsumable = (): ConsumableForm => ({
 /** A fresh proc row for the editor's "+ Add Proc". Overrides start null
  *  ("inherit from the effect"); the user picks the effect. */
 export const blankProc = (trigger: ItemProcTrigger = 'onHit'): ProcForm => ({
-  trigger, effect: '', chancePct: 10,
-  damage: null, projectileScale: null, bounceCount: null, bounceRange: null, bounceDamageFalloff: null,
-  slowMultiplier: null, slowDurationSeconds: null, burnDamagePerSecond: null, burnDurationSeconds: null,
+  trigger, ability: '', chancePct: 10,
 })
 
 export function createBlankForm(): ItemEditorForm {
@@ -120,14 +112,7 @@ export function createBlankForm(): ItemEditorForm {
 }
 
 function procFormFromWire(p: NonNullable<ItemDef['procs']>[number]): ProcForm {
-  return {
-    ...blankProc(p.trigger),
-    effect: p.effect ?? '', chancePct: Math.round(p.chance * 100),
-    // Wire carries RESOLVED values; overrides are not distinguishable from
-    // base values on the wire, so loading an item shows resolved numbers as
-    // placeholders and leaves overrides null (= inherit). Editing a field
-    // sets an override.
-  }
+  return { trigger: p.trigger, ability: p.ability ?? '', chancePct: Math.round(p.chance * 100) }
 }
 
 export function formFromDef(def: ItemDef): ItemEditorForm {
@@ -172,22 +157,11 @@ function pickUnmodeled(def: ItemDef): Record<string, unknown> {
   return picked
 }
 
-// A proc row with no effect chosen yet is dropped rather than saved — the
-// server rejects an empty effect, and a half-filled row is not an intent to
-// author one.
+// A proc row with no ability chosen is dropped rather than saved — the server
+// rejects an empty proc, and a half-filled row is not an intent to author one.
 function procWireFromForm(p: ProcForm): Record<string, unknown> | undefined {
-  if (!p.effect) return undefined
-  const wire: Record<string, unknown> = { trigger: p.trigger, chance: p.chancePct / 100, effect: p.effect }
-  const overrides: [string, number | null][] = [
-    ['damage', p.damage], ['projectileScale', p.projectileScale], ['bounceCount', p.bounceCount],
-    ['bounceRange', p.bounceRange], ['bounceDamageFalloff', p.bounceDamageFalloff],
-    ['slowMultiplier', p.slowMultiplier], ['slowDurationSeconds', p.slowDurationSeconds],
-    ['burnDamagePerSecond', p.burnDamagePerSecond], ['burnDurationSeconds', p.burnDurationSeconds],
-  ]
-  for (const [key, v] of overrides) {
-    if (v !== null && v !== 0) wire[key] = v
-  }
-  return wire
+  if (!p.ability) return undefined
+  return { trigger: p.trigger, chance: p.chancePct / 100, ability: p.ability }
 }
 
 export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {

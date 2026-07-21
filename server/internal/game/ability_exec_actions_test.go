@@ -106,7 +106,10 @@ func TestIsValidApplyForceMode(t *testing.T) {
 
 // ── apply_status: slow ───────────────────────────────────────────────────
 
-func TestActionApplyStatus_Slow_Cold_SetsColdSlowTrack(t *testing.T) {
+// School no longer routes to a separate track (the cold-slow track was
+// retired) — a "cold"-school slow lands on the one generic slow track exactly
+// like an omitted school.
+func TestActionApplyStatus_Slow_ColdSchool_RoutesToSlowTrack(t *testing.T) {
 	s := setupHostileTargetingPair(t)
 	defer s.mu.Unlock()
 
@@ -116,18 +119,15 @@ func TestActionApplyStatus_Slow_Cold_SetsColdSlowTrack(t *testing.T) {
 	tr := runOneActionProgram(t, s, caster.ID, 0, ActionApplyStatus,
 		`{"status":"slow","multiplier":0.5,"duration":3,"school":"cold"}`, []int{enemy.ID})
 
-	if enemy.ColdSlowedRemaining <= 0 {
-		t.Fatalf("enemy.ColdSlowedRemaining = %v; want > 0 for cold school", enemy.ColdSlowedRemaining)
-	}
-	if enemy.SlowedRemaining > 0 {
-		t.Fatalf("enemy.SlowedRemaining = %v; want 0 (cold school must not touch physical track)", enemy.SlowedRemaining)
+	if enemy.SlowedRemaining <= 0 {
+		t.Fatalf("enemy.SlowedRemaining = %v; want > 0 (school no longer routes anywhere else)", enemy.SlowedRemaining)
 	}
 	if !traceHas(tr, "status_applied") {
 		t.Fatalf("missing status_applied trace event: %+v", tr.Events)
 	}
 }
 
-func TestActionApplyStatus_Slow_Physical_SetsPhysicalSlowTrack(t *testing.T) {
+func TestActionApplyStatus_Slow_Physical_SetsSlowTrack(t *testing.T) {
 	s := setupHostileTargetingPair(t)
 	defer s.mu.Unlock()
 
@@ -138,10 +138,7 @@ func TestActionApplyStatus_Slow_Physical_SetsPhysicalSlowTrack(t *testing.T) {
 		`{"status":"slow","multiplier":0.5,"duration":3}`, []int{enemy.ID})
 
 	if enemy.SlowedRemaining <= 0 {
-		t.Fatalf("enemy.SlowedRemaining = %v; want > 0 when school omitted (defaults physical)", enemy.SlowedRemaining)
-	}
-	if enemy.ColdSlowedRemaining > 0 {
-		t.Fatalf("enemy.ColdSlowedRemaining = %v; want 0 (physical/omitted school must not touch cold track)", enemy.ColdSlowedRemaining)
+		t.Fatalf("enemy.SlowedRemaining = %v; want > 0", enemy.SlowedRemaining)
 	}
 }
 
@@ -164,23 +161,22 @@ func TestActionApplyStatus_Stun_SetsStunnedRemaining(t *testing.T) {
 
 // ── remove_status ────────────────────────────────────────────────────────
 
-func TestActionRemoveStatus_Slow_ClearsBothTracks(t *testing.T) {
+func TestActionRemoveStatus_Slow_ClearsSlowTrack(t *testing.T) {
 	s := setupHostileTargetingPair(t)
 	defer s.mu.Unlock()
 
 	caster := teamCombatUnit(t, s, "p1", 0, 0)
 	enemy := teamCombatUnit(t, s, "p2", 50, 0)
 	s.ApplySlowLocked(enemy.ID, 0.5, 5)
-	s.ApplyColdSlowLocked(enemy.ID, 0.5, 5)
-	if enemy.SlowedRemaining <= 0 || enemy.ColdSlowedRemaining <= 0 {
-		t.Fatalf("setup failed: slow tracks not primed (%v, %v)", enemy.SlowedRemaining, enemy.ColdSlowedRemaining)
+	if enemy.SlowedRemaining <= 0 {
+		t.Fatalf("setup failed: slow track not primed (%v)", enemy.SlowedRemaining)
 	}
 
 	tr := runOneActionProgram(t, s, caster.ID, 0, ActionRemoveStatus,
 		`{"status":"slow"}`, []int{enemy.ID})
 
-	if enemy.SlowedRemaining != 0 || enemy.ColdSlowedRemaining != 0 {
-		t.Fatalf("slow tracks not cleared: SlowedRemaining=%v ColdSlowedRemaining=%v", enemy.SlowedRemaining, enemy.ColdSlowedRemaining)
+	if enemy.SlowedRemaining != 0 || enemy.SlowedMultiplier != 0 {
+		t.Fatalf("slow track not cleared: SlowedRemaining=%v SlowedMultiplier=%v", enemy.SlowedRemaining, enemy.SlowedMultiplier)
 	}
 	if !traceHas(tr, "status_removed") {
 		t.Fatalf("missing status_removed trace event: %+v", tr.Events)

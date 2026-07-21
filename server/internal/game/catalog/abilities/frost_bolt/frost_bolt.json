@@ -65,6 +65,51 @@
                       }
                     },
                     {
+                      "id": "chill",
+                      "type": "apply_status_duration",
+                      "input": {
+                        "targets": {
+                          "key": "hit"
+                        }
+                      },
+                      "config": {
+                        "duration": 2,
+                        "triggers": [
+                          {
+                            "id": "on_apply",
+                            "type": "on_action_complete",
+                            "actions": [
+                              {
+                                "id": "chill_move",
+                                "type": "change_stat",
+                                "config": {
+                                  "stat": "moveSpeed",
+                                  "op": "multiply",
+                                  "value": 0.75
+                                }
+                              },
+                              {
+                                "id": "chill_attack",
+                                "type": "change_stat",
+                                "config": {
+                                  "stat": "attackSpeed",
+                                  "op": "multiply",
+                                  "value": 0.75
+                                }
+                              },
+                              {
+                                "id": "chill_tint",
+                                "type": "apply_color_overlay",
+                                "config": {
+                                  "color": "#96d6ff"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    {
                       "id": "a2",
                       "type": "select_targets",
                       "disabled": false,

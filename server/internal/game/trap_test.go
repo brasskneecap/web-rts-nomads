@@ -62,6 +62,34 @@ func placeTrap(s *GameState, trapType, ownerPlayerID string, ownerUnitID int, x,
 	return trap
 }
 
+// grantTrapAbility gives a unit a trap ABILITY. The four traps (caltrops,
+// fire_pit, explosive_trap, marker_trap) migrated from bronze perks to pool
+// abilities, so a trapper "has" a trap via unit.Abilities now — this is the
+// ability-era counterpart of grantPerk for the trap-owning setup.
+func grantTrapAbility(u *Unit, abilityID string) {
+	if !containsAbility(u, abilityID) {
+		u.Abilities = append(u.Abilities, abilityID)
+	}
+}
+
+// mustTrapAbilityConfig returns the base (rank-scaled) TrapConfig an authored
+// trap ability plants — the test-side source of truth for a trap's stats now
+// that the four traps are abilities (replaces perkDefByID("<trap>").Config /
+// .ConfigForRank(rank)). Struct fields map to the old config keys:
+// Radius←radius, DamagePerSecond←damagePerSecond, SlowMultiplier←slowMultiplier,
+// ExplosionRadius←explosionRadius, TriggerRadius←triggerRadius,
+// BurstDamage←burstDamage, MarkMultiplier←markMultiplier,
+// MarkDuration←markDuration, DurationSeconds←durationSeconds,
+// PlaceIntervalSeconds←placeIntervalSeconds.
+func mustTrapAbilityConfig(t *testing.T, abilityID, rank string) TrapConfig {
+	t.Helper()
+	tc, ok := trapConfigFromAbilityLocked(abilityID, rank)
+	if !ok {
+		t.Fatalf("no place_trap config for trap ability %q", abilityID)
+	}
+	return tc
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase A — Trap entity scaffold tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,7 +228,10 @@ func TestTrap_SnapshotIncludesTraps(t *testing.T) {
 
 // TestTrap_IDString verifies trapIDString produces the expected format.
 func TestTrap_IDString(t *testing.T) {
-	cases := []struct{ id int; want string }{
+	cases := []struct {
+		id   int
+		want string
+	}{
 		{0, "trap-0"},
 		{1, "trap-1"},
 		{42, "trap-42"},
@@ -218,15 +249,19 @@ func TestTrap_IDString(t *testing.T) {
 // Phase B — Trapper path + auto-placement tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestTrapper_ArcherGetsTrapPerkAtBronze verifies that an archer reaching
-// Bronze rank on the Trapper path is assigned exactly one trap perk (one of
-// the four Bronze trapper perks) via the standard rank-up pipeline.
+// TestTrapper_ArcherGetsTrapAbilityAtBronze verifies that an archer reaching
+// Bronze rank on the Trapper path is assigned exactly one trap ABILITY (one
+// of the four Bronze trap abilities) via the standard rank-up pipeline —
+// rollUnitPoolAbilitiesLocked draws the pick onto PoolAbilitiesByRank["bronze"]
+// and assignUnitPathAbilitiesLocked folds it into unit.Abilities. Trapper's
+// Bronze is no longer a perk pool (the four bronze trap perks migrated to
+// pool abilities), so the unit must gain no PerkIDs at Bronze either.
 //
 // Since archers now randomly receive Trapper or Marksman at Bronze, this
 // test loops seeds and only validates trapper-assigned archers — marksman-
 // assigned archers are exercised by Marksman's own test file.
-func TestTrapper_ArcherGetsTrapPerkAtBronze(t *testing.T) {
-	validTrapPerks := map[string]bool{
+func TestTrapper_ArcherGetsTrapAbilityAtBronze(t *testing.T) {
+	validTraps := map[string]bool{
 		"caltrops":       true,
 		"fire_pit":       true,
 		"explosive_trap": true,
@@ -255,14 +290,16 @@ func TestTrapper_ArcherGetsTrapPerkAtBronze(t *testing.T) {
 		}
 		trapperSeeds++
 
-		got := archer.PerkIDs
-		if len(got) != 1 {
-			t.Errorf("seed %d: expected exactly 1 perk at Bronze, got %v", seed, got)
-			s.mu.Unlock()
-			continue
+		if len(archer.PerkIDs) != 0 {
+			t.Errorf("seed %d: expected no perks at Bronze (Trapper Bronze is an ability pool now), got %v", seed, archer.PerkIDs)
 		}
-		if !validTrapPerks[got[0]] {
-			t.Errorf("seed %d: perk %q is not a valid Bronze trap perk", seed, got[0])
+
+		pick := archer.PoolAbilitiesByRank[unitRankBronze]
+		if !validTraps[pick] {
+			t.Errorf("seed %d: PoolAbilitiesByRank[bronze] = %q, want one of the four trap abilities", seed, pick)
+		}
+		if !containsAbility(archer, pick) {
+			t.Errorf("seed %d: archer.Abilities does not contain the rolled trap ability %q (got %v)", seed, pick, archer.Abilities)
 		}
 
 		s.mu.Unlock()
@@ -272,98 +309,61 @@ func TestTrapper_ArcherGetsTrapPerkAtBronze(t *testing.T) {
 	}
 }
 
-// TestTrapper_PlacementCooldownDecays verifies that TrapPlaceCooldownRemaining
-// decrements toward 0 each tick inside tickTrapPlacementLocked.
-func TestTrapper_PlacementCooldownDecays(t *testing.T) {
-	s := newTrapState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
-	if archer == nil {
-		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
-	}
-	grantPerk(archer, "caltrops")
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
-
-	archer.PerkState.TrapPlaceCooldownRemaining = 6.0
-	archer.PerkState.LastCombatSeconds = 1.5 // in combat
-
-	s.tickTrapPlacementLocked(archer, def, 1.0)
-
-	want := 5.0
-	if math.Abs(archer.PerkState.TrapPlaceCooldownRemaining-want) > 1e-9 {
-		t.Errorf("cooldown after 1s tick: got %.6f, want %.6f", archer.PerkState.TrapPlaceCooldownRemaining, want)
-	}
-}
-
-// TestTrapper_TrapHeldUntilEnemyInRange verifies the placement gate: an
-// armed trap (cooldown elapsed) is held while no hostile is within
-// AttackRange, and drops the moment a hostile walks in.
-func TestTrapper_TrapHeldUntilEnemyInRange(t *testing.T) {
+// TestTrapper_AbilityPlantsTrap verifies the new placement seam: casting a
+// trap ABILITY at an enemy plants exactly one trap of that type with the
+// authored stats. This replaces the old tickTrapPlacementLocked driver tests —
+// placement cadence + the "enemy in range" gate are now the ability system's
+// cooldown + autocast selector (covered by the ability-autocast suite); this
+// test pins that a trapper's trap ability actually drops a correct trap.
+func TestTrapper_AbilityPlantsTrap(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 300, Y: 250})
 	if archer == nil {
 		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 300, Y: 250})
 	}
-	grantPerk(archer, "caltrops")
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
+	grantTrapAbility(archer, "caltrops")
 
-	// Cooldown already at 0 and no hostile near — trap stays armed, not placed.
-	archer.PerkState.TrapPlaceCooldownRemaining = 0
-	s.tickTrapPlacementLocked(archer, def, 0.05)
-	if len(s.Traps) != 0 {
-		t.Fatalf("trap dropped without an enemy in range, got %d traps", len(s.Traps))
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
+		X: archer.X + 100, Y: archer.Y,
+	})
+	if enemy == nil {
+		t.Fatal("failed to spawn enemy unit")
 	}
-	if archer.PerkState.TrapPlaceCooldownRemaining != 0 {
-		t.Errorf("cooldown advanced while holding the trap: got %.3f, want 0",
-			archer.PerkState.TrapPlaceCooldownRemaining)
-	}
+	enemy.Visible = true
 
-	// Spawn a hostile inside the trapper's AttackRange — the next tick should
-	// fire the placement and reset the cooldown.
-	hostileX := archer.X + archer.AttackRange*0.5
-	hostile := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: hostileX, Y: archer.Y})
-	if hostile == nil {
-		t.Fatal("hostile spawn failed")
+	ok, reason := s.beginAbilityCastLocked(archer, "caltrops", enemy)
+	if !ok {
+		t.Fatalf("beginAbilityCastLocked(caltrops) failed: %q", reason)
 	}
-	s.tickTrapPlacementLocked(archer, def, 0.05)
+	// castTime 0 ⇒ resolves synchronously inside beginAbilityCastLocked.
 	if len(s.Traps) != 1 {
-		t.Fatalf("expected 1 trap after enemy entered range, got %d", len(s.Traps))
+		t.Fatalf("expected 1 trap planted by the caltrops ability, got %d", len(s.Traps))
 	}
 	trap := s.Traps[0]
-	// Position is tuned by trapPlacementOffsetLocked (throw-toward-enemy when
-	// one is in range). This test only asserts the gate fires; position math
-	// is covered by the placement-offset suite. Sanity-check Y matches the
-	// archer's row so the trap landed in the right zone.
-	if math.Abs(trap.Y-250) > 1e-3 {
-		t.Errorf("trap Y: got %.1f, want 250 (archer row)", trap.Y)
-	}
 	if trap.TrapType != "caltrops" {
 		t.Errorf("trap type: got %q, want caltrops", trap.TrapType)
 	}
-	wantCooldown := def.Config["placeIntervalSeconds"]
-	if math.Abs(archer.PerkState.TrapPlaceCooldownRemaining-wantCooldown) > 1e-9 {
-		t.Errorf("cooldown after placement: got %.3f, want %.3f",
-			archer.PerkState.TrapPlaceCooldownRemaining, wantCooldown)
+	// Stats come from the ability's place_trap config (identity modifiers, no
+	// Silver/Gold perks), so they equal the authored base.
+	cfg := mustTrapAbilityConfig(t, "caltrops", archer.Rank)
+	if math.Abs(trap.Radius-cfg.Radius) > 1e-9 {
+		t.Errorf("trap Radius: got %.3f, want %.3f", trap.Radius, cfg.Radius)
+	}
+	if math.Abs(trap.RemainingSeconds-cfg.DurationSeconds) > 1e-9 {
+		t.Errorf("trap RemainingSeconds: got %.3f, want %.3f", trap.RemainingSeconds, cfg.DurationSeconds)
 	}
 }
 
-// TestTrapper_TrapDropsWhileEnemyInRange verifies that the Trapper places a
-// trap even when an enemy is inside attack range — zone control is prioritized
-// over "just another shot", and friendlies can't be hit by traps anyway.
-func TestTrapper_TrapDropsWhileEnemyInRange(t *testing.T) {
+// TestTrapper_DeadUnitDoesNotCastTrap verifies a dead unit (HP <= 0) cannot
+// cast its trap ability, so no trap is planted — the ability system's own
+// caster-liveness guard, the replacement for the old driver's HP check.
+func TestTrapper_DeadUnitDoesNotCastTrap(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -375,59 +375,21 @@ func TestTrapper_TrapDropsWhileEnemyInRange(t *testing.T) {
 	if archer == nil {
 		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	grantPerk(archer, "caltrops")
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
+	grantTrapAbility(archer, "caltrops")
 
-	// Enemy well inside the archer's attack range.
 	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
-		X: archer.X + archer.AttackRange*0.5, Y: archer.Y,
+		X: archer.X + 100, Y: archer.Y,
 	})
 	if enemy == nil {
 		t.Fatal("failed to spawn enemy unit")
 	}
 	enemy.Visible = true
 
-	archer.PerkState.TrapPlaceCooldownRemaining = 0
-
-	s.tickTrapPlacementLocked(archer, def, 0.05)
-
-	if len(s.Traps) != 1 {
-		t.Errorf("enemy in range: expected 1 trap placed, got %d", len(s.Traps))
-	}
-	// Cooldown should have been consumed on placement.
-	wantCooldown := def.Config["placeIntervalSeconds"]
-	if math.Abs(archer.PerkState.TrapPlaceCooldownRemaining-wantCooldown) > 1e-9 {
-		t.Errorf("cooldown after placement: got %.3f, want %.3f",
-			archer.PerkState.TrapPlaceCooldownRemaining, wantCooldown)
-	}
-}
-
-// TestTrapper_DeadUnitDoesNotPlant verifies that a dead unit (HP <= 0) does not
-// plant traps even with cooldown at 0 and no enemies nearby.
-func TestTrapper_DeadUnitDoesNotPlant(t *testing.T) {
-	s := newTrapState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
-	if archer == nil {
-		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
-	}
-	grantPerk(archer, "caltrops")
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
-
 	archer.HP = 0 // dead
-	archer.PerkState.TrapPlaceCooldownRemaining = 0
-	archer.PerkState.LastCombatSeconds = 1.5
 
-	s.tickTrapPlacementLocked(archer, def, 0.05)
-
+	if ok, _ := s.beginAbilityCastLocked(archer, "caltrops", enemy); ok {
+		t.Error("dead unit should not be able to cast its trap ability")
+	}
 	if len(s.Traps) != 0 {
 		t.Errorf("dead unit: expected 0 traps, got %d", len(s.Traps))
 	}
@@ -486,14 +448,11 @@ func TestCaltrops_SlowsAndDamagesEnemy(t *testing.T) {
 	enemy.HP = 500
 	enemy.MaxHP = 500
 
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "caltrops", "")
 
-	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"]
-	trap.SlowMultiplier = def.Config["slowMultiplier"]
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond
+	trap.SlowMultiplier = cfg.SlowMultiplier
 
 	hpBefore := enemy.HP
 	s.tickTrapEffectsLocked(1.0) // dt=1s so DoT produces a full second of damage
@@ -502,13 +461,13 @@ func TestCaltrops_SlowsAndDamagesEnemy(t *testing.T) {
 	if enemy.SlowedRemaining <= 0 {
 		t.Error("enemy inside caltrops: expected SlowedRemaining > 0")
 	}
-	wantSlowMult := def.Config["slowMultiplier"]
+	wantSlowMult := cfg.SlowMultiplier
 	if math.Abs(enemy.SlowedMultiplier-wantSlowMult) > 0.001 {
 		t.Errorf("SlowedMultiplier: got %.3f, want %.3f", enemy.SlowedMultiplier, wantSlowMult)
 	}
 
 	// Should have taken DoT damage.
-	expectedDmg := int(math.Round(def.Config["damagePerSecond"] * 1.0))
+	expectedDmg := int(math.Round(cfg.DamagePerSecond * 1.0))
 	if expectedDmg > 0 && enemy.HP >= hpBefore {
 		t.Errorf("caltrops DoT: HP unchanged (was %d, got %d)", hpBefore, enemy.HP)
 	}
@@ -527,14 +486,11 @@ func TestCaltrops_AllyInZoneUnaffected(t *testing.T) {
 	ally.Visible = true
 	ally.HP = 500
 
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "caltrops", "")
 
-	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"]
-	trap.SlowMultiplier = def.Config["slowMultiplier"]
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond
+	trap.SlowMultiplier = cfg.SlowMultiplier
 
 	hpBefore := ally.HP
 	s.tickTrapEffectsLocked(1.0)
@@ -563,14 +519,11 @@ func TestCaltrops_SlowExpiresAfterLeavingZone(t *testing.T) {
 	enemy.Visible = true
 	enemy.HP = 500
 
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "caltrops", "")
 
-	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"]
-	trap.SlowMultiplier = def.Config["slowMultiplier"]
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond
+	trap.SlowMultiplier = cfg.SlowMultiplier
 
 	// Apply slow while in zone.
 	s.tickTrapEffectsLocked(0.1)
@@ -605,14 +558,11 @@ func TestCaltrops_PersistsAcrossMultipleEnemies(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "caltrops", "")
 
-	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"]
-	trap.SlowMultiplier = def.Config["slowMultiplier"]
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond
+	trap.SlowMultiplier = cfg.SlowMultiplier
 
 	// Spawn 3 enemies inside the zone.
 	enemies := make([]*Unit, 3)
@@ -648,18 +598,15 @@ func TestFirePit_DamagesEnemyNoSlow(t *testing.T) {
 	enemy.Visible = true
 	enemy.HP = 500
 
-	def := perkDefByID("fire_pit")
-	if def == nil {
-		t.Fatal("fire_pit perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "fire_pit", "")
 
-	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, def.Config["radius"], 10.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"]
+	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, cfg.Radius, 10.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond
 
 	hpBefore := enemy.HP
 	s.tickTrapEffectsLocked(1.0)
 
-	expectedDmg := int(math.Round(def.Config["damagePerSecond"] * 1.0))
+	expectedDmg := int(math.Round(cfg.DamagePerSecond * 1.0))
 	if expectedDmg > 0 && enemy.HP >= hpBefore {
 		t.Errorf("fire_pit DoT: HP unchanged (was %d)", hpBefore)
 	}
@@ -679,14 +626,11 @@ func TestExplosiveTrap_TriggersOnEnemyContact(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	def := perkDefByID("explosive_trap")
-	if def == nil {
-		t.Fatal("explosive_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "explosive_trap", "")
 
-	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
-	trap.TriggerRadius = def.Config["triggerRadius"]
-	trap.BurstDamage = int(def.Config["burstDamage"])
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, cfg.ExplosionRadius, 20.0)
+	trap.TriggerRadius = cfg.TriggerRadius
+	trap.BurstDamage = int(cfg.BurstDamage)
 
 	// Enemy inside trigger radius.
 	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
@@ -717,14 +661,11 @@ func TestExplosiveTrap_NoFriendlyFire(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	def := perkDefByID("explosive_trap")
-	if def == nil {
-		t.Fatal("explosive_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "explosive_trap", "")
 
-	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
-	trap.TriggerRadius = def.Config["triggerRadius"]
-	trap.BurstDamage = int(def.Config["burstDamage"])
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, cfg.ExplosionRadius, 20.0)
+	trap.TriggerRadius = cfg.TriggerRadius
+	trap.BurstDamage = int(cfg.BurstDamage)
 
 	// Ally inside explosion radius — must take ZERO damage.
 	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#2ecc71", protocol.Vec2{X: 400, Y: 400})
@@ -758,14 +699,11 @@ func TestExplosiveTrap_CulledAfterTrigger(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	def := perkDefByID("explosive_trap")
-	if def == nil {
-		t.Fatal("explosive_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "explosive_trap", "")
 
-	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
-	trap.TriggerRadius = def.Config["triggerRadius"]
-	trap.BurstDamage = int(def.Config["burstDamage"])
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, cfg.ExplosionRadius, 20.0)
+	trap.TriggerRadius = cfg.TriggerRadius
+	trap.BurstDamage = int(cfg.BurstDamage)
 
 	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
@@ -808,14 +746,11 @@ func TestExplosiveTrap_AoEDamagesAllEnemiesInRadius(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	def := perkDefByID("explosive_trap")
-	if def == nil {
-		t.Fatal("explosive_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "explosive_trap", "")
 
-	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
-	trap.TriggerRadius = def.Config["triggerRadius"]
-	trap.BurstDamage = int(def.Config["burstDamage"])
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, cfg.ExplosionRadius, 20.0)
+	trap.TriggerRadius = cfg.TriggerRadius
+	trap.BurstDamage = int(cfg.BurstDamage)
 
 	// Three enemies: one inside trigger radius, two more inside explosion radius.
 	triggerEnemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
@@ -861,23 +796,20 @@ func TestMarkerTrap_MarksEnemy(t *testing.T) {
 	enemy.Visible = true
 	enemy.HP = 500
 
-	def := perkDefByID("marker_trap")
-	if def == nil {
-		t.Fatal("marker_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "marker_trap", "")
 
-	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.MarkMultiplier = def.Config["markMultiplier"]
-	trap.MarkDuration = def.Config["markDuration"]
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.MarkMultiplier = cfg.MarkMultiplier
+	trap.MarkDuration = cfg.MarkDuration
 
 	s.tickTrapEffectsLocked(0.05)
 
 	if !enemy.PerkState.anyMarkActive() {
 		t.Error("enemy inside marker_trap: expected a mark stack")
 	}
-	if math.Abs(enemy.PerkState.totalMarkMultiplier()-def.Config["markMultiplier"]) > 0.001 {
+	if math.Abs(enemy.PerkState.totalMarkMultiplier()-cfg.MarkMultiplier) > 0.001 {
 		t.Errorf("total mark multiplier: got %.3f, want %.3f",
-			enemy.PerkState.totalMarkMultiplier(), def.Config["markMultiplier"])
+			enemy.PerkState.totalMarkMultiplier(), cfg.MarkMultiplier)
 	}
 }
 
@@ -895,14 +827,11 @@ func TestMarkerTrap_MarkPersistsAfterLeaving(t *testing.T) {
 	enemy.Visible = true
 	enemy.HP = 500
 
-	def := perkDefByID("marker_trap")
-	if def == nil {
-		t.Fatal("marker_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "marker_trap", "")
 
-	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.MarkMultiplier = def.Config["markMultiplier"]
-	trap.MarkDuration = def.Config["markDuration"]
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.MarkMultiplier = cfg.MarkMultiplier
+	trap.MarkDuration = cfg.MarkDuration
 
 	// Apply mark.
 	s.tickTrapEffectsLocked(0.05)
@@ -934,10 +863,7 @@ func TestMarkerTrap_RefreshStrongerSemantics(t *testing.T) {
 	enemy.Visible = true
 	enemy.HP = 500
 
-	def := perkDefByID("marker_trap")
-	if def == nil {
-		t.Fatal("marker_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "marker_trap", "")
 
 	// Set a stronger mark already on the unit from a DIFFERENT source
 	// (e.g. challengers_mark from a Vanguard, ownerUnitID=999). Under the
@@ -945,12 +871,12 @@ func TestMarkerTrap_RefreshStrongerSemantics(t *testing.T) {
 	// from a different owner (ownerUnit=0 in placeTrap) adds a second
 	// stack rather than overwriting. Verify the pre-existing stack's
 	// multiplier is preserved.
-	strongerMult := def.Config["markMultiplier"] + 0.10
+	strongerMult := cfg.MarkMultiplier + 0.10
 	enemy.PerkState.applyMarkStack("unit-999", 999, strongerMult, 10.0)
 
-	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.MarkMultiplier = def.Config["markMultiplier"]
-	trap.MarkDuration = def.Config["markDuration"]
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.MarkMultiplier = cfg.MarkMultiplier
+	trap.MarkDuration = cfg.MarkDuration
 
 	s.tickTrapEffectsLocked(0.05)
 
@@ -987,35 +913,32 @@ func TestMarkerTrap_AmplifiedDamage(t *testing.T) {
 	enemy.HP = 500
 	enemy.MaxHP = 500
 
-	def := perkDefByID("marker_trap")
-	if def == nil {
-		t.Fatal("marker_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "marker_trap", "")
 
 	// Apply mark manually via the stack helper.
-	enemy.PerkState.applyMarkStack("unit-1", 1, def.Config["markMultiplier"], 4.0)
+	enemy.PerkState.applyMarkStack("unit-1", 1, cfg.MarkMultiplier, 4.0)
 
 	// Deal 100 raw damage. applyUnitDamageLocked amplifies by (1 + markMultiplier).
 	const raw = 100
 	hpBefore := enemy.HP
 	s.applyUnitDamageLocked(enemy, raw)
 
-	expected := int(math.Round(float64(raw) * (1.0 + def.Config["markMultiplier"])))
+	expected := int(math.Round(float64(raw) * (1.0 + cfg.MarkMultiplier)))
 	actual := hpBefore - enemy.HP
 
 	if actual != expected {
-		t.Errorf("marked damage: got %d, want %d (mark mult=%.2f)", actual, expected, def.Config["markMultiplier"])
+		t.Errorf("marked damage: got %d, want %d (mark mult=%.2f)", actual, expected, cfg.MarkMultiplier)
 	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase D — requiresPerk filter tests
+// Phase D — requiresAbility filter tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestRequiresPerk_ExplosiveChainVisibleWithExplosiveTrap verifies that
-// explosive_chain appears in the Silver pool when the unit already owns
-// explosive_trap.
-func TestRequiresPerk_ExplosiveChainVisibleWithExplosiveTrap(t *testing.T) {
+// TestRequiresAbility_ExplosiveChainVisibleWithExplosiveTrap verifies that
+// explosive_chain appears in the Silver pool when the unit already knows the
+// explosive_trap ABILITY (its requiresAbility gate is satisfied).
+func TestRequiresAbility_ExplosiveChainVisibleWithExplosiveTrap(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1027,8 +950,8 @@ func TestRequiresPerk_ExplosiveChainVisibleWithExplosiveTrap(t *testing.T) {
 	archer.ProgressionPath = unitPathTrapper
 	archer.Rank = unitRankSilver
 
-	// Grant the prerequisite.
-	grantPerk(archer, "explosive_trap")
+	// Grant the prerequisite trap ability.
+	grantTrapAbility(archer, "explosive_trap")
 
 	pool := s.perkPoolForRankLocked(archer, unitRankSilver)
 
@@ -1040,14 +963,14 @@ func TestRequiresPerk_ExplosiveChainVisibleWithExplosiveTrap(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("unit with explosive_trap should see explosive_chain in Silver pool")
+		t.Error("unit with the explosive_trap ability should see explosive_chain in Silver pool")
 	}
 }
 
-// TestRequiresPerk_ExplosiveChainHiddenWithoutExplosiveTrap verifies that
-// explosive_chain does NOT appear in the Silver pool when the unit owns a
-// different Bronze trap perk (not explosive_trap).
-func TestRequiresPerk_ExplosiveChainHiddenWithoutExplosiveTrap(t *testing.T) {
+// TestRequiresAbility_ExplosiveChainHiddenWithoutExplosiveTrap verifies that
+// explosive_chain does NOT appear in the Silver pool when the unit knows a
+// different trap ability (not explosive_trap).
+func TestRequiresAbility_ExplosiveChainHiddenWithoutExplosiveTrap(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1059,8 +982,8 @@ func TestRequiresPerk_ExplosiveChainHiddenWithoutExplosiveTrap(t *testing.T) {
 	archer.ProgressionPath = unitPathTrapper
 	archer.Rank = unitRankSilver
 
-	// Own caltrops (not explosive_trap).
-	grantPerk(archer, "caltrops")
+	// Know caltrops (not explosive_trap).
+	grantTrapAbility(archer, "caltrops")
 
 	pool := s.perkPoolForRankLocked(archer, unitRankSilver)
 
@@ -1129,17 +1052,14 @@ func TestCaltrops_DoTAtProductionTickRate(t *testing.T) {
 	enemy.HP = 500
 	enemy.MaxHP = 500
 
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "caltrops", "")
 
-	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"] // 3 dmg/s
-	trap.SlowMultiplier = def.Config["slowMultiplier"]
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond // 3 dmg/s
+	trap.SlowMultiplier = cfg.SlowMultiplier
 
 	const productionDT = 1.0 / 20.0 // 0.05 s — the actual loop.go tick rate
-	const ticks = 20                  // 1 simulated second
+	const ticks = 20                // 1 simulated second
 	hpBefore := enemy.HP
 
 	for i := 0; i < ticks; i++ {
@@ -1174,13 +1094,10 @@ func TestFirePit_DoTAtProductionTickRate(t *testing.T) {
 	enemy.HP = 500
 	enemy.MaxHP = 500
 
-	def := perkDefByID("fire_pit")
-	if def == nil {
-		t.Fatal("fire_pit perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "fire_pit", "")
 
-	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, def.Config["radius"], 10.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"] // 8 dmg/s
+	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, cfg.Radius, 10.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond // 8 dmg/s
 
 	const productionDT = 1.0 / 20.0
 	const ticks = 20 // 1 simulated second
@@ -1214,13 +1131,10 @@ func TestFirePit_NoFriendlyFire(t *testing.T) {
 	ally.Visible = true
 	ally.HP = 500
 
-	def := perkDefByID("fire_pit")
-	if def == nil {
-		t.Fatal("fire_pit perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "fire_pit", "")
 
-	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, def.Config["radius"], 10.0)
-	trap.DamagePerSecond = def.Config["damagePerSecond"]
+	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, cfg.Radius, 10.0)
+	trap.DamagePerSecond = cfg.DamagePerSecond
 
 	hpBefore := ally.HP
 	s.tickTrapEffectsLocked(1.0) // large dt to guarantee dmg > 0 if ally filter is broken
@@ -1242,14 +1156,11 @@ func TestMarkerTrap_NoFriendlyFire(t *testing.T) {
 	ally.Visible = true
 	ally.HP = 500
 
-	def := perkDefByID("marker_trap")
-	if def == nil {
-		t.Fatal("marker_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "marker_trap", "")
 
-	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
-	trap.MarkMultiplier = def.Config["markMultiplier"]
-	trap.MarkDuration = def.Config["markDuration"]
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, cfg.Radius, 12.0)
+	trap.MarkMultiplier = cfg.MarkMultiplier
+	trap.MarkDuration = cfg.MarkDuration
 
 	s.tickTrapEffectsLocked(0.05)
 
@@ -1386,12 +1297,9 @@ func TestMarkerTrap_VsChallengersMarkCoexistAsStacks(t *testing.T) {
 	enemy.Visible = true
 	enemy.HP = 500
 
-	def := perkDefByID("marker_trap")
-	if def == nil {
-		t.Fatal("marker_trap perk def not found")
-	}
-	trapMult := def.Config["markMultiplier"] // e.g. 0.20
-	trapDur := def.Config["markDuration"]    // e.g. 4.0
+	cfg := mustTrapAbilityConfig(t, "marker_trap", "")
+	trapMult := cfg.MarkMultiplier // e.g. 0.20
+	trapDur := cfg.MarkDuration    // e.g. 4.0
 
 	// Simulate Challenger's Mark already active from a Vanguard (owner 42)
 	// with a stronger multiplier and longer duration than the trap.
@@ -1402,7 +1310,7 @@ func TestMarkerTrap_VsChallengersMarkCoexistAsStacks(t *testing.T) {
 
 	// marker_trap (placed with ownerUnitID=0 via placeTrap) adds a SECOND
 	// stack rather than overwriting.
-	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, cfg.Radius, 12.0)
 	trap.MarkMultiplier = trapMult
 	trap.MarkDuration = trapDur
 	s.tickTrapEffectsLocked(0.05)
@@ -1489,11 +1397,13 @@ func TestTrapper_BuildingAttackDoesNotStampLastCombatSeconds(t *testing.T) {
 	}
 }
 
-// TestPerkPool_SilverFullyGatedCascadesToBronze verifies that when every Silver
-// perk for a unit's path has a requiresPerk gate the unit does not satisfy, the
-// pool cascades down to Bronze rather than returning empty. Keeps rank-ups
-// productive during development when higher tiers are sparse or fully gated.
-func TestPerkPool_SilverFullyGatedCascadesToBronze(t *testing.T) {
+// TestPerkPool_HigherTiersExhaustedCascadesToBronze verifies the rank-pool
+// cascade: when a unit's requested rank yields no eligible perks (here, every
+// Gold and Silver perk is already owned), the pool drops to the next lower rank
+// rather than returning empty — keeping rank-ups productive. Uses the Marksman
+// (whose Bronze slot is still perks) since the Trapper's Bronze is now an
+// ability pool, not a perk pool, so it can no longer be the cascade target.
+func TestPerkPool_HigherTiersExhaustedCascadesToBronze(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1503,34 +1413,32 @@ func TestPerkPool_SilverFullyGatedCascadesToBronze(t *testing.T) {
 		t.Skip("archer unit type not available; skipping cascade test")
 	}
 
-	archer.ProgressionPath = unitPathTrapper
-	archer.Rank = unitRankSilver
-	// Give the unit caltrops + every Silver perk that does NOT require a
-	// different Bronze trap. The remaining trap-specific Silvers (explosive_chain,
-	// exposed_weakness, lasting_flames) are gated by other Bronzes the unit does
-	// not own; barbed_field is already owned so it is filtered by ownership.
-	// Result: Silver pool is empty → cascade to Bronze.
-	archer.PerkIDs = []string{
-		"caltrops",
-		"extended_setup", "wider_nets", "rapid_deployment", "amplified_effects",
-		"barbed_field",
-	}
+	archer.ProgressionPath = unitPathMarksman
+	archer.Rank = unitRankGold
+	// Own every Silver and Gold Marksman perk so both higher-tier pools are
+	// exhausted by the ownership filter → cascade must fall through to Bronze.
+	archer.PerkIDs = append([]string{}, wantPathPools["marksman"][unitRankSilver]...)
+	archer.PerkIDs = append(archer.PerkIDs, wantPathPools["marksman"][unitRankGold]...)
 
-	pool := s.perkPoolForRankLocked(archer, unitRankSilver)
+	pool := s.perkPoolForRankLocked(archer, unitRankGold)
 
 	if len(pool) == 0 {
-		t.Fatal("expected cascade to Bronze when Silver is fully gated, got empty pool")
+		t.Fatal("expected cascade to Bronze when Silver+Gold are exhausted, got empty pool")
 	}
-	bronzePool := make(map[string]bool, len(wantPathPools["trapper"][unitRankBronze]))
-	for _, id := range wantPathPools["trapper"][unitRankBronze] {
+	bronzePool := make(map[string]bool, len(wantPathPools["marksman"][unitRankBronze]))
+	for _, id := range wantPathPools["marksman"][unitRankBronze] {
 		bronzePool[id] = true
+	}
+	owned := make(map[string]bool, len(archer.PerkIDs))
+	for _, id := range archer.PerkIDs {
+		owned[id] = true
 	}
 	for _, def := range pool {
 		if !bronzePool[def.ID] {
-			t.Errorf("cascade returned perk %q which is not in the trapper Bronze pool", def.ID)
+			t.Errorf("cascade returned perk %q which is not in the marksman Bronze pool", def.ID)
 		}
-		if def.ID == "caltrops" {
-			t.Error("cascade returned already-owned perk caltrops")
+		if owned[def.ID] {
+			t.Errorf("cascade returned already-owned perk %q", def.ID)
 		}
 	}
 }
@@ -1559,15 +1467,11 @@ func TestExplosiveTrap_TriggeredFlagVisibleInSnapshot(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	def := perkDefByID("explosive_trap")
-	if def == nil {
-		s.mu.Unlock()
-		t.Fatal("explosive_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "explosive_trap", "")
 
-	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
-	trap.TriggerRadius = def.Config["triggerRadius"]
-	trap.BurstDamage = int(def.Config["burstDamage"])
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, cfg.ExplosionRadius, 20.0)
+	trap.TriggerRadius = cfg.TriggerRadius
+	trap.BurstDamage = int(cfg.BurstDamage)
 	trapID := trap.ID
 
 	// Spawn enemy at the trap centre — well inside both trigger and explosion radii.
@@ -1616,8 +1520,9 @@ func TestExplosiveTrap_TriggeredFlagVisibleInSnapshot(t *testing.T) {
 // the blast fired, before BroadcastSnapshot (and thus Snapshot) could serialize it.
 //
 // This test drives the scenario exactly as loop.go does:
-//   s.Update(dt)           // runs effects → banners → traps in sequence
-//   snap := s.Snapshot()   // called AFTER Update returns
+//
+//	s.Update(dt)           // runs effects → banners → traps in sequence
+//	snap := s.Snapshot()   // called AFTER Update returns
 //
 // It must catch any regression where triggered=true is absent from the first
 // post-Update snapshot.
@@ -1630,16 +1535,12 @@ func TestExplosiveTrap_TriggeredVisibleAfterUpdate(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	def := perkDefByID("explosive_trap")
-	if def == nil {
-		s.mu.Unlock()
-		t.Fatal("explosive_trap perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "explosive_trap", "")
 
 	// Place trap at a neutral position with known radii.
-	trap := placeTrap(s, "explosive_trap", "p1", 0, 500, 500, def.Config["explosionRadius"], 30.0)
-	trap.TriggerRadius = def.Config["triggerRadius"]
-	trap.BurstDamage = int(def.Config["burstDamage"])
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 500, 500, cfg.ExplosionRadius, 30.0)
+	trap.TriggerRadius = cfg.TriggerRadius
+	trap.BurstDamage = int(cfg.BurstDamage)
 	trapID := trap.ID
 
 	// Enemy at the exact trap centre — unambiguously inside trigger radius.
@@ -1699,8 +1600,8 @@ func TestPerkPool_GoldReturnsGoldPerks(t *testing.T) {
 
 	archer.ProgressionPath = unitPathTrapper
 	archer.Rank = unitRankGold
+	grantTrapAbility(archer, "caltrops")
 	archer.PerkIDs = []string{
-		"caltrops",
 		"extended_setup", "wider_nets", "rapid_deployment", "amplified_effects",
 		"barbed_field",
 	}

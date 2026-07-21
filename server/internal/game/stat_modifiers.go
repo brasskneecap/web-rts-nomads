@@ -81,6 +81,20 @@ const (
 	statAttackRange = "attackRange"
 	statCritChance  = "critChance"
 	statCritMult    = "critMultiplier"
+	// statLifesteal is the fraction of damage-dealt an attacker heals for on
+	// every hit (0.1 = "heal 10% of the damage you deal"). A base-authorable
+	// stat with no typed field — a unit type carries a base lifesteal via
+	// UnitDef.BaseStats and perks/statuses/auras add to it; consumed at the
+	// canonical HP-loss point (applyLifestealLocked, lifesteal.go). The first
+	// genuinely NEW base-authorable stat, proving the vocabulary extends to
+	// derived combat properties.
+	statLifesteal = "lifesteal"
+	// statThorns is the fraction of an ATTACK's damage the DEFENDER reflects
+	// back at the attacker (0.25 = "reflect 25% of melee/attack damage taken").
+	// The defender-side twin of lifesteal — a base-authorable stat consumed at
+	// the attack-hit reaction hook (applyThornsLocked, thorns.go), the stat form
+	// of the retaliation perk.
+	statThorns = "thorns"
 
 	// Economy / workers — these get NEW read sites (gather/production/construction).
 	statGoldGatherRate            = "goldGatherRate"
@@ -242,6 +256,13 @@ var statRegistry = []statDef{
 	{statAttackRange, "Attack Range", true, false, false},
 	{statCritChance, "Crit Chance", true, true, false},
 	{statCritMult, "Crit Multiplier", true, false, false},
+	// Lifesteal: a 0-1 fraction of damage dealt healed back. IsFraction (an
+	// "add 0.1" is unambiguously +10 percentage points), not AuraOnly (it has a
+	// real read site, applyLifestealLocked).
+	{statLifesteal, "Lifesteal", true, true, false},
+	// Thorns: a 0-1 fraction of attack damage reflected to the attacker. Same
+	// IsFraction/AuraOnly shape as lifesteal (read site: applyThornsLocked).
+	{statThorns, "Thorns", true, true, false},
 	{statGoldGatherRate, "Gold Gather Rate", true, false, false},
 	{statWoodGatherRate, "Wood Gather Rate", true, false, false},
 	{statGatherSpeed, "Gather Speed", true, true, false},
@@ -297,6 +318,83 @@ func isAuraOnlyStat(id string) bool {
 		return d.AuraOnly
 	}
 	return false
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-unit BASE stats.
+//
+// Most stats' base is a typed Unit field (Damage, MoveSpeed, Armor, …) — that
+// field is the single source of truth and a designer edits it directly. A few
+// registered stats have NO typed field: their base was a hardcoded global
+// default (critChance = 5%, critMultiplier = 2×). statBaseAuthorable names those
+// stats so a designer can author a per-unit-type base value for them on
+// UnitDef.BaseStats (seeded onto Unit.BaseStats at spawn) — e.g. a naturally
+// crit-prone unit type authoring baseStats.critChance = 0.15. This is the first
+// step toward "a unit carries a base value for ANY registered stat"
+// (lifesteal, thorns, …): a new base-authorable stat is (1) an entry here,
+// (2) a statBaseDefault case, (3) a read site that folds
+// unitBaseStat(unit, stat) through effectiveStatLocked.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// statBaseAuthorable names the stats whose per-unit BASE value may be authored
+// on UnitDef.BaseStats. Restricted to stats with no typed Unit field, so the
+// map is never a second source of truth for a stat the unit already stores as
+// a field (validateUnitDef rejects an authored baseStats key outside this set —
+// same "no inert / no double-source authoring" rule the perk/status vocabulary
+// uses).
+var statBaseAuthorable = map[string]bool{
+	statCritChance: true,
+	statCritMult:   true,
+	statLifesteal:  true,
+	statThorns:     true,
+}
+
+// isBaseAuthorableStat reports whether a per-unit base value may be authored for
+// stat on UnitDef.BaseStats.
+func isBaseAuthorableStat(stat string) bool { return statBaseAuthorable[stat] }
+
+// statBaseDefault returns the base value a unit has for a base-authorable stat
+// when it authors none — the former hardcoded global default. 0 for any stat
+// with no registered default (which, combined with unitBaseStat, means an
+// unauthored unit behaves exactly as before this system existed).
+func statBaseDefault(stat string) float64 {
+	switch stat {
+	case statCritChance:
+		return defaultCritChance
+	case statCritMult:
+		return defaultCritMultiplier
+	}
+	return 0
+}
+
+// unitBaseStat returns a unit's BASE value for a base-authorable stat: its
+// authored per-unit-type value (Unit.BaseStats, seeded from UnitDef.BaseStats —
+// which respects advancement-effective defs, see spawnUnitFromDefLocked) if
+// present, else the stat's registered default. Pure read of the unit; safe on a
+// nil unit or a unit with no BaseStats map (returns the default), so every read
+// site behaves exactly as before when nothing authors a base.
+func unitBaseStat(unit *Unit, stat string) float64 {
+	if unit != nil {
+		if v, ok := unit.BaseStats[stat]; ok {
+			return v
+		}
+	}
+	return statBaseDefault(stat)
+}
+
+// copyBaseStats returns a shallow copy of an authored BaseStats map, or nil when
+// empty — so a unit that authors none carries a nil map (byte-identical to
+// before this system) and a per-unit mutation never scribbles on the shared
+// catalog def's map. Caller: spawnUnitFromDefLocked.
+func copyBaseStats(src map[string]float64) map[string]float64 {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
 }
 
 // ListStatIDs returns the registered stat ids in a stable sorted order. Used by

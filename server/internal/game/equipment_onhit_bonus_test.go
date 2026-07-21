@@ -37,9 +37,11 @@ func TestEquipmentBonus_AggregatesElementalAndProc(t *testing.T) {
 		t.Fatal("fire_sword should carry stat modifiers")
 	}
 	swordDamage := fireSword.Modifiers.Damage
-	wantProc, ok := firstProcFor(t, fireSword, ProcOnHit).ResolveParams()
-	if !ok {
-		t.Fatal("fire_sword on-hit proc failed to resolve params")
+	// fire_sword's on-hit proc now CASTS the fire_bolt ability (no resolved
+	// effect payload) — assert the ability reference survives aggregation.
+	wantAbility := firstProcFor(t, fireSword, ProcOnHit).Ability
+	if wantAbility == "" {
+		t.Fatal("fire_sword on-hit proc should reference an ability")
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0x0E1)
@@ -72,7 +74,7 @@ func TestEquipmentBonus_AggregatesElementalAndProc(t *testing.T) {
 		t.Fatalf("fire_sword should carry exactly one proc, got %d", len(u.EquipmentBonus.OnHitProcs))
 	}
 	p := u.EquipmentBonus.OnHitProcs[0]
-	if p.Params.Damage != wantProc.Damage || p.Params.DamageType != wantProc.DamageType || p.Params.ProjectileID != wantProc.ProjectileID || p.Chance <= 0 {
-		t.Fatalf("fire_sword proc unexpected: got %+v, want params %+v with chance > 0", p, wantProc)
+	if p.Ability != wantAbility || p.Chance <= 0 {
+		t.Fatalf("fire_sword proc unexpected: got %+v, want ability %q with chance > 0", p, wantAbility)
 	}
 }

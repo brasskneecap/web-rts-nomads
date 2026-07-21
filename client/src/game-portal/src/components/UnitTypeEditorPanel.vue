@@ -394,6 +394,26 @@
                 Capabilities are assigned automatically — move (has move speed),
                 attack (unless non-combat), gather (can gather), build (builder).
               </p>
+              <EditorField label="Base Stats" hint="(per-unit base for fieldless stats: crit chance, crit multiplier, lifesteal — fractions are 0–1)">
+                <RepeatableList
+                  :rows="baseStatRows.length"
+                  add-label="Add Base Stat"
+                  empty-text="No base stats — this unit uses the global defaults."
+                  @add="addBaseStatRow"
+                >
+                  <div v-for="(row, idx) in baseStatRows" :key="idx" class="unit-editor__map-row">
+                    <FilterableSelect
+                      :model-value="row.key"
+                      :options="baseStatOptions"
+                      placeholder="Select stat…"
+                      :aria-label="`Base stat ${idx + 1} key`"
+                      @update:model-value="row.key = $event"
+                    />
+                    <input v-model.number="row.value" type="number" step="0.05" :aria-label="`Base stat ${idx + 1} value`" />
+                    <button type="button" class="unit-editor__row-del" title="Remove" @click="removeBaseStatRow(idx)">✕</button>
+                  </div>
+                </RepeatableList>
+              </EditorField>
             </SectionCard>
 
             <!-- Abilities -->
@@ -770,6 +790,7 @@ import { fetchAuthoredAbilityDefs } from '@/game/abilities/abilityEditorApi'
 import type { AuthoredAbilityDef } from '@/game/abilities/abilityEditorForm'
 import { fetchAuthoredPerkDefs } from '@/game/perks/perkEditorApi'
 import type { AuthoredPerkDef } from '@/game/perks/perkEditorForm'
+import { baseAuthorableStatDefs } from '@/game/stats/statRegistry'
 import { pickChannelAbility } from '@/game/units/channelPreview'
 import {
   ingestExportFolder, packedSheetToObjectUrls, blobToBase64,
@@ -1243,6 +1264,7 @@ function duplicateUnit(id: string) {
   saveError.value = ''
   resourceCostRows.value = rowsFromMap(def.resourceCost)
   pathChancesRows.value = rowsFromMap(def.pathChances)
+  baseStatRows.value = rowsFromMap(def.baseStats)
   channelLoopStart.value = def.channelLoop?.start
   channelLoopEnd.value = def.channelLoop?.end
   lastSavedAt.value = null
@@ -1422,6 +1444,10 @@ async function removeFaction(id: string) {
 interface MapRow { key: string; value: number }
 const resourceCostRows = ref<MapRow[]>([])
 const pathChancesRows = ref<MapRow[]>([])
+// Base Stats: per-unit-type base values for fieldless registered stats
+// (critChance, critMultiplier, lifesteal). Edited as rows, mirrored into
+// form.baseStats via watch. Same MapRow machinery as pathChances/resourceCost.
+const baseStatRows = ref<MapRow[]>([])
 
 function rowsFromMap(map?: Record<string, number>): MapRow[] {
   return Object.entries(map ?? {}).map(([key, value]) => ({ key, value }))
@@ -1434,9 +1460,22 @@ function mapFromRows(rows: MapRow[]): Record<string, number> {
 function removeResourceCostRow(idx: number) { resourceCostRows.value.splice(idx, 1) }
 function addPathChanceRow() { pathChancesRows.value.push({ key: '', value: 0 }) }
 function removePathChanceRow(idx: number) { pathChancesRows.value.splice(idx, 1) }
+function addBaseStatRow() { baseStatRows.value.push({ key: '', value: 0 }) }
+function removeBaseStatRow(idx: number) { baseStatRows.value.splice(idx, 1) }
 
 watch(resourceCostRows, (rows) => { form.value.resourceCost = mapFromRows(rows) }, { deep: true })
 watch(pathChancesRows, (rows) => { form.value.pathChances = mapFromRows(rows) }, { deep: true })
+watch(baseStatRows, (rows) => { form.value.baseStats = mapFromRows(rows) }, { deep: true })
+
+// Base Stat options: only base-authorable stats (critChance, critMultiplier,
+// lifesteal) — the server rejects any other key. An already-set key is kept as
+// an option so an existing value never silently vanishes from the picker.
+const baseStatOptions = computed<FilterableOption[]>(() => {
+  const opts = new Map<string, string>()
+  for (const d of baseAuthorableStatDefs()) opts.set(d.id, d.label)
+  for (const row of baseStatRows.value) if (row.key && !opts.has(row.key)) opts.set(row.key, row.key)
+  return [...opts].map(([id, label]) => ({ id, label }))
+})
 
 // Path Chance keys are promotion paths that belong to THIS unit — offered as a
 // dropdown rather than free text. Any already-set key that isn't (or is no
@@ -1793,6 +1832,7 @@ function selectUnit(def: AuthoredUnitDef) {
   lastSavedAt.value = null
   resourceCostRows.value = rowsFromMap(def.resourceCost)
   pathChancesRows.value = rowsFromMap(def.pathChances)
+  baseStatRows.value = rowsFromMap(def.baseStats)
   channelLoopStart.value = def.channelLoop?.start
   channelLoopEnd.value = def.channelLoop?.end
   preview.value?.refresh()
@@ -1840,6 +1880,7 @@ function newUnit() {
   lastSavedAt.value = null
   resourceCostRows.value = []
   pathChancesRows.value = []
+  baseStatRows.value = []
   channelLoopStart.value = undefined
   channelLoopEnd.value = undefined
   preview.value?.refresh()

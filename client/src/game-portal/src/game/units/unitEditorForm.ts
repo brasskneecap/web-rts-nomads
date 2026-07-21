@@ -39,6 +39,11 @@ export interface AuthoredUnitDef {
   abilities?: string[]
   requiresBuildings?: string[]
   pathChances?: Record<string, number>
+  // Per-unit-type base values for fieldless registered stats (critChance,
+  // critMultiplier, lifesteal). Keyed by stat id → base value. Authored in the
+  // editor's Base Stats section; validated server-side (base-authorable keys,
+  // sane values). Absent/empty ⇒ the stat's global default.
+  baseStats?: Record<string, number>
   dominionPointDropChance?: number
   dominionPointAmount?: number
   spawnExp?: number
@@ -60,7 +65,7 @@ const MODELED_KEYS = [
   'projectile','projectileScale','goldGatherAmount','woodGatherAmount','maxMana',
   'manaRegenRate','visionRange','flyer','abilities','requiresBuildings','pathChances',
   'dominionPointDropChance','dominionPointAmount','spawnExp','experience','nonCombat',
-  'trainLabel','channelLoop','attackOrigin',
+  'trainLabel','channelLoop','attackOrigin','baseStats',
 ] as const
 
 export interface UnitEditorForm extends AuthoredUnitDef {
@@ -120,6 +125,9 @@ export function saveRequestFromForm(form: UnitEditorForm): AuthoredUnitDef {
   const out: Record<string, unknown> = { ...remainder }
   for (const [k, v] of Object.entries(modeled)) {
     if (v === undefined) continue
+    // Drop an empty baseStats map rather than emitting `"baseStats": {}` — the
+    // server treats absent and empty identically, and a bare {} is noise on disk.
+    if (k === 'baseStats' && (!v || Object.keys(v as Record<string, number>).length === 0)) continue
     out[k] = v
   }
   return out as AuthoredUnitDef

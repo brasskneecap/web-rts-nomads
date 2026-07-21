@@ -6,7 +6,7 @@ const fireShield: ItemDef = {
   id: 'fire_shield', displayName: 'Fire Shield', iconKey: 'fire_shield',
   kind: 'equipment', tier: 'rare', costGold: 0, category: 'Shield',
   modifiers: { armor: 35, blockChance: 0.15 },
-  procs: [{ trigger: 'onStruck', chance: 0.1, effect: 'fire_bolt_ignite', damage: 25, damageType: 'fire', projectileID: 'fire_bolt' }],
+  procs: [{ trigger: 'onStruck', chance: 0.1, ability: 'frost_bolt' }],
 }
 describe('formFromDef / saveRequestFromForm round-trip', () => {
   it('converts fractions to percents and back, and carries craft fields', () => {
@@ -20,7 +20,7 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     expect(form.procs).toHaveLength(1)
     expect(form.procs[0].trigger).toBe('onStruck')
     expect(form.procs[0].chancePct).toBe(10)
-    expect(form.procs[0].effect).toBe('fire_bolt_ignite')
+    expect(form.procs[0].ability).toBe('frost_bolt')
     expect(form.crafting.isRecipe).toBe(true)
     expect(form.crafting.craftCost).toBe(150)
     expect(form.crafting.recipeCost).toBe(300)
@@ -34,7 +34,7 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     expect(item.modifiers.armor).toBe(35)
     expect(item.modifiers.dodgeChance).toBeUndefined() // zero mods omitted
     // overrides all null → omitted
-    expect(item.procs).toEqual([{ trigger: 'onStruck', chance: 0.1, effect: 'fire_bolt_ignite' }])
+    expect(item.procs).toEqual([{ trigger: 'onStruck', chance: 0.1, ability: 'frost_bolt' }])
     // Crafting rides ON the item — an item IS its own recipe — with the craft
     // cost and the recipe cost kept distinct.
     expect(item.crafting).toEqual({
@@ -63,36 +63,47 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     expect(item.crafting.recipeCostGold).toBe(300)
   })
 
-  it('includes only non-null proc overrides', () => {
-    const form = createBlankForm()
-    form.id = 'x'
-    form.procs = [{ ...blankProc('onHit'), effect: 'lightning_chain', chancePct: 25, bounceCount: 4 }]
-    const item = saveRequestFromForm(form).item as Record<string, any>
-    expect(item.procs).toEqual([{ trigger: 'onHit', chance: 0.25, effect: 'lightning_chain', bounceCount: 4 }])
-  })
-
   it('saves every proc, including two on the same trigger', () => {
     const form = createBlankForm()
     form.id = 'storm_brand'
     form.procs = [
-      { ...blankProc('onHit'), effect: 'fire_bolt_ignite', chancePct: 10 },
-      { ...blankProc('onHit'), effect: 'lightning_chain', chancePct: 25 },
-      { ...blankProc('onStruck'), effect: 'frost_bolt_chill', chancePct: 50 },
+      { ...blankProc('onHit'), ability: 'fire_bolt', chancePct: 10 },
+      { ...blankProc('onHit'), ability: 'chain_lightning', chancePct: 25 },
+      { ...blankProc('onStruck'), ability: 'frost_bolt', chancePct: 50 },
     ]
     const item = saveRequestFromForm(form).item as Record<string, any>
     expect(item.procs).toEqual([
-      { trigger: 'onHit', chance: 0.1, effect: 'fire_bolt_ignite' },
-      { trigger: 'onHit', chance: 0.25, effect: 'lightning_chain' },
-      { trigger: 'onStruck', chance: 0.5, effect: 'frost_bolt_chill' },
+      { trigger: 'onHit', chance: 0.1, ability: 'fire_bolt' },
+      { trigger: 'onHit', chance: 0.25, ability: 'chain_lightning' },
+      { trigger: 'onStruck', chance: 0.5, ability: 'frost_bolt' },
     ])
   })
 
-  it('drops a proc row with no effect chosen', () => {
+  it('saves an ability proc (casts an ability, no effect/overrides)', () => {
+    const form = createBlankForm()
+    form.id = 'frosty_blade'
+    form.procs = [{ ...blankProc('onHit'), ability: 'frost_bolt', chancePct: 10 }]
+    const item = saveRequestFromForm(form).item as Record<string, any>
+    expect(item.procs).toEqual([{ trigger: 'onHit', chance: 0.1, ability: 'frost_bolt' }])
+  })
+
+  it('round-trips an ability proc through formFromDef', () => {
+    const form = formFromDef({
+      id: 'frosty_blade', displayName: 'Frosty Blade', iconKey: 'frosty_blade', kind: 'equipment',
+      tier: 'rare', category: 'Weapon', costGold: 0,
+      procs: [{ trigger: 'onHit', chance: 0.1, ability: 'frost_bolt' }],
+    } as any)
+    expect(form.procs[0].ability).toBe('frost_bolt')
+    const item = saveRequestFromForm(form).item as Record<string, any>
+    expect(item.procs).toEqual([{ trigger: 'onHit', chance: 0.1, ability: 'frost_bolt' }])
+  })
+
+  it('drops a proc row with no ability chosen', () => {
     const form = createBlankForm()
     form.id = 'x'
-    form.procs = [blankProc('onHit'), { ...blankProc('onStruck'), effect: 'fire_bolt_ignite' }]
+    form.procs = [blankProc('onHit'), { ...blankProc('onStruck'), ability: 'fire_bolt' }]
     const item = saveRequestFromForm(form).item as Record<string, any>
-    expect(item.procs).toEqual([{ trigger: 'onStruck', chance: 0.1, effect: 'fire_bolt_ignite' }])
+    expect(item.procs).toEqual([{ trigger: 'onStruck', chance: 0.1, ability: 'fire_bolt' }])
   })
 
   it('blank form: not craftable, everything off, empty elemental', () => {
@@ -130,14 +141,14 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     expect(item.crafting.inputs).toEqual(['broad_sword', 'broad_sword', 'broad_sword'])
   })
 
-  it('never leaks resolved proc wire fields through preservation', () => {
+  it('saves a proc as just trigger/chance/ability, no extra fields', () => {
     const withProc: ItemDef = {
       id: 'p', displayName: 'P', iconKey: 'p', kind: 'equipment', tier: 'rare', costGold: 0,
-      procs: [{ trigger: 'onHit', chance: 0.1, effect: 'fire_bolt_ignite', damage: 25, damageType: 'fire', projectileID: 'fire_bolt' }],
+      procs: [{ trigger: 'onHit', chance: 0.1, ability: 'fire_bolt' }],
     }
     const form = formFromDef(withProc)
     const item = saveRequestFromForm(form).item as Record<string, any>
-    expect(item.procs).toEqual([{ trigger: 'onHit', chance: 0.1, effect: 'fire_bolt_ignite' }])
+    expect(item.procs).toEqual([{ trigger: 'onHit', chance: 0.1, ability: 'fire_bolt' }])
     expect(item.overridden).toBeUndefined()
   })
 

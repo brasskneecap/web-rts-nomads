@@ -73,10 +73,10 @@ export function buildItemTooltipLines(def: ItemDef): string[] {
   // more than one on the same trigger.
   for (const proc of def.procs ?? []) {
     const pct = Math.round(proc.chance * 100)
-    const elem = proc.damageType.charAt(0).toUpperCase() + proc.damageType.slice(1)
+    // A proc casts an ability at what it hits.
     parts.push(proc.trigger === 'onStruck'
-      ? `${pct}% when hit: ${proc.damage} ${elem} bolt at the attacker`
-      : `${pct}% on hit: ${proc.damage} ${elem} bolt`)
+      ? `${pct}% when hit: cast ${proc.ability} at the attacker`
+      : `${pct}% on hit: cast ${proc.ability}`)
   }
 
   return parts

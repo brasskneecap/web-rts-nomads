@@ -28,16 +28,17 @@ import (
 //   - explosive_trap:  burstDamage 75, durationSeconds 20, explosionRadius 100, triggerRadius 50
 //   - marker_trap:    durationSeconds 12, markDuration 4, markMultiplier 0.2, radius 115
 //   - fire_pit:       base {damagePerSecond 16, radius 55}, silver {28, 75}, gold {45, 95},
-//                     durationSeconds 10 (flat across ranks — not in configByRank)
+//     durationSeconds 10 (flat across ranks — not in configByRank)
 func TestTrapCharacterization(t *testing.T) {
 	const eps = 1e-6
 
-	// spawnLoneTrapper builds a Trapper archer that owns exactly ONE perk (the
-	// bronze trap under test), at the given rank, with no modifier perks —
-	// reusing the same spawnPlayerUnitLocked + grantPerk idiom as the rest of
-	// trap_test.go / silver_perks_test.go. Falls back to "soldier" if archer
-	// isn't in the catalog, mirroring the existing helpers in trap_test.go.
-	spawnLoneTrapper := func(s *GameState, perkID, rank string) *Unit {
+	// spawnLoneTrapper builds a Trapper archer that owns exactly ONE trap
+	// ABILITY (the bronze trap under test), at the given rank, with no
+	// modifier perks — reusing the same spawnPlayerUnitLocked + grantTrapAbility
+	// idiom as the rest of trap_test.go / silver_perks_test.go. Falls back to
+	// "soldier" if archer isn't in the catalog, mirroring the existing helpers
+	// in trap_test.go.
+	spawnLoneTrapper := func(s *GameState, abilityID, rank string) *Unit {
 		u := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		if u == nil {
 			u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
@@ -45,8 +46,9 @@ func TestTrapCharacterization(t *testing.T) {
 		u.Visible = true
 		u.ProgressionPath = unitPathTrapper
 		u.Rank = rank
-		u.PerkIDs = nil // ensure no modifier perks are present
-		grantPerk(u, perkID)
+		u.PerkIDs = nil   // ensure no modifier perks are present
+		u.Abilities = nil // ensure no other trap ability is present
+		grantTrapAbility(u, abilityID)
 		return u
 	}
 
@@ -148,17 +150,12 @@ func TestTrapCharacterization(t *testing.T) {
 			s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 
 			unit := spawnLoneTrapper(s, tc.perkID, tc.rank)
-			if len(unit.PerkIDs) != 1 || unit.PerkIDs[0] != tc.perkID {
-				t.Fatalf("setup: unit should own exactly [%q], got %v", tc.perkID, unit.PerkIDs)
-			}
-
-			def := perkDefByID(tc.perkID)
-			if def == nil {
-				t.Fatalf("%s perk def not found", tc.perkID)
+			if len(unit.Abilities) != 1 || unit.Abilities[0] != tc.perkID {
+				t.Fatalf("setup: unit should own exactly ability [%q], got %v", tc.perkID, unit.Abilities)
 			}
 
 			beforeCount := len(s.Traps)
-			s.plantTrapLocked(unit, trapConfigFromPerkLocked(def, unit.Rank))
+			s.plantTrapLocked(unit, mustTrapAbilityConfig(t, tc.perkID, tc.rank))
 			if len(s.Traps) != beforeCount+1 {
 				t.Fatalf("plantTrapLocked: expected exactly 1 trap planted, got %d new traps",
 					len(s.Traps)-beforeCount)

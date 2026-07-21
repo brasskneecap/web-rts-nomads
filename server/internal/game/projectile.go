@@ -1649,9 +1649,8 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		if proj.AbilitySplashRadius > 0 {
 			s.applyAbilitySplashDamageLocked(proj.OwnerUnitID, proj.OwnerPlayerID, target.X, target.Y, proj.AbilitySplashRadius, proj.Damage, proj.DamageType, target.ID, proj.SourceAbilityID)
 		}
-		// On-hit slow: routed to the cold (chill) or physical track by the
-		// bolt's damage type. No-op when the proc carries no slow (zero fields).
-		s.applyProcSlowLocked(target.ID, proj.SlowMultiplier, proj.SlowDurationSeconds, proj.DamageType)
+		// On-hit slow (generic slow track). No-op when the proc carries no slow.
+		s.ApplySlowLocked(target.ID, proj.SlowMultiplier, proj.SlowDurationSeconds)
 		// On-hit burn: ignite the target with a fire DoT. No-op when the proc
 		// carries no burn. Credited to the firing unit (proj.OwnerUnitID).
 		s.applyProcBurnLocked(target.ID, proj.BurnDamagePerSecond, proj.BurnDurationSeconds, proj.OwnerUnitID)

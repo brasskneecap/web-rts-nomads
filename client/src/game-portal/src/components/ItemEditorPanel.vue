@@ -163,8 +163,8 @@
                 @add="addProc"
               >
                 <div v-for="(proc, i) in form.procs" :key="i" class="proc-block">
-                  <!-- Summary row: everything that identifies the proc at a
-                       glance. The nine override fields live behind the pencil. -->
+                  <!-- A proc rolls Chance on its Trigger and, on success, casts
+                       the chosen ability at what it hit. -->
                   <div class="proc-row">
                     <span class="proc-row__n">Proc {{ i + 1 }}</span>
                     <select :id="`ie-proc-${i}-trigger`" v-model="proc.trigger" :aria-label="`Proc ${i + 1} trigger`">
@@ -174,41 +174,12 @@
                       <input :id="`ie-proc-${i}-chance`" v-model.number="proc.chancePct" type="number" min="1" max="100" :aria-label="`Proc ${i + 1} chance`" />
                       <span>%</span>
                     </div>
-                    <select :id="`ie-proc-${i}-effect`" v-model="proc.effect" :aria-label="`Proc ${i + 1} effect`">
-                      <option value="" disabled>Select an effect…</option>
-                      <option v-for="p in procEffects" :key="p.id" :value="p.id">
-                        {{ p.id }} — {{ p.damage }} {{ p.damageType }}
-                      </option>
+                    <span class="proc-row__cast">cast</span>
+                    <select :id="`ie-proc-${i}-ability`" v-model="proc.ability" :aria-label="`Proc ${i + 1} ability`">
+                      <option value="" disabled>Cast which ability…</option>
+                      <option v-for="a in abilityIds" :key="a" :value="a">{{ a }}</option>
                     </select>
-                    <span class="proc-row__ovr">{{ overrideSummary(proc) }}</span>
-                    <button
-                      type="button"
-                      class="proc-row__act"
-                      :aria-expanded="overridesOpen[i] === true"
-                      :title="overridesOpen[i] ? 'Hide overrides' : 'Edit overrides'"
-                      @click="overridesOpen[i] = !overridesOpen[i]"
-                    >✎</button>
                     <button type="button" class="proc-row__act proc-block__remove" title="Remove proc" @click="removeProc(i)">✕</button>
-                  </div>
-
-                  <div v-if="overridesOpen[i]" class="proc-overrides">
-                    <p class="proc-overrides__hint">Blank = inherit from the effect.</p>
-                    <div class="proc-overrides__grid">
-                      <EditorField
-                        v-for="f in PROC_OVERRIDE_FIELDS"
-                        :key="f.key"
-                        :label="f.label"
-                        :for-id="`ie-proc-${i}-${f.key}`"
-                      >
-                        <input
-                          :id="`ie-proc-${i}-${f.key}`"
-                          :value="proc[f.key] ?? ''"
-                          :placeholder="effectPlaceholder(proc.effect, f.key)"
-                          type="number"
-                          @input="bindNullable(proc, f.key, $event)"
-                        />
-                      </EditorField>
-                    </div>
                   </div>
                 </div>
               </RepeatableList>
@@ -360,8 +331,8 @@ import IconPreview from '@/components/editor/IconPreview.vue'
 import ItemPreviewCard from '@/components/ItemPreviewCard.vue'
 import { fetchItemDefs } from '@/game/maps/catalog'
 import type { ItemDef, ItemTier } from '@/game/maps/itemDefs'
-import { EditorValidationError, MAX_ITEM_ICON_BYTES, deleteEditorItem, fetchProcEffectDefs, uploadItemIcon, saveEditorItem } from '@/game/items/itemEditorApi'
-import type { ProcEffectDef } from '@/game/items/itemEditorApi'
+import { EditorValidationError, MAX_ITEM_ICON_BYTES, deleteEditorItem, uploadItemIcon, saveEditorItem } from '@/game/items/itemEditorApi'
+import { fetchAuthoredAbilityDefs } from '@/game/abilities/abilityEditorApi'
 import { blankProc, createBlankForm, formFromDef, saveRequestFromForm } from '@/game/items/itemEditorForm'
 import type { ItemEditorForm, ProcForm } from '@/game/items/itemEditorForm'
 import { previewDefFromForm } from '@/game/items/itemEditorPreview'
@@ -370,7 +341,8 @@ import { getItemImageSourceUrl, listIconGroups } from '@/game/rendering/itemAsse
 import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
 
 const items = ref<ItemDef[]>([])            // full catalog, refreshed after saves
-const procEffects = ref<ProcEffectDef[]>([])
+// Ability ids a proc can cast at what it hits.
+const abilityIds = ref<string[]>([])
 const loadError = ref('')
 const search = ref('')
 const selectedId = ref('')                  // '' = nothing selected
@@ -395,10 +367,6 @@ function setAllGroups(on: boolean) {
   selectedGroups.clear()
   if (on) for (const g of iconGroups) selectedGroups.add(g.name)
 }
-
-// Overrides-expanded state per proc, keyed by list index. Indices shift when a
-// proc is removed, so removeProc re-keys it rather than leaving it stale.
-const overridesOpen = reactive<Record<number, boolean>>({})
 
 const TIER_OPTIONS: ItemTier[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 // Organizational grouping only — also picks the catalog subdirectory the def is
@@ -432,21 +400,6 @@ const FLAT_MOD_FIELDS: { key: keyof ItemEditorForm['mods']; label: string }[] = 
   { key: 'maxShield', label: 'Max Shield' },
 ]
 
-// The 9 nullable proc override fields — shared between ProcForm's type and
-// ProcEffectDef's optional fields, so `effect[key]` below type-checks without
-// a cast.
-type ProcNullableKey = Exclude<keyof ProcForm, 'trigger' | 'effect' | 'chancePct'>
-const PROC_OVERRIDE_FIELDS: { key: ProcNullableKey; label: string }[] = [
-  { key: 'damage', label: 'Damage' },
-  { key: 'projectileScale', label: 'Projectile Scale' },
-  { key: 'bounceCount', label: 'Bounce Count' },
-  { key: 'bounceRange', label: 'Bounce Range' },
-  { key: 'bounceDamageFalloff', label: 'Bounce Falloff' },
-  { key: 'slowMultiplier', label: 'Slow Multiplier' },
-  { key: 'slowDurationSeconds', label: 'Slow Duration (s)' },
-  { key: 'burnDamagePerSecond', label: 'Burn Damage/s' },
-  { key: 'burnDurationSeconds', label: 'Burn Duration (s)' },
-]
 
 // The combat events a proc can hang off. Adding a trigger here requires the
 // server to handle it too (game.ItemProcTrigger + rollEquipment*ProcsLocked).
@@ -558,48 +511,18 @@ const craftingSource = computed<'none' | 'recipe'>({
 function addProc() {
   if (!form.value) return
   form.value.procs.push(blankProc())
-  // A fresh proc opens with its overrides collapsed (blank = inherit).
-  overridesOpen[form.value.procs.length - 1] = false
 }
 
 function removeProc(index: number) {
   if (!form.value) return
   form.value.procs.splice(index, 1)
-  // overridesOpen is index-keyed: shift the tail down so the open/closed state
-  // still belongs to the proc the user opened.
-  const open = form.value.procs.map((_, i) => overridesOpen[i >= index ? i + 1 : i] ?? false)
-  for (const key of Object.keys(overridesOpen)) delete overridesOpen[Number(key)]
-  open.forEach((v, i) => { overridesOpen[i] = v })
-}
-
-/** "2 overrides" / "no overrides" — the count of fields the item re-tunes. */
-function overrideSummary(proc: ProcForm): string {
-  const n = PROC_OVERRIDE_FIELDS.filter((f) => proc[f.key] !== null).length
-  if (n === 0) return 'no overrides'
-  return `${n} override${n > 1 ? 's' : ''}`
-}
-
-function effectPlaceholder(effectId: string, key: ProcNullableKey): string {
-  const effect = procEffects.value.find((p) => p.id === effectId)
-  if (!effect) return ''
-  const value = effect[key]
-  return value === undefined ? '' : String(value)
-}
-
-// Nullable-override binding: v-model.number turns a cleared input into 0,
-// which is indistinguishable from "explicitly override to 0". Bind :value +
-// @input directly instead, so an empty string maps to null ("inherit").
-function bindNullable(proc: ProcForm, key: ProcNullableKey, ev: Event) {
-  const value = (ev.target as HTMLInputElement).value
-  proc[key] = value === '' ? null : Number(value)
 }
 
 // ── Preview + validation ────────────────────────────────────────────────────
 
-// The draft as the server would serve it — procs resolved against the effect
-// catalog so the preview can show "25 Fire bolt" for an unsaved item.
+// The draft as the server would serve it.
 const previewDef = computed<ItemDef>(() =>
-  previewDefFromForm(form.value ?? createBlankForm(), procEffects.value))
+  previewDefFromForm(form.value ?? createBlankForm()))
 
 // The recipe as the preview card renders it. Ingredients are ids on the form,
 // so resolve each to the icon a player would recognise; an id that names no
@@ -656,7 +579,7 @@ onMounted(async () => {
   clock = setInterval(() => { now.value = Date.now() }, 15_000)
   try {
     await reloadCatalog()
-    procEffects.value = await fetchProcEffectDefs()
+    abilityIds.value = (await fetchAuthoredAbilityDefs()).map((a) => a.id).sort()
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
   }
@@ -670,7 +593,6 @@ function resetStatus() {
   saveError.value = ''
   statusNote.value = ''
   lastSavedAt.value = null
-  for (const key of Object.keys(overridesOpen)) delete overridesOpen[Number(key)]
 }
 
 // ─── Id ← Display Name ──────────────────────────────────────────────────────

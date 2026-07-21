@@ -232,10 +232,6 @@ func TestMasterHuntsman_TrapEffectAndRadiusScaled(t *testing.T) {
 	if _, ok := getUnitDef("archer"); !ok {
 		t.Skip("archer not in unit catalog")
 	}
-	caltrops := perkDefByID("caltrops")
-	if caltrops == nil {
-		t.Skip("caltrops perk not in catalog")
-	}
 	wantEffectMult := 1 + nodeEffectPercent(t, masterHuntsmanID, "unitTrapEffectMul")/100
 	wantRadiusMult := 1 + nodeEffectPercent(t, masterHuntsmanID, "unitTrapRadiusMul")/100
 
@@ -243,21 +239,21 @@ func TestMasterHuntsman_TrapEffectAndRadiusScaled(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	grantPerk(attacker, "caltrops")
+	grantTrapAbility(attacker, "caltrops")
 	stats, ok := s.DebugEffectiveTrapStats(attacker)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false for caltrops owner")
 	}
 
-	cfg := caltrops.ConfigForRank(attacker.Rank)
-	wantRadius := cfg["radius"] * wantRadiusMult
-	wantDPS := cfg["damagePerSecond"] * wantEffectMult
+	cfg := mustTrapAbilityConfig(t, "caltrops", attacker.Rank)
+	wantRadius := cfg.Radius * wantRadiusMult
+	wantDPS := cfg.DamagePerSecond * wantEffectMult
 
 	if math.Abs(stats.Radius-wantRadius) > 1e-6 {
-		t.Errorf("trap Radius = %v, want %v (caltrops base %v × %v)", stats.Radius, wantRadius, cfg["radius"], wantRadiusMult)
+		t.Errorf("trap Radius = %v, want %v (caltrops base %v × %v)", stats.Radius, wantRadius, cfg.Radius, wantRadiusMult)
 	}
 	if math.Abs(stats.DamagePerSecond-wantDPS) > 1e-6 {
-		t.Errorf("trap DamagePerSecond = %v, want %v (caltrops base %v × %v)", stats.DamagePerSecond, wantDPS, cfg["damagePerSecond"], wantEffectMult)
+		t.Errorf("trap DamagePerSecond = %v, want %v (caltrops base %v × %v)", stats.DamagePerSecond, wantDPS, cfg.DamagePerSecond, wantEffectMult)
 	}
 }
 
@@ -268,10 +264,9 @@ func TestMasterHuntsman_TrapBonusComposesWithWiderNets(t *testing.T) {
 	if _, ok := getUnitDef("archer"); !ok {
 		t.Skip("archer not in unit catalog")
 	}
-	caltrops := perkDefByID("caltrops")
 	widerNets := perkDefByID("wider_nets")
-	if caltrops == nil || widerNets == nil {
-		t.Skip("caltrops or wider_nets perk not in catalog")
+	if widerNets == nil {
+		t.Skip("wider_nets perk not in catalog")
 	}
 	wantRadiusMult := 1 + nodeEffectPercent(t, masterHuntsmanID, "unitTrapRadiusMul")/100
 	widerNetsMult := widerNets.Config["radiusMultiplier"]
@@ -280,18 +275,18 @@ func TestMasterHuntsman_TrapBonusComposesWithWiderNets(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	grantPerk(attacker, "caltrops")
+	grantTrapAbility(attacker, "caltrops")
 	grantPerk(attacker, "wider_nets")
 	stats, ok := s.DebugEffectiveTrapStats(attacker)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	cfg := caltrops.ConfigForRank(attacker.Rank)
-	wantRadius := cfg["radius"] * widerNetsMult * wantRadiusMult
+	cfg := mustTrapAbilityConfig(t, "caltrops", attacker.Rank)
+	wantRadius := cfg.Radius * widerNetsMult * wantRadiusMult
 	if math.Abs(stats.Radius-wantRadius) > 1e-6 {
 		t.Errorf("trap Radius = %v, want %v (base %v × widerNets %v × advancement %v)",
-			stats.Radius, wantRadius, cfg["radius"], widerNetsMult, wantRadiusMult)
+			stats.Radius, wantRadius, cfg.Radius, widerNetsMult, wantRadiusMult)
 	}
 }
 

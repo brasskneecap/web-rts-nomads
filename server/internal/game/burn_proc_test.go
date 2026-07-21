@@ -20,14 +20,13 @@ func TestOnHitProc_BurnIgnitesOnLand(t *testing.T) {
 	s.nextUnitID++
 	s.addUnitLocked(target)
 
-	proc := EquipmentProc{Chance: 1.0, Params: ProcEffectParams{
+	procParams := ProcEffectParams{
 		Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt",
 		BurnDamagePerSecond: 8, BurnDurationSeconds: 3,
-	}}
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{proc}
+	}
 
-	// Fire the proc, then land the bolt (its own projectile).
-	s.rollEquipmentProcsLocked(attacker, target)
+	// Fire the proc effect directly, then land the bolt (its own projectile).
+	s.executeProcEffectLocked(procSourceFromUnit(attacker), target, procParams)
 	if len(s.Projectiles) != 1 {
 		t.Fatalf("expected 1 proc bolt, got %d", len(s.Projectiles))
 	}
@@ -48,19 +47,19 @@ func TestOnHitProc_BurnIgnitesOnLand(t *testing.T) {
 	if stack.SourceKind != burnSourceWeapon {
 		t.Errorf("burn SourceKind = %q, want %q (weapon, not trap)", stack.SourceKind, burnSourceWeapon)
 	}
-	if stack.DPS != proc.Params.BurnDamagePerSecond {
-		t.Errorf("burn DPS = %v, want %v", stack.DPS, proc.Params.BurnDamagePerSecond)
+	if stack.DPS != procParams.BurnDamagePerSecond {
+		t.Errorf("burn DPS = %v, want %v", stack.DPS, procParams.BurnDamagePerSecond)
 	}
-	if stack.Remaining != proc.Params.BurnDurationSeconds {
-		t.Errorf("burn Remaining = %v, want %v", stack.Remaining, proc.Params.BurnDurationSeconds)
+	if stack.Remaining != procParams.BurnDurationSeconds {
+		t.Errorf("burn Remaining = %v, want %v", stack.Remaining, procParams.BurnDurationSeconds)
 	}
 	if stack.OwnerUnitID != attacker.ID {
 		t.Errorf("burn OwnerUnitID = %d, want %d (the wielder)", stack.OwnerUnitID, attacker.ID)
 	}
 
 	// maxBurnRemaining feeds the client's burningRemaining → burning overlay.
-	if got := target.PerkState.maxBurnRemaining(); got != proc.Params.BurnDurationSeconds {
-		t.Errorf("maxBurnRemaining = %v, want %v", got, proc.Params.BurnDurationSeconds)
+	if got := target.PerkState.maxBurnRemaining(); got != procParams.BurnDurationSeconds {
+		t.Errorf("maxBurnRemaining = %v, want %v", got, procParams.BurnDurationSeconds)
 	}
 
 	// Tick the burn system to completion. The DoT deals fire damage over its
@@ -68,7 +67,7 @@ func TestOnHitProc_BurnIgnitesOnLand(t *testing.T) {
 	// a wiring regression can't hang the test.
 	const dt = 1.0 / gameTicksPerSecond
 	hpBefore := target.HP
-	ticks := int((proc.Params.BurnDurationSeconds+1.0)/dt) + 1
+	ticks := int((procParams.BurnDurationSeconds+1.0)/dt) + 1
 	for i := 0; i < ticks && len(target.PerkState.BurnStacks) > 0; i++ {
 		s.tickTrapperSilverDebuffsLocked(dt)
 	}
@@ -79,9 +78,9 @@ func TestOnHitProc_BurnIgnitesOnLand(t *testing.T) {
 	if lost <= 0 {
 		t.Errorf("burn dealt no damage over its duration (HP unchanged)")
 	}
-	maxTotal := int(proc.Params.BurnDamagePerSecond*proc.Params.BurnDurationSeconds) + 1
+	maxTotal := int(procParams.BurnDamagePerSecond*procParams.BurnDurationSeconds) + 1
 	if lost > maxTotal {
-		t.Errorf("burn dealt %d damage, exceeds authored total ~%d (DPS %v × %vs)", lost, maxTotal, proc.Params.BurnDamagePerSecond, proc.Params.BurnDurationSeconds)
+		t.Errorf("burn dealt %d damage, exceeds authored total ~%d (DPS %v × %vs)", lost, maxTotal, procParams.BurnDamagePerSecond, procParams.BurnDurationSeconds)
 	}
 	// The burn stack expires — a unit doesn't burn forever.
 	if len(target.PerkState.BurnStacks) != 0 {
@@ -132,23 +131,24 @@ func TestBurningOverlayAnchor_OnlyWhenBurning(t *testing.T) {
 	}
 }
 
-// TestFireSword_ProcIsWiredToBurn guards the shipped catalog: the fire_sword
-// proc carries a real burn (positive DPS for a positive duration). Asserted as
-// invariants, not pinned numbers, so a balance tweak doesn't break it.
-func TestFireSword_ProcIsWiredToBurn(t *testing.T) {
+// TestFireSword_ProcCastsFireBolt guards the shipped catalog: the fire_sword
+// proc now CASTS the Fire Bolt ability (the full-circle wiring) rather than
+// firing a bespoke burn proc effect. Fire Bolt itself carries the burn (a
+// damage-over-time composition), so the sword still ignites.
+func TestFireSword_ProcCastsFireBolt(t *testing.T) {
 	def, ok := getItemDef("fire_sword")
 	if !ok {
 		t.Fatal("fire_sword not in catalog")
 	}
 	p := firstProcFor(t, def, ProcOnHit)
-	params, ok := p.ResolveParams()
+	if p.Ability == "" {
+		t.Fatalf("fire_sword proc should cast an ability, got ability=%q", p.Ability)
+	}
+	adef, ok := getAbilityDef(p.Ability)
 	if !ok {
-		t.Fatalf("fire_sword proc effect %q is not a registered proc effect", p.Effect)
+		t.Fatalf("fire_sword proc ability %q is not a registered ability", p.Ability)
 	}
-	if params.BurnDamagePerSecond <= 0 {
-		t.Errorf("fire_sword burn needs a positive DPS, got %v", params.BurnDamagePerSecond)
-	}
-	if params.BurnDurationSeconds <= 0 {
-		t.Errorf("fire_sword burn needs a positive duration, got %v", params.BurnDurationSeconds)
+	if adef.DamageType != DamageFire {
+		t.Errorf("fire_sword proc ability %q damageType = %q, want fire", p.Ability, adef.DamageType)
 	}
 }

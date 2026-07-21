@@ -79,11 +79,28 @@
                   "type": "on_action_complete",
                   "actions": [
                     {
-                      "id": "chill",
-                      "type": "apply_status",
+                      "id": "chill_move",
+                      "type": "change_stat",
                       "config": {
-                        "status": "chill",
-                        "multiplier": 0.5
+                        "stat": "moveSpeed",
+                        "op": "multiply",
+                        "value": 0.5
+                      }
+                    },
+                    {
+                      "id": "chill_attack",
+                      "type": "change_stat",
+                      "config": {
+                        "stat": "attackSpeed",
+                        "op": "multiply",
+                        "value": 0.5
+                      }
+                    },
+                    {
+                      "id": "tint",
+                      "type": "apply_color_overlay",
+                      "config": {
+                        "color": "#96d6ff"
                       }
                     }
                   ]

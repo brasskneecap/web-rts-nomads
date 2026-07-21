@@ -140,6 +140,12 @@ type Unit struct {
 	BaseArmor           int
 	BaseAttackSpeed     float64
 	BaseMoveSpeed       float64
+	// BaseStats carries per-unit-type base values for registered stats that have
+	// no typed field above (critChance, critMultiplier, …). Seeded at spawn from
+	// UnitDef.BaseStats; read via unitBaseStat (stat_modifiers.go). Sparse and
+	// usually nil — a unit that authors none behaves on the stat's global
+	// default. Extends the "unit carries a base for any registered stat" model.
+	BaseStats           map[string]float64
 	XP                  int
 	XPValue             int // raw XP yielded when killed in "split" mode; seeded at spawn
 	XPProgressRemainder float64
@@ -543,17 +549,12 @@ type Unit struct {
 	// when it reaches 0, SlowedMultiplier is also cleared.
 	SlowedRemaining float64
 	// SlowedMultiplier is the movement speed fraction while slowed (e.g. 0.7 =
-	// 70% speed). Set by ApplySlowLocked; 0 when no slow is active.
-	SlowedMultiplier float64
-	// ColdSlowedRemaining / ColdSlowedMultiplier are the COLD (chill) slow track,
-	// separate from the physical slow above so a chilled unit can also carry a
-	// trap slow and both apply (they stack multiplicatively — see
-	// slowFactorLocked). Applied by ApplyColdSlowLocked (cold equipment procs),
-	// decayed alongside the physical slow, and drive the client's icy overlay.
-	ColdSlowedRemaining  float64
-	ColdSlowedMultiplier float64
-	ThreatTable          map[int]*ThreatEntry
-	TankedDamageByUnit   map[int]float64
+	// 70% speed). Set by ApplySlowLocked; 0 when no slow is active. This is the
+	// ONE generic slow track — the separate cold/chill track was retired (chill
+	// is now a change_stat + apply_color_overlay composition).
+	SlowedMultiplier   float64
+	ThreatTable        map[int]*ThreatEntry
+	TankedDamageByUnit map[int]float64
 	// DamageDealtByUnit accumulates damage this unit has taken from each
 	// attacker, keyed by attacker ID. On death the map is paid out so
 	// contributors earn damage XP only when the target actually dies.
@@ -1746,9 +1747,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 			StunnedRemaining:     unit.StunnedRemaining,
 			SlowedRemaining:      unit.SlowedRemaining,
 			SlowedMultiplier:     unit.SlowedMultiplier,
-			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
-			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
-			OverlayColor:         s.unitStatusOverlayColorLocked(unit.ID),
+			OverlayColor:         s.unitOverlayColorLocked(unit),
 			ArcaneCharge:         unit.ArcaneCharge,
 			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
 			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
@@ -2094,9 +2093,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			StunnedRemaining:     unit.StunnedRemaining,
 			SlowedRemaining:      unit.SlowedRemaining,
 			SlowedMultiplier:     unit.SlowedMultiplier,
-			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
-			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
-			OverlayColor:         s.unitStatusOverlayColorLocked(unit.ID),
+			OverlayColor:         s.unitOverlayColorLocked(unit),
 			ArcaneCharge:         unit.ArcaneCharge,
 			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
 			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
@@ -2413,7 +2410,13 @@ func (s *GameState) recomputeUnitSnapshotCacheLocked() {
 // perkBonusDamageMultiplierLocked.
 func (s *GameState) effectiveDamageRawLocked(unit *Unit, extraMult float64) float64 {
 	raw := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)
-	if stages := s.unitPerkStatModifiersLocked(unit, statDamage); len(stages) > 0 {
+	// Perk + status "damage" pool (unitStatStagesLocked), NO zone-aura merge —
+	// the HUD number has never included zone auras (a pre-existing scope gap, not
+	// a regression), so this deliberately uses the perk+status half of the
+	// chokepoint rather than effectiveStatLocked. Keeps the HUD reflecting a
+	// status-authored damage change_stat, byte-identical today (no status authors
+	// "damage").
+	if stages := s.unitStatStagesLocked(unit, statDamage); len(stages) > 0 {
 		raw = applyStatStages(raw, stages)
 	}
 	return raw
@@ -2665,9 +2668,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			StunnedRemaining:     unit.StunnedRemaining,
 			SlowedRemaining:      unit.SlowedRemaining,
 			SlowedMultiplier:     unit.SlowedMultiplier,
-			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
-			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
-			OverlayColor:         s.unitStatusOverlayColorLocked(unit.ID),
+			OverlayColor:         s.unitOverlayColorLocked(unit),
 			ArcaneCharge:         unit.ArcaneCharge,
 			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
 			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
@@ -3008,12 +3009,6 @@ func (s *GameState) Update(dt float64) {
 				unit.SlowedMultiplier = 0
 			}
 		}
-		if unit.ColdSlowedRemaining > 0 {
-			unit.ColdSlowedRemaining = math.Max(0, unit.ColdSlowedRemaining-dt)
-			if unit.ColdSlowedRemaining == 0 {
-				unit.ColdSlowedMultiplier = 0
-			}
-		}
 		// Trapper combat tail-window: decay toward 0 each tick regardless of
 		// unit type. Only archers set this to 1.5s (in tickUnitCombatLocked),
 		// so it is always 0 for non-archers and the check is cheap.
@@ -3125,16 +3120,11 @@ func (s *GameState) Update(dt float64) {
 		// it tracks ownership with no recompute. Computed before the >0 guard so
 		// an aura can grant regen to a unit whose base rate is 0. Identity (0,1)
 		// ⇒ exactly unit.HealthRegenPerSecond.
-		effectiveHealthRegen := unit.HealthRegenPerSecond
-		// Data-driven perk stat modifiers (PerkStatModifier{Stat: "healthRegen"})
-		// fold into the same merge via mergeZoneIntoBaseStage/applyStatStages.
-		// No perk authors statModifiers today, so this is byte-identical to
-		// the prior zone-only fold.
-		hrAdd, hrMul := s.playerStatModifierLocked(unit.OwnerID, statHealthRegen)
-		hrPerkStages := s.unitPerkStatModifiersLocked(unit, statHealthRegen)
-		if hrAdd != 0 || hrMul != 1 || len(hrPerkStages) > 0 {
-			effectiveHealthRegen = applyStatStages(effectiveHealthRegen, mergeZoneIntoBaseStage(hrPerkStages, hrAdd, hrMul))
-		}
+		// Fold the perk + status + zone-aura "healthRegen" pool through the
+		// shared chokepoint. Computed before the >0 guard so an aura/status can
+		// grant regen to a unit whose base rate is 0. Empty pool + no zone aura
+		// => identity, exactly unit.HealthRegenPerSecond as before.
+		effectiveHealthRegen := s.effectiveStatLocked(unit, unit.HealthRegenPerSecond, statHealthRegen)
 		if unit.HP > 0 && effectiveHealthRegen > 0 {
 			if unit.HP >= unit.MaxHP {
 				unit.HealthRegenAccumulator = 0

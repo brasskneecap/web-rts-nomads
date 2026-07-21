@@ -110,7 +110,99 @@ func describeAbilityProgram(a AbilityDef) string {
 	if desc := describeStatModifierOnlyAbility(a); desc != "" {
 		return desc
 	}
+	if desc := describeTrapAbility(a); desc != "" {
+		return desc
+	}
 	return describeLegacyAbility(abilityMechanicsShadow(a))
+}
+
+// describeTrapAbility recognizes a program whose gameplay effect is a
+// place_trap action — the Trapper's four traps (caltrops, fire_pit,
+// explosive_trap, marker_trap), which became pool abilities when the bronze
+// trap perks were retired. place_trap has no legacy AbilityDef field family to
+// recover into, so (exactly like describeOnDamageDealtLifestealAbility and
+// describeStatModifierOnlyAbility above) it is described straight from the
+// Program instead of routing through abilityMechanicsShadow.
+//
+// Clauses are emitted only for the stats a given trap actually authors, so one
+// generic builder covers all four trap shapes with no per-trap-type switch —
+// a new trap authored with the same config vocabulary describes itself for
+// free. Returns "" for any program with no place_trap action.
+func describeTrapAbility(a AbilityDef) string {
+	cfg, ok := findPlaceTrapConfig(a.Program)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Places %s", withIndefiniteArticle(humanizeID(cfg.TrapType)))
+	// Zone size: explosive_trap authors explosionRadius, the others radius.
+	radius := cfg.Radius
+	if radius == 0 {
+		radius = cfg.ExplosionRadius
+	}
+	if radius > 0 {
+		fmt.Fprintf(&b, " (%s radius)", trimFloat(radius))
+	}
+	var effects []string
+	if cfg.DamagePerSecond > 0 {
+		effects = append(effects, fmt.Sprintf("deals %s damage per second", trimFloat(cfg.DamagePerSecond)))
+	}
+	if cfg.SlowMultiplier > 0 && cfg.SlowMultiplier < 1 {
+		effects = append(effects, fmt.Sprintf("slows enemies to %s%% of their speed", trimFloat(cfg.SlowMultiplier*100)))
+	}
+	if cfg.BurstDamage > 0 {
+		clause := fmt.Sprintf("detonates for %s damage", trimFloat(cfg.BurstDamage))
+		if cfg.TriggerRadius > 0 {
+			clause += fmt.Sprintf(" when an enemy comes within %s", trimFloat(cfg.TriggerRadius))
+		}
+		effects = append(effects, clause)
+	}
+	if cfg.MarkMultiplier > 0 {
+		clause := fmt.Sprintf("marks enemies to take %s damage from all sources", signedPercent(cfg.MarkMultiplier))
+		if cfg.MarkDuration > 0 {
+			clause += fmt.Sprintf(" for %ss", trimFloat(cfg.MarkDuration))
+		}
+		effects = append(effects, clause)
+	}
+	if len(effects) > 0 {
+		b.WriteString(" that " + joinTrapEffectClauses(effects))
+	}
+	if cfg.DurationSeconds > 0 {
+		fmt.Fprintf(&b, ". Lasts %ss", trimFloat(cfg.DurationSeconds))
+	}
+	b.WriteString(".")
+	return b.String()
+}
+
+// withIndefiniteArticle prefixes a noun phrase with "a"/"an", or leaves it bare
+// when it reads as a plural (trailing "s"). Keeps generated trap prose
+// grammatical across trap names without a per-trap-type table: "a fire pit",
+// "an explosive trap", but "caltrops" (already plural).
+func withIndefiniteArticle(noun string) string {
+	if noun == "" {
+		return noun
+	}
+	if strings.HasSuffix(noun, "s") {
+		return noun
+	}
+	switch noun[0] {
+	case 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U':
+		return "an " + noun
+	}
+	return "a " + noun
+}
+
+// joinTrapEffectClauses renders 1..n trap effect clauses as readable prose:
+// "a", "a and b", "a, b and c".
+func joinTrapEffectClauses(parts []string) string {
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		return parts[0]
+	default:
+		return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
+	}
 }
 
 // describeStatModifierOnlyAbility recognizes a program whose ENTIRE gameplay
@@ -156,7 +248,7 @@ func describeStatModifierOnlyAbility(a AbilityDef) string {
 				}
 			case ActionDealDamage, ActionRestoreHealth, ActionSummonUnit,
 				ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley,
-				ActionCreateZone, ActionLoop:
+				ActionCreateZone, ActionLoop, ActionPlaceTrap:
 				// Any of these means this is NOT a pure stat-modifier ability
 				// — bail immediately so the normal recovery path handles it.
 				return ""
@@ -588,26 +680,41 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 				m.slowDurationSeconds = cfg.Duration
 			}
 		case ActionApplyStatusDuration:
-			// Decomposed shape (Shatter's authored form): the slow lives in a
-			// nested apply_status(chill|slow) inside the container's
-			// config.triggers, and the container — not the nested action — owns
-			// the duration (the nested apply_status carries none). Recover the
-			// multiplier from the nested action and the duration from the
-			// container, so the tooltip prose (and shatterDef's contract test)
-			// see the slow through the new shape exactly as they did the old
-			// top-level apply_status(slow).
+			// Decomposed shape (Shatter's authored form): the slow lives inside
+			// the container's config.triggers, and the container — not the nested
+			// action — owns the duration. Two authoring idioms recover to the same
+			// tooltip magnitude:
+			//   (1) a nested apply_status(chill|slow) — the legacy CC primitive,
+			//       still used by other abilities;
+			//   (2) a nested change_stat that MULTIPLIES moveSpeed — the
+			//       chill-as-composition form Shatter migrated to (paired with a
+			//       change_stat on attackSpeed + apply_color_overlay). The moveSpeed
+			//       multiply IS the slow; recovering it reproduces the exact
+			//       "slows by X%" prose the old apply_status(chill) produced.
+			// The attackSpeed multiply and the color overlay are deliberately not
+			// re-described as a second clause — one slow magnitude, as before.
 			var cfg applyStatusDurationConfig
 			decodeActionConfig(act.Config, &cfg)
 			for _, trig := range cfg.Triggers {
 				for _, nested := range trig.Actions {
-					if !nested.IsEnabled() || nested.Type != ActionApplyStatus {
+					if !nested.IsEnabled() {
 						continue
 					}
-					var sc applyStatusConfig
-					decodeActionConfig(nested.Config, &sc)
-					if sc.Status == "slow" || sc.Status == "chill" {
-						m.slowMultiplier = sc.Multiplier
-						m.slowDurationSeconds = cfg.Duration
+					switch nested.Type {
+					case ActionApplyStatus:
+						var sc applyStatusConfig
+						decodeActionConfig(nested.Config, &sc)
+						if sc.Status == "slow" || sc.Status == "chill" {
+							m.slowMultiplier = sc.Multiplier
+							m.slowDurationSeconds = cfg.Duration
+						}
+					case ActionChangeStat:
+						var csc changeStatConfig
+						decodeActionConfig(nested.Config, &csc)
+						if csc.Stat == statMoveSpeed && csc.Op == statOpMultiply {
+							m.slowMultiplier = csc.Value
+							m.slowDurationSeconds = cfg.Duration
+						}
 					}
 				}
 			}

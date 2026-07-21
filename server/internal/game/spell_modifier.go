@@ -285,7 +285,19 @@ func (s *GameState) perkSpellModifiersLocked(caster *Unit, def AbilityDef) []Spe
 //
 // Caller holds s.mu.
 func (s *GameState) effectiveSpellLocked(caster *Unit, def AbilityDef) EffectiveSpell {
-	return resolveEffectiveSpell(def, s.collectSpellModifiersLocked(caster, def))
+	eff := resolveEffectiveSpell(def, s.collectSpellModifiersLocked(caster, def))
+	// Fold the caster's perk-driven cooldown modifier (AbilityModifier.CooldownMult,
+	// composed by abilityScalarModifiersForCasterLocked) on top of the
+	// SpellModifier-resolved cooldown. This is the cast-path read-point for the
+	// Tier-A ability cooldown modifier — identity (1.0) for every ability whose
+	// caster owns no CooldownMult perk, so existing casts are unchanged; the
+	// Trapper's rapid_deployment is the first consumer, shortening its trap
+	// abilities' cooldowns. Applied to eff.Cooldown before EffectiveCooldown()
+	// clamps it against CastTime at the arm site (ability_cast.go).
+	if mods := s.abilityScalarModifiersForCasterLocked(caster, def.ID); mods.CooldownMult > 0 {
+		eff.Cooldown *= mods.CooldownMult
+	}
+	return eff
 }
 
 // effectiveAbilityDamageLocked scales a composable ability action's base

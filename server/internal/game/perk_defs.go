@@ -277,6 +277,15 @@ type AbilityModifier struct {
 	HealMult     float64 `json:"healMult,omitempty"`
 	ManaCostMult float64 `json:"manaCostMult,omitempty"`
 	RangeMult    float64 `json:"rangeMult,omitempty"`
+	// CooldownMult scales the target ability's effective cooldown. Folded into
+	// the cast-cooldown arm site via effectiveSpellLocked (spell_modifier.go),
+	// so a perk can make an ability come off cooldown faster (mult < 1) or
+	// slower (mult > 1). Re-added when rapid_deployment — the Trapper's "place
+	// traps 30% more often" perk — became a data perk modifying the four trap
+	// abilities' cooldowns, the concrete consumer that justifies the field (it
+	// had been removed earlier as inert under the "no unused authorable fields"
+	// rule). A zero/negative value is treated as unset (identity 1.0).
+	CooldownMult float64 `json:"cooldownMult,omitempty"`
 }
 
 // AbilityRider is a fragment of actions a perk grafts onto a target
@@ -510,6 +519,11 @@ type PerkAura struct {
 //                    Useful for Silver/Gold perks that only make sense alongside
 //                    a specific Bronze perk (e.g. explosive_chain requires
 //                    explosive_trap). Set in the JSON as "requiresPerk".
+//   - RequiresAbility — (optional) gate: this perk only appears in the pool when
+//                    the unit already KNOWS the named ability (unit.Abilities).
+//                    The ability-era analogue of RequiresPerk, used by the
+//                    trap-specific silver perks now that the four bronze traps
+//                    are pool ABILITIES. Set in the JSON as "requiresAbility".
 //   - Config       — perk-specific tuning values. Keys and their meanings are
 //                    documented in the JSON file alongside each perk entry.
 //   - Effect       — optional visual effect to queue on perk proc (see PerkEffect).
@@ -553,7 +567,16 @@ type PerkDef struct {
 	// filtering + display, NOT for rank-up selection (that is perksByRank).
 	Path         string             `json:"path,omitempty"`
 	RequiresPerk string             `json:"requiresPerk,omitempty"`
-	Config       map[string]float64 `json:"config"`
+	// RequiresAbility gates this perk on the unit already KNOWING an ability
+	// (unit.Abilities), the ability-era analogue of RequiresPerk. It exists so
+	// a Silver/Gold perk that upgrades a specific trap can gate on the unit
+	// having rolled that trap ABILITY from its bronze ability pool — the
+	// mechanism that replaced the bronze trap perks (see the trapper path's
+	// abilityPoolsByRank and the trap-specific silver perks barbed_field /
+	// explosive_chain / exposed_weakness / lasting_flames). Empty = no gate.
+	// Enforced alongside RequiresPerk in eligiblePerksAfterFiltersLocked.
+	RequiresAbility string             `json:"requiresAbility,omitempty"`
+	Config          map[string]float64 `json:"config"`
 	// ConfigByRank holds optional per-rank overrides keyed by the owning
 	// unit's CURRENT rank ("bronze" / "silver" / "gold"). When a unit reads
 	// this perk's config, values in ConfigByRank[unit.Rank] shadow the

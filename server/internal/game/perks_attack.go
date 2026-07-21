@@ -92,7 +92,7 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 	// perkStages is always nil and this is byte-identical to the prior
 	// zone-only fold.
 	add, mul := s.playerStatModifierLocked(unit.OwnerID, statAttackSpeed)
-	perkStages := s.unitPerkStatModifiersLocked(unit, statAttackSpeed)
+	perkStages := s.unitStatStagesLocked(unit, statAttackSpeed)
 	if add != 0 || mul != 1 || len(perkStages) > 0 {
 		effective := applyStatStages(unit.AttackSpeed+total, mergeZoneIntoBaseStage(perkStages, add, mul))
 		return effective - unit.AttackSpeed

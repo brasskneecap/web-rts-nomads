@@ -291,6 +291,7 @@ function applyFrame(i: number) {
     state.projectiles = []
     state.beams = []
     state.effects = []
+    state.traps = []
     return
   }
   const snap = frame.snapshot
@@ -298,6 +299,13 @@ function applyFrame(i: number) {
   state.projectiles = snap.projectiles ?? []
   state.beams = snap.beams ?? []
   state.effects = snap.effects ?? []
+  // traps: same direct-assign treatment as projectiles/beams/effects (the live
+  // path's own final step is likewise `this.traps = message.traps ?? []`, see
+  // GameState.applySnapshot). Without this a place_trap ability (the Trapper's
+  // caltrops / fire_pit / explosive_trap / marker_trap) previews as a cast that
+  // visibly does nothing — the trap IS in every captured frame's snapshot, it
+  // just never reached the renderer.
+  state.traps = snap.traps ?? []
 }
 
 // ── edit-mode synthetic scene (Phase 6b: drag-to-place) ─────────────────
@@ -386,13 +394,15 @@ function editModePoints(): Array<{ x: number; y: number }> {
 
 // applyEditModeScene writes the synthetic caster+scene-unit snapshot onto
 // the standalone GameState — the edit-mode equivalent of applyFrame above.
-// No projectiles/beams/effects exist before a cast is ever requested.
+// No projectiles/beams/effects/traps exist before a cast is ever requested
+// (clearing traps also drops any trap left over from a previous run's frames).
 function applyEditModeScene() {
   if (!state) return
   state.units = buildEditModeUnits(props.casterX ?? 0, props.casterY ?? 0, props.sceneUnits).map(mapUnitSnapshot)
   state.projectiles = []
   state.beams = []
   state.effects = []
+  state.traps = []
 }
 
 // ── floating damage/heal numbers (Task 9) ───────────────────────────────

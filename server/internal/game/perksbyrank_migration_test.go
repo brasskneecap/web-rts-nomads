@@ -30,7 +30,10 @@ var wantPathPools = map[string]map[string][]string{
 		"gold":   {"bullseye", "double_shot", "explosive_tips"},
 	},
 	"trapper": {
-		"bronze": {"caltrops", "explosive_trap", "fire_pit", "marker_trap"},
+		// Bronze is no longer a perk pool: the four bronze trap perks
+		// (caltrops/fire_pit/explosive_trap/marker_trap) migrated to pool
+		// abilities, granted via unit.Abilities rather than PerkIDs, so
+		// eligiblePerksForUnitAtRank has nothing to mirror at Bronze anymore.
 		"silver": {"amplified_effects", "barbed_field", "explosive_chain", "exposed_weakness", "extended_setup", "lasting_flames", "rapid_deployment", "wider_nets"},
 		"gold":   {"ascendant_infusion", "increased_deployment", "overload_protocol"},
 	},

@@ -71,6 +71,7 @@
           <input v-else :value="form.path || 'generic'" disabled />
         </label>
         <label>Requires Perk <input v-model="form.requiresPerk" list="perk-editor-perk-ids" placeholder="(none)" /></label>
+        <label>Requires Ability <input v-model="form.requiresAbility" list="perk-editor-ability-ids" placeholder="(none)" /></label>
       </section>
 
       <!-- Tooltip -->
@@ -165,6 +166,7 @@
             <label>Heal× <input v-model.number="row.healMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} heal mult`" /></label>
             <label>Mana× <input v-model.number="row.manaCostMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} mana cost mult`" /></label>
             <label>Range× <input v-model.number="row.rangeMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} range mult`" /></label>
+            <label>CD× <input v-model.number="row.cooldownMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} cooldown mult`" /></label>
           </div>
           <button type="button" class="perk-editor__row-del" title="Remove" @click="removeAbilityModifierRow(idx)">✕</button>
         </div>
@@ -394,12 +396,17 @@ interface AbilityModifierRow {
   healMult?: number | ''
   manaCostMult?: number | ''
   rangeMult?: number | ''
+  cooldownMult?: number | ''
 }
 const abilityModifierRows = ref<AbilityModifierRow[]>([])
 const abilityIds = ref<string[]>([])
 
+// Every mult the Go AbilityModifier struct carries must be listed here — a key
+// missing from this list is silently STRIPPED on save (abilityModifiersFromRows
+// rebuilds each entry from these keys only), which would quietly delete a
+// shipped perk's behavior.
 const ABILITY_MOD_MULT_KEYS = [
-  'damageMult', 'healMult', 'manaCostMult', 'rangeMult',
+  'damageMult', 'healMult', 'manaCostMult', 'rangeMult', 'cooldownMult',
 ] as const
 
 function rowsFromAbilityModifiers(mods?: AbilityModifier[]): AbilityModifierRow[] {

@@ -1,7 +1,7 @@
 {
   "id": "fire_sword",
   "displayName": "Fire Sword",
-  "description": "+5 damage. +5 fire damage on hit. 10% chance on hit to launch a firebolt (25 fire damage) that sets the target ablaze (8 fire/sec for 3s).",
+  "description": "+5 damage. +5 fire damage on hit. 10% chance on hit to cast Fire Bolt at the target — a firebolt that sets it ablaze (burning fire damage over time).",
   "iconKey": "fire_sword",
   "kind": "equipment",
   "tier": "rare",
@@ -20,7 +20,7 @@
     {
       "trigger": "onHit",
       "chance": 0.1,
-      "effect": "fire_bolt_ignite"
+      "ability": "fire_bolt"
     }
   ],
   "crafting": {

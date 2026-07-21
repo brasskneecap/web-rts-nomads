@@ -41,7 +41,7 @@ func TestEvasion_MeleeWhiffIsFullWhiff(t *testing.T) {
 	defer s.mu.Unlock()
 	attacker, target := evasionTestPair(t, s)
 	forceMaxBlock(target)
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Ability: "fire_bolt"}}
 
 	sawWhiff := false
 	for i := 0; i < 100 && !sawWhiff; i++ {

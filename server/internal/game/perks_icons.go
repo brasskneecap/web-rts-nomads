@@ -606,13 +606,10 @@ func (s *GameState) perkCooldownsLocked(unit *Unit) []protocol.PerkCooldownSnaps
 		// attack, so there's nothing to countdown-overlay on the perk icon.
 		case "rallying_banner":
 			add(perkID, unit.PerkState.BannerCooldownRemaining, cfg["cooldownSeconds"])
-		case "caltrops", "fire_pit", "explosive_trap", "marker_trap":
-			// Trap perks share a single TrapPlaceCooldownRemaining field on
-			// the unit because an archer only owns one bronze trap perk at a
-			// time. Total factors in rapid_deployment's CooldownMultiplier so
-			// the wipe matches the actual wait.
-			mods := s.trapModifiersForUnitLocked(unit)
-			add(perkID, unit.PerkState.TrapPlaceCooldownRemaining, cfg["placeIntervalSeconds"]*mods.CooldownMultiplier)
+		// Traps are abilities now (not perks): their placement cadence is the
+		// trap ability's own cooldown, surfaced through the ability snapshot's
+		// CooldownRemaining on the action bar — not a perk-icon wipe. So there
+		// is no trap case here anymore.
 		case "divine_aegis":
 			// Silver cleric pulse — surfaces the wipe so the player can see
 			// when the next protection wave will land on their nearby allies.

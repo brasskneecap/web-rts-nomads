@@ -65,19 +65,20 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Bronze(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	u := spawnUnitWithPerks(s, "archer", unitRankBronze, []string{"fire_pit"})
+	u := spawnUnitWithPerks(s, "archer", unitRankBronze, nil)
 	if u == nil {
 		t.Fatal("failed to spawn unit")
 	}
+	grantTrapAbility(u, "fire_pit")
 
 	snap := s.EffectiveTrapSnapshotLocked(u)
 	if snap == nil {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Bronze rank")
 	}
 
-	cfg := perkDefByID("fire_pit").ConfigForRank(unitRankBronze)
-	assertFloatEq(t, "Bronze DamagePerSecond", snap.DamagePerSecond, cfg["damagePerSecond"])
-	assertFloatEq(t, "Bronze Radius", snap.Radius, cfg["radius"])
+	cfg := mustTrapAbilityConfig(t, "fire_pit", unitRankBronze)
+	assertFloatEq(t, "Bronze DamagePerSecond", snap.DamagePerSecond, cfg.DamagePerSecond)
+	assertFloatEq(t, "Bronze Radius", snap.Radius, cfg.Radius)
 }
 
 // TestEffectiveTrapSnapshot_FirePit_RankScaling_Silver verifies that a Silver-
@@ -87,19 +88,20 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Silver(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	u := spawnUnitWithPerks(s, "archer", unitRankSilver, []string{"fire_pit"})
+	u := spawnUnitWithPerks(s, "archer", unitRankSilver, nil)
 	if u == nil {
 		t.Fatal("failed to spawn unit")
 	}
+	grantTrapAbility(u, "fire_pit")
 
 	snap := s.EffectiveTrapSnapshotLocked(u)
 	if snap == nil {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Silver rank")
 	}
 
-	cfg := perkDefByID("fire_pit").ConfigForRank(unitRankSilver)
-	assertFloatEq(t, "Silver DamagePerSecond", snap.DamagePerSecond, cfg["damagePerSecond"])
-	assertFloatEq(t, "Silver Radius", snap.Radius, cfg["radius"])
+	cfg := mustTrapAbilityConfig(t, "fire_pit", unitRankSilver)
+	assertFloatEq(t, "Silver DamagePerSecond", snap.DamagePerSecond, cfg.DamagePerSecond)
+	assertFloatEq(t, "Silver Radius", snap.Radius, cfg.Radius)
 }
 
 // TestEffectiveTrapSnapshot_FirePit_RankScaling_Gold verifies that a Gold-rank
@@ -109,19 +111,20 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Gold(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	u := spawnUnitWithPerks(s, "archer", unitRankGold, []string{"fire_pit"})
+	u := spawnUnitWithPerks(s, "archer", unitRankGold, nil)
 	if u == nil {
 		t.Fatal("failed to spawn unit")
 	}
+	grantTrapAbility(u, "fire_pit")
 
 	snap := s.EffectiveTrapSnapshotLocked(u)
 	if snap == nil {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Gold rank")
 	}
 
-	cfg := perkDefByID("fire_pit").ConfigForRank(unitRankGold)
-	assertFloatEq(t, "Gold DamagePerSecond", snap.DamagePerSecond, cfg["damagePerSecond"])
-	assertFloatEq(t, "Gold Radius", snap.Radius, cfg["radius"])
+	cfg := mustTrapAbilityConfig(t, "fire_pit", unitRankGold)
+	assertFloatEq(t, "Gold DamagePerSecond", snap.DamagePerSecond, cfg.DamagePerSecond)
+	assertFloatEq(t, "Gold Radius", snap.Radius, cfg.Radius)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,17 +138,18 @@ func TestEffectiveTrapSnapshot_Caltrops_WiderNets_Radius(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	u := spawnUnitWithPerks(s, "archer", unitRankBronze, []string{"caltrops", "wider_nets"})
+	u := spawnUnitWithPerks(s, "archer", unitRankBronze, []string{"wider_nets"})
 	if u == nil {
 		t.Fatal("failed to spawn unit")
 	}
+	grantTrapAbility(u, "caltrops")
 
 	snap := s.EffectiveTrapSnapshotLocked(u)
 	if snap == nil {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for caltrops + wider_nets unit")
 	}
 
-	caltropsRadius := perkDefByID("caltrops").Config["radius"]
+	caltropsRadius := mustTrapAbilityConfig(t, "caltrops", unitRankBronze).Radius
 	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
 	assertFloatEq(t, "Radius (caltrops + wider_nets)", snap.Radius, caltropsRadius*widerNets)
 }
@@ -157,17 +161,18 @@ func TestEffectiveTrapSnapshot_Caltrops_NoModifier_Radius(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	u := spawnUnitWithPerks(s, "archer", unitRankBronze, []string{"caltrops"})
+	u := spawnUnitWithPerks(s, "archer", unitRankBronze, nil)
 	if u == nil {
 		t.Fatal("failed to spawn unit")
 	}
+	grantTrapAbility(u, "caltrops")
 
 	snap := s.EffectiveTrapSnapshotLocked(u)
 	if snap == nil {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for caltrops-only unit")
 	}
 
-	caltropsRadius := perkDefByID("caltrops").Config["radius"]
+	caltropsRadius := mustTrapAbilityConfig(t, "caltrops", unitRankBronze).Radius
 	assertFloatEq(t, "Radius (caltrops, no modifier)", snap.Radius, caltropsRadius)
 }
 
@@ -222,36 +227,6 @@ func TestEffectiveTrapSnapshot_NoBronzeTrapPerk_ReturnsNil(t *testing.T) {
 // E. Meta-test: tooltipTemplate token → config key validation
 // ─────────────────────────────────────────────────────────────────────────────
 
-// effectiveTrapSnapshotFields is the compile-time-known set of fields exported
-// on protocol.EffectiveTrapSnapshot, expressed as lowercase JSON names so they
-// can be matched against {trap.key} tokens in tooltipTemplates. This list is
-// intentionally exhaustive — add here when the struct grows.
-var effectiveTrapSnapshotFields = map[string]struct{}{
-	"perkId":                    {},
-	"durationSeconds":           {},
-	"radius":                    {},
-	"triggerRadius":             {},
-	"placeInterval":             {},
-	"damagePerSecond":           {},
-	"burstDamage":               {},
-	"slowMultiplier":            {},
-	"markMultiplier":            {},
-	"markDuration":              {},
-	"barbedFieldRampPerSec":     {},
-	"barbedFieldMaxBonusDPS":    {},
-	"exposedWeakenedMultiplier": {},
-	"lastingFlamesBurnDuration": {},
-	"aftershockDelaySeconds":    {},
-}
-
-// bronzeTrapPerkIDs is the set of perk IDs that may author {trap.*} tokens.
-var bronzeTrapPerkIDs = map[string]struct{}{
-	"caltrops":       {},
-	"fire_pit":       {},
-	"explosive_trap": {},
-	"marker_trap":    {},
-}
-
 // tokenRe matches any {…} token in a tooltipTemplate.
 var tokenRe = regexp.MustCompile(`\{([^}]+)\}`)
 
@@ -261,7 +236,6 @@ var tokenRe = regexp.MustCompile(`\{([^}]+)\}`)
 //	"key+%"  → "key"
 //	"key:N"  → "key"
 //	"key"    → "key"
-//	"trap.key" → kept as-is so the caller can split on "."
 func extractTokenKey(raw string) string {
 	// strip :N
 	if idx := strings.IndexByte(raw, ':'); idx != -1 {
@@ -327,23 +301,17 @@ func TestTooltipTemplate_AllTokensReferenceValidKeys(t *testing.T) {
 			for _, v := range variants {
 				matches := tokenRe.FindAllStringSubmatch(v.template, -1)
 				for _, match := range matches {
-					raw := match[1] // e.g. "key%", "trap.radius", "key:2"
+					raw := match[1] // e.g. "key%", "key:2"
 					key := extractTokenKey(raw)
 
-					if strings.HasPrefix(key, "trap.") {
-						// {trap.*} tokens: only valid on the four bronze trap perks.
-						if _, isBronzeTrap := bronzeTrapPerkIDs[def.ID]; !isBronzeTrap {
-							t.Errorf("%s — {%s}: trap.* token on perk %q (not a bronze trap perk)", v.label, raw, def.ID)
-							continue
-						}
-						fieldName := strings.TrimPrefix(key, "trap.")
-						if _, ok := effectiveTrapSnapshotFields[fieldName]; !ok {
-							t.Errorf("%s — {%s}: perk %q — field %q does not exist on EffectiveTrapSnapshot", v.label, raw, def.ID, fieldName)
-						}
-						continue
-					}
-
-					// Non-trap token: must exist in the merged config.
+					// Every remaining token must exist in the merged config. The
+					// {trap.*} token family (validated against
+					// protocol.EffectiveTrapSnapshot) was retired along with the
+					// four bronze trap perks (caltrops/fire_pit/explosive_trap/
+					// marker_trap) — they are now pool abilities, whose place_trap
+					// action config carries no tooltipTemplate, so no catalog perk
+					// should author a {trap.*} token anymore. If one reappears it
+					// will fail here for not being a config key, which is correct.
 					if _, ok := mergedConfig[key]; !ok {
 						t.Errorf("%s — {%s}: perk %q — key %q not found in config (or any configByRank override)", v.label, raw, def.ID, key)
 					}

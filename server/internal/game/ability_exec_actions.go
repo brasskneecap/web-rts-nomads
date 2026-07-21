@@ -103,92 +103,45 @@ func (applyForceConfig) actionConfig() {}
 
 // ── apply_status ─────────────────────────────────────────────────────────
 
-// applyStatusConfig is the decoded config for the apply_status action. It
-// serves TWO distinct designs, discriminated at Execute time by whether
-// Triggers is non-empty:
+// applyStatusConfig is the decoded config for the apply_status action: a CC
+// EFFECT (chill / slow / stun / burn), in two placements discriminated at
+// Execute time by whether ctx.CurrentStatus is bound:
 //
-//   - LEGACY (Triggers empty — every apply_status action compileLegacyAbility
-//     has ever emitted, e.g. shatter's slow rider): Status/Multiplier/
-//     Duration/DPS/School are the only fields read, and Execute's three-case
-//     switch on Status routes to the pre-existing generic CC primitive seam
-//     (applyProcSlowLocked / ApplyStunLocked / applyAbilityBurnLocked)
-//     EXACTLY as it did before this subsystem existed — byte-identical
-//     behavior, proven by the golden equivalence tests
-//     (TestAbilityCompileGolden_Shatter et al.). The three CC primitives
-//     already have their own hardcoded overhead icons (debuff-stunned,
-//     debuff-slowed — activeDebuffIconsLocked).
-//   - AUTHORED (Triggers non-empty): Name/TickInterval/Stacking/MaxStacks/
-//     Triggers (fields derived from the dead StatusDef model type,
-//     ability_program.go) describe a first-class AbilityStatus object
-//     (ability_status.go) that fires its own on_status_tick/on_status_expire
-//     triggers through the shared executor — Status/Multiplier/DPS/School
-//     are ignored on this path (Duration is still read: it seeds the
-//     status's initial Remaining). No catalog ability uses this path today
-//     (TestCatalog_NoAbilityUsesStatusTickExpireTriggers) — it stays
-//     editor-reachable/dormant, same as before this task.
+//   - LEGACY standalone (ctx.CurrentStatus == nil — every apply_status the
+//     legacy compiler emits, e.g. shatter's compiled slow rider): Status plus
+//     Multiplier/DPS/School and its OWN Duration route to the pre-existing
+//     generic CC primitive seam (applyProcSlowLocked / ApplyStunLocked /
+//     applyAbilityBurnLocked / ApplyColdSlowLocked) — byte-identical to before
+//     this subsystem existed, proven by the golden equivalence tests
+//     (TestAbilityCompileGolden_Shatter et al.).
+//   - NESTED (ctx.CurrentStatus bound — the authored-today shape): nested
+//     inside an apply_status_duration's On Apply trigger, exactly like
+//     change_stat/apply_mark. It carries NO duration of its own (the editor
+//     drops the field; validation rejects one there); Execute derives the CC
+//     effect's duration from ctx.CurrentStatus.Remaining. Shatter uses this:
+//     apply_status_duration -> apply_status(chill).
 //
-// NESTED CC-EFFECT PATH (the "duration is its own action" model): the CC
-// path above is ALSO how apply_status is meant to be authored today — nested
-// inside an apply_status_duration's config.triggers (ability_status_duration.go),
-// exactly like change_stat/apply_mark. In that position its lifetime is owned
-// by the container: it carries NO duration of its own (the editor drops the
-// field; validation rejects a config duration there — see the Validate func),
-// and Execute derives the CC effect's duration from ctx.CurrentStatus.Remaining.
-// The status vocabulary gains "chill" — the cold-slow that drives the client's
-// icy-blue overlay (ColdSlowedRemaining track, combat_ai_cc.go) and stacks
-// multiplicatively with the physical "slow" track. This is what Shatter uses
-// (catalog/abilities/shatter): apply_status_duration -> apply_status(chill).
+// "chill" is the cold-slow that drives the client's icy-blue overlay
+// (ColdSlowedRemaining track, combat_ai_cc.go) and stacks multiplicatively with
+// the physical "slow" track.
 //
-// NOTE ON A REMOVED DESIGN: this struct previously ALSO carried
-// StatModifiers/Icon/IconKind (a same-session design that let apply_status
-// itself own a status's stat changes and overhead icon). That design was
-// replaced by the "duration is its own action" model:
-// apply_status_duration (ability_status_duration.go) now owns a status's
-// LIFETIME, and change_stat/apply_mark (same file) — nested inside it —
-// carry those effects instead, duration-agnostic. mark_of_weakness (the
-// pilot for both designs) was re-authored onto the new shape; see
-// ability_status_duration.go's file doc comment for the full writeup. Do
-// NOT re-add StatModifiers/Icon/IconKind here — that reintroduces the two
-// designs' overlap this replacement was written to remove.
-//
-// DESIGN CALL (kept from the original decision): this file could instead
-// have added a wholly separate action type (the launch_vortex-beside-
-// launch_projectile precedent) for the authored/legacy split above.
-// Rejected: a status is ONE concept whether it's a hardcoded slow or an
-// author-defined DoT/tick-driven effect — unlike a projectile vs. a
-// non-impacting vortex, which are genuinely different mechanics. Branching
-// inside one action, gated on Triggers, is additive (every existing
-// legacy-compiled action decodes it as nil/empty and takes the exact old
-// code path) and keeps that ONE concept as one ActionType.
+// RETIRED DESIGNS (do NOT re-add):
+//   - Name/TickInterval/Stacking/MaxStacks/Triggers, which once let apply_status
+//     ITSELF spawn a first-class ticking AbilityStatus (an "authored status").
+//     That role now belongs ENTIRELY to apply_status_duration
+//     (ability_status_duration.go), which owns a status's lifetime + its
+//     On Apply / On Duration Tick / On Complete triggers. apply_status is a
+//     plain CC effect again — a ticking/authored status is built via the
+//     container, never this action. (Removed once apply_status_duration made
+//     this path a dormant, never-shipped duplicate.)
+//   - StatModifiers/Icon/IconKind (an even earlier design) — replaced by
+//     change_stat/apply_mark nested in apply_status_duration.
 type applyStatusConfig struct {
 	Status     string     `json:"status"`
 	Multiplier float64    `json:"multiplier"`
 	Duration   float64    `json:"duration"`
 	DPS        float64    `json:"dps"`
 	School     DamageType `json:"school"`
-
-	// Authored-status-only fields below. Zero/empty for every legacy-compiled
-	// apply_status action — compileLegacyAbility/compileSlowRider never set
-	// these (enforced by TestCatalog_NoAbilityUsesStatusTickExpireTriggers).
-
-	// Name disambiguates multiple distinctly-named statuses authored by the
-	// same ability (AbilityStatus.Name / statusStackKey).
-	Name string `json:"name,omitempty"`
-	// TickInterval is the cadence the spawned AbilityStatus fires
-	// on_status_tick at (AbilityStatus.TickInterval — the runtime cadence
-	// driver, mirroring createZoneConfig.TickInterval; an on_status_tick
-	// trigger's own Timing.TickInterval, checked separately by the
-	// validator's walkTrigger, is authoring metadata only, exactly like
-	// on_zone_tick's).
-	TickInterval float64 `json:"tickInterval,omitempty"`
-	// Stacking / MaxStacks configure AbilityStatus.Stacking/MaxStacks — see
-	// those fields' doc comments for the refresh-vs-stack model.
-	Stacking  string `json:"stacking,omitempty"`
-	MaxStacks int    `json:"maxStacks,omitempty"`
-	// Triggers carries the compiled on_status_tick / on_status_expire
-	// trigger(s) an authored status fires. Non-empty means authored (see
-	// this struct's doc comment for the discriminator).
-	Triggers []AbilityTriggerDef `json:"triggers,omitempty"`
 }
 
 func (applyStatusConfig) actionConfig() {}
@@ -347,83 +300,27 @@ func init() {
 				if c.Duration != 0 {
 					out = append(out, ValidationIssue{Code: "invalid_property", Message: "apply_status nested under apply_status_duration derives its duration from the container — remove the duration field", Severity: "error"})
 				}
-				if len(c.Triggers) > 0 {
-					out = append(out, ValidationIssue{Code: "invalid_property", Message: "apply_status nested under apply_status_duration is a plain CC effect and cannot declare its own triggers", Severity: "error"})
-				}
 			} else if c.Duration <= 0 {
 				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "apply_status requires duration > 0 (or nest it under an apply_status_duration to derive one)", Severity: "error"})
 			}
-			// Authored path only (Triggers non-empty): the config's own
-			// TickInterval is the runtime cadence driver (mirrors
-			// createZoneConfig's identical, unconditional requirement), so it
-			// must be set whenever there's anything to tick against — even a
-			// status whose only trigger is on_status_expire still needs this to
-			// be a well-formed AbilityStatus once spawned. The legacy path
-			// (Triggers empty) needs no tickInterval at all — stun/slow/chill
-			// have no cadence and burn's ticking is owned entirely by the
-			// existing tickTrapperSilverDebuffsLocked loop.
-			if len(c.Triggers) > 0 && c.TickInterval <= 0 {
-				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "apply_status requires tickInterval > 0 when it declares triggers", Severity: "error"})
-			}
 			return out
 		},
-		// Phase 3 supported only the three legacy CC primitives (the ones with
-		// an existing generic gameplay seam). The AbilityStatus subsystem adds
-		// the authored fields below (name/tickInterval/stacking/maxStacks/
-		// triggers) so an author can define a custom on_status_tick/expire
-		// buff/debuff instead — see applyStatusConfig's doc comment for the
-		// discriminator. (Stat changes and overhead icons are authored via
-		// apply_status_duration + change_stat/apply_mark instead — see
-		// ability_status_duration.go — not via this action at all.)
+		// apply_status is a plain CC effect (chill/slow/stun/burn). It is
+		// authored nested inside an apply_status_duration (which owns the
+		// lifetime), so there is no "duration" editor control here; the legacy
+		// compiler still bakes a Duration into its standalone output's JSON.
 		Schema: ActionFieldSchema{Fields: []SchemaField{
+			// "chill" is the cold-slow effect — it drives the client's icy
+			// blue overlay via the ColdSlowedRemaining track (combat_ai_cc.go,
+			// coldSlowedRemaining on the wire); "slow" is the non-tinting
+			// physical track. The two stack multiplicatively (slowFactorLocked).
 			{Key: "status", Label: "Status", Control: "enum", Options: []string{"chill", "slow", "stun", "burn"}, Section: "Properties"},
 			{Key: "multiplier", Label: "Multiplier", Control: "percentage", Section: "Properties"},
-			// No "duration" editor control: apply_status is authored nested under
-			// an apply_status_duration, which owns the effect's lifetime (see
-			// applyStatusConfig's doc comment). The legacy compiler still bakes a
-			// Duration into its standalone output's config JSON directly.
 			{Key: "dps", Label: "DPS", Control: "number", Section: "Properties"},
 			{Key: "school", Label: "School", Control: "enum", Section: "Properties"},
-			{Key: "name", Label: "Name", Control: "text", Section: "Advanced"},
-			{Key: "tickInterval", Label: "Tick Interval", Control: "duration", Section: "Timing"},
-			{Key: "stacking", Label: "Stacking", Control: "enum", Options: []string{"refresh", "stack"}, Section: "Advanced"},
-			{Key: "maxStacks", Label: "Max Stacks", Control: "number", Section: "Advanced"},
-			// Config's on_status_tick/on_status_expire triggers are NOT
-			// re-declared here (a "triggers" nested_triggers field used to sit
-			// here): the flow view already renders config.triggers as real,
-			// editable, recursive FlowTriggerCards directly under this action
-			// (CONFIG_TRIGGER_ACTION_TYPES, programTree.ts) — a second,
-			// read-only inspector stub for the same data was pure redundancy.
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(applyStatusConfig)
-
-			// AUTHORED path discriminator (see applyStatusConfig's doc
-			// comment): Triggers non-empty. Spawns one AbilityStatus per live
-			// target instead of routing to a legacy CC primitive.
-			if len(c.Triggers) > 0 {
-				applied := make([]int, 0, len(targets))
-				for _, id := range targets {
-					u := s.getUnitByIDLocked(id)
-					if u == nil || u.HP <= 0 {
-						continue
-					}
-					s.spawnAbilityStatusLocked(&AbilityStatus{
-						AbilityID:    ctx.AbilityID,
-						Name:         c.Name,
-						CasterID:     ctx.CasterID,
-						TargetUnitID: id,
-						Remaining:    c.Duration,
-						TickInterval: c.TickInterval,
-						Triggers:     c.Triggers,
-						Stacking:     c.Stacking,
-						MaxStacks:    c.MaxStacks,
-					})
-					applied = append(applied, id)
-					ctx.trace("status_applied", ctx.currentActionPath, map[string]any{"unit": id, "status": c.Status, "authored": true})
-				}
-				return applied
-			}
 
 			// CC path: route onto the pre-existing generic CC primitives.
 			//
@@ -439,13 +336,13 @@ func init() {
 			//     output and any top-level authored use): the config's own
 			//     Duration is the only source, byte-identical to before.
 			//
-			// The cold "chill" track and the physical "slow" track are separate
-			// (they stack multiplicatively — slowFactorLocked, combat_ai_cc.go);
-			// "chill" always lands on the cold track (driving the icy overlay),
-			// while "slow" honors School (cold school still routes cold for the
-			// frozen legacy compiler output — applyProcSlowLocked). The "burn"
-			// case calls applyAbilityBurnLocked (not applyProcBurnLocked) — see
-			// that function's doc comment for the key-collision bug fix.
+			// "chill" and "slow" are the same generic move/attack slow (the
+			// dedicated cold-slow track was retired — chill's distinct icy tint
+			// now comes from an apply_color_overlay composition, not a separate
+			// CC track). Both land on the one slow track. School is no longer
+			// meaningful for CC routing. The "burn" case calls
+			// applyAbilityBurnLocked (not applyProcBurnLocked) — see that
+			// function's doc comment for the key-collision bug fix.
 			duration := c.Duration
 			if ctx.CurrentStatus != nil {
 				duration = ctx.CurrentStatus.Remaining
@@ -453,13 +350,8 @@ func init() {
 			applied := make([]int, 0, len(targets))
 			for _, id := range targets {
 				switch c.Status {
-				case "chill":
-					// Always the cold track — the icy-overlay slow (blue tint).
-					s.ApplyColdSlowLocked(id, c.Multiplier, duration)
-				case "slow":
-					// applyProcSlowLocked routes cold -> chill track; an empty/other
-					// school routes physical (see combat_ai_cc.go).
-					s.applyProcSlowLocked(id, c.Multiplier, duration, c.School)
+				case "chill", "slow":
+					s.ApplySlowLocked(id, c.Multiplier, duration)
 				case "stun":
 					s.ApplyStunLocked(id, duration)
 				case "burn":
@@ -509,8 +401,6 @@ func init() {
 				case "slow":
 					u.SlowedRemaining = 0
 					u.SlowedMultiplier = 0
-					u.ColdSlowedRemaining = 0
-					u.ColdSlowedMultiplier = 0
 				case "stun":
 					u.StunnedRemaining = 0
 				default:

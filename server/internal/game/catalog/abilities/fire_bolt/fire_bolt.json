@@ -1,0 +1,118 @@
+{
+  "id": "fire_bolt",
+  "displayName": "Fire Bolt",
+  "type": "spell",
+  "canTargetEnemies": true,
+  "castRange": 250,
+  "castTime": 0.5,
+  "manaCost": 10,
+  "cooldown": 5,
+  "damageType": "fire",
+  "category": "offensive",
+  "targetCount": 1,
+  "summonCount": 1,
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "closest_enemy_in_range",
+  "defaultAutoCast": true,
+  "icon": "projectile:fire_bolt",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "no_target",
+      "range": 0
+    },
+    "triggers": [
+      {
+        "id": "t1",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "a1",
+            "type": "launch_projectile",
+            "target": {
+              "source": "initial_target",
+              "ordering": "closest"
+            },
+            "config": {
+              "projectile": "fire_bolt",
+              "travelMode": "to_target",
+              "triggers": [
+                {
+                  "id": "impact",
+                  "type": "on_projectile_impact",
+                  "actions": [
+                    {
+                      "id": "sel",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "current_event"
+                      },
+                      "outputs": {
+                        "targets": "hit"
+                      }
+                    },
+                    {
+                      "id": "dmg",
+                      "type": "deal_damage",
+                      "input": {
+                        "targets": {
+                          "key": "hit"
+                        }
+                      },
+                      "config": {
+                        "amount": 25,
+                        "type": "fire"
+                      }
+                    },
+                    {
+                      "id": "burn",
+                      "type": "apply_status_duration",
+                      "input": {
+                        "targets": {
+                          "key": "hit"
+                        }
+                      },
+                      "config": {
+                        "duration": 3,
+                        "tickInterval": 1,
+                        "triggers": [
+                          {
+                            "id": "on_apply",
+                            "type": "on_action_complete",
+                            "actions": [
+                              {
+                                "id": "burn_tint",
+                                "type": "apply_color_overlay",
+                                "config": {
+                                  "color": "#ff6633"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "id": "burn_tick",
+                            "type": "on_tick",
+                            "actions": [
+                              {
+                                "id": "tickdmg",
+                                "type": "deal_damage",
+                                "config": {
+                                  "amount": 8,
+                                  "type": "fire"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

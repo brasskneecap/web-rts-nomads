@@ -1,20 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
-export type ProcEffectDef = {
-  id: string
-  damage: number
-  damageType: string
-  projectileID: string
-  projectileScale?: number
-  bounceCount?: number
-  bounceRange?: number
-  bounceDamageFalloff?: number
-  slowMultiplier?: number
-  slowDurationSeconds?: number
-  burnDamagePerSecond?: number
-  burnDurationSeconds?: number
-}
-
 // An item defines everything about itself: its stats, its purchase price, and —
 // in its `crafting` block — its ingredients and the two crafting prices. There is
 // no second entity to keep in sync: an item IS its own recipe.
@@ -34,13 +19,6 @@ export class EditorValidationError extends Error {
     this.name = 'EditorValidationError'
     this.serverMessage = message
   }
-}
-
-export async function fetchProcEffectDefs(): Promise<ProcEffectDef[]> {
-  const response = await fetch(`${API_BASE}/catalog/procs`)
-  if (!response.ok) throw new Error(`Failed to load proc effects: ${response.status}`)
-  const data = (await response.json()) as { procs: ProcEffectDef[] }
-  return data.procs
 }
 
 export async function saveEditorItem(req: EditorSaveRequest): Promise<void> {

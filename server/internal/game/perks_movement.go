@@ -55,20 +55,23 @@ func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
 	// the perk multiplier. workerMoveSpeed stacks on top for worker units. No
 	// active aura ⇒ (0, 1) and the worker term is skipped, returning perkMult.
 	//
-	// Data-driven perk stat modifiers (PerkStatModifier{Stat: "moveSpeed"})
-	// fold into the same (add, mul) bundle via mergeZoneIntoBaseStage /
-	// applyStatStages, ahead of the multiply-by-perkMult step. No perk authors
-	// statModifiers today, so this is byte-identical to the prior zone-only
-	// fold.
+	// Perk + STATUS + zone-aura moveSpeed, folded into one (add, mul) bundle via
+	// mergeZoneIntoBaseStage / applyStatStages, ahead of the multiply-by-perkMult
+	// step. Pulling the status emitter in here (unitStatStagesLocked, the
+	// perk+status pool) is what lets a status author change_stat(moveSpeed,
+	// multiply, X) and actually slow the unit — the chill-as-composition path.
+	// No status or perk authors a moveSpeed modifier today, so this stays
+	// byte-identical to the prior zone-only fold. worker units also fold
+	// workerMoveSpeed on top of the zone term.
 	add, mul := s.playerStatModifierLocked(unit.OwnerID, statMoveSpeed)
 	if unit.UnitType == "worker" {
 		wAdd, wMul := s.playerStatModifierLocked(unit.OwnerID, statWorkerMoveSpeed)
 		add += wAdd
 		mul *= wMul
 	}
-	moveSpeedPerkStages := s.unitPerkStatModifiersLocked(unit, statMoveSpeed)
-	if (add != 0 || mul != 1 || len(moveSpeedPerkStages) > 0) && unit.MoveSpeed > 0 {
-		effective := applyStatStages(unit.MoveSpeed, mergeZoneIntoBaseStage(moveSpeedPerkStages, add, mul)) * perkMult
+	moveSpeedStages := s.unitStatStagesLocked(unit, statMoveSpeed)
+	if (add != 0 || mul != 1 || len(moveSpeedStages) > 0) && unit.MoveSpeed > 0 {
+		effective := applyStatStages(unit.MoveSpeed, mergeZoneIntoBaseStage(moveSpeedStages, add, mul)) * perkMult
 		return effective / unit.MoveSpeed
 	}
 

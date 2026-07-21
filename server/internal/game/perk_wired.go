@@ -106,21 +106,21 @@ var wiredPerkIDs = map[string]struct{}{
 	"explosive_tips":  {},
 
 	// ─── archer / trapper (perks_trapper.go) ─────────────────────────────
-	"caltrops":              {}, // also perks.go, perks_icons.go
-	"fire_pit":              {}, // also perks.go, perks_icons.go
-	"explosive_trap":        {}, // also perks.go, perks_icons.go
-	"marker_trap":           {}, // also perks.go, perks_icons.go
-	"extended_setup":        {},
-	"wider_nets":            {},
-	"rapid_deployment":      {},
-	"amplified_effects":     {},
-	"explosive_chain":       {},
-	"barbed_field":          {},
-	"exposed_weakness":      {},
-	"lasting_flames":        {},
-	"ascendant_infusion":    {},
-	"overload_protocol":     {},
-	"increased_deployment":  {}, // trap.go
+	// caltrops / fire_pit / explosive_trap / marker_trap are NOT listed here
+	// anymore: the four traps became pool ABILITIES (catalog/abilities/<trap>),
+	// so their ids are no longer perks at all. rapid_deployment is also gone
+	// from this set — it became a data perk (AbilityModifier.CooldownMult on the
+	// four trap abilities) and is now wired purely via perkHasTypedBehavior.
+	"extended_setup":       {},
+	"wider_nets":           {},
+	"amplified_effects":    {},
+	"explosive_chain":      {},
+	"barbed_field":         {},
+	"exposed_weakness":     {},
+	"lasting_flames":       {},
+	"ascendant_infusion":   {},
+	"overload_protocol":    {},
+	"increased_deployment": {}, // trap.go
 
 	// ─── acolyte / cleric (perks_cleric.go, perks.go, perks_icons.go) ────
 	"sanctuary":            {}, // perks_icons.go (owner buff-icon case arm); projectile-damage-reduction effect itself is now data-driven via PerkDef.Auras (perk_aura_stat_cache.go) + the src.Kind=="projectile" gate at perks_defense.go's fold site — see perkHasTypedBehavior

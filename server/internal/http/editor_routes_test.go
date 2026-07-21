@@ -40,30 +40,6 @@ func newTestRouter(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func TestCatalogProcsRoute(t *testing.T) {
-	srv := newTestRouter(t)
-	resp, err := srv.Client().Get(srv.URL + "/catalog/procs")
-	if err != nil {
-		t.Fatalf("GET: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("status %d", resp.StatusCode)
-	}
-	var body struct {
-		Procs []map[string]any `json:"procs"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(body.Procs) < 3 {
-		t.Fatalf("expected >=3 procs, got %d", len(body.Procs))
-	}
-	if body.Procs[0]["id"] == "" {
-		t.Error("proc entries need ids")
-	}
-}
-
 // TestNewCatalogRoutes_ReturnNonEmptyExpectedKey exercises the five
 // previously-unrouted catalog endpoints. A ListXDefs() unit test can't catch
 // a JSON envelope key typo (e.g. "damageTypes" vs "damage_types") since the

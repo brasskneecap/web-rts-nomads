@@ -46,6 +46,61 @@ type placeTrapConfig struct {
 
 func (placeTrapConfig) actionConfig() {}
 
+// findPlaceTrapConfig walks an ability program for its first place_trap action
+// and returns that action's decoded placeTrapConfig. Used by the effective-trap
+// resolver (DebugEffectiveTrapStats, perks_trapper.go) to read a trap ability's
+// authored stats the same way plantOneTrapLocked reads them at cast time — the
+// ability def is the single source of truth for trap stats now that the bronze
+// trap perks are gone. Recurses into nested action children so a place_trap
+// buried under an on_action_complete trigger is still found (today's trap
+// abilities keep it flat under on_cast_complete). Returns ok=false when the
+// program has no place_trap action.
+func findPlaceTrapConfig(prog *AbilityProgram) (placeTrapConfig, bool) {
+	if prog == nil {
+		return placeTrapConfig{}, false
+	}
+	var walk func(triggers []AbilityTriggerDef) (placeTrapConfig, bool)
+	walk = func(triggers []AbilityTriggerDef) (placeTrapConfig, bool) {
+		for _, trg := range triggers {
+			for _, action := range trg.Actions {
+				if action.Type == ActionPlaceTrap {
+					var c placeTrapConfig
+					if len(action.Config) > 0 {
+						if err := json.Unmarshal(action.Config, &c); err != nil {
+							continue
+						}
+					}
+					return c, true
+				}
+				if c, ok := walk(action.Children); ok {
+					return c, true
+				}
+			}
+		}
+		return placeTrapConfig{}, false
+	}
+	return walk(prog.Triggers)
+}
+
+// trapConfigFromAbilityLocked resolves the base (rank-scaled) TrapConfig the
+// ability abilityID would plant. It is the ability-era counterpart of
+// trapConfigFromPerkLocked: instead of reading a bronze trap PerkDef's config,
+// it reads the ability's place_trap action config. Returns ok=false when the
+// ability has no def or no place_trap action. Caller holds s.mu (read/write) —
+// getAbilityDef is a pure catalog lookup, but this is only ever called from
+// locked contexts alongside the trap-modifier aggregators.
+func trapConfigFromAbilityLocked(abilityID, rank string) (TrapConfig, bool) {
+	def, ok := getAbilityDef(abilityID)
+	if !ok {
+		return TrapConfig{}, false
+	}
+	cfg, ok := findPlaceTrapConfig(def.Program)
+	if !ok {
+		return TrapConfig{}, false
+	}
+	return cfg.toTrapConfig(rank), true
+}
+
 // toTrapConfig builds a TrapConfig from c, applying any ConfigByRank[rank]
 // overrides on top of the base fields — mirrors PerkDef.ConfigForRank's
 // semantics (base values, overridden per-field by the rank block when
@@ -147,7 +202,16 @@ func init() {
 			}
 			tc := c.toTrapConfig(caster.Rank)
 			s.plantTrapLocked(caster, tc)
-			ctx.trace("trap_placed", ctx.currentActionPath, map[string]any{"trapType": c.TrapType})
+			// Zone size: explosive_trap authors explosionRadius, the others radius.
+			radius := tc.Radius
+			if radius == 0 {
+				radius = tc.ExplosionRadius
+			}
+			ctx.trace("trap_placed", ctx.currentActionPath, map[string]any{
+				"trapType": c.TrapType,
+				"radius":   radius,
+				"duration": tc.DurationSeconds,
+			})
 			return targets
 		},
 	})

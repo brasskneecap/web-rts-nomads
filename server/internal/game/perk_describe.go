@@ -333,7 +333,7 @@ func describePerkAbilityModifiers(mods []AbilityModifier) string {
 
 // abilityModifierField pairs one AbilityModifier scalar with its prose
 // label, in the fixed rendering order describeAbilityModifierClause walks:
-// damage, then healing, then mana cost, then range. This matches
+// damage, healing, mana cost, range, then cooldown. This matches
 // AbilityModifier's own field order (perk_defs.go) so the generated clause
 // order never depends on anything but that struct's declaration.
 type abilityModifierField struct {
@@ -352,6 +352,7 @@ func describeAbilityModifierClause(m AbilityModifier) string {
 		{m.HealMult, "healing"},
 		{m.ManaCostMult, "mana cost"},
 		{m.RangeMult, "range"},
+		{m.CooldownMult, "cooldown"},
 	}
 	var parts []string
 	for _, f := range fields {

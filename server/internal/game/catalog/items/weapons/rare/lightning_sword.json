@@ -1,7 +1,7 @@
 {
   "id": "lightning_sword",
   "displayName": "Lightning Sword",
-  "description": "+5 damage. +5 lightning damage on hit. 10% chance on hit to launch a lightning bolt (25 lightning damage) that arcs to 2 nearby enemies for 5 less each (25 \u00e2\u2020\u2019 20 \u00e2\u2020\u2019 15).",
+  "description": "+5 damage. +5 lightning damage on hit. 10% chance on hit to cast Chain Lightning at the target \u2014 a bolt that arcs between nearby enemies.",
   "iconKey": "lightning_sword",
   "kind": "equipment",
   "tier": "rare",
@@ -20,7 +20,7 @@
     {
       "trigger": "onHit",
       "chance": 0.1,
-      "effect": "lightning_chain"
+      "ability": "chain_lightning"
     }
   ],
   "crafting": {

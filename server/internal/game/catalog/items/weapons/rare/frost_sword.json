@@ -1,7 +1,7 @@
 {
   "id": "frost_sword",
   "displayName": "Frost Sword",
-  "description": "+5 damage. +5 cold damage on hit. 10% chance on hit to launch a frostbolt (25 cold damage) that chills the target, lowering its attack and move speed by 25% for 2s.",
+  "description": "+5 damage. +5 cold damage on hit. 10% chance on hit to cast Frost Bolt at the target — a chilling cold bolt that lowers attack and move speed and arcs to nearby enemies.",
   "iconKey": "frost_sword",
   "kind": "equipment",
   "tier": "rare",
@@ -20,7 +20,7 @@
     {
       "trigger": "onHit",
       "chance": 0.1,
-      "effect": "frost_bolt_chill"
+      "ability": "frost_bolt"
     }
   ],
   "crafting": {

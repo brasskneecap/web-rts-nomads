@@ -1,0 +1,49 @@
+{
+  "id": "caltrops",
+  "displayName": "Caltrops",
+  "type": "spell",
+  "canTargetEnemies": true,
+  "castRange": 220,
+  "castTime": 0,
+  "manaCost": 0,
+  "cooldown": 6,
+  "tags": [
+    "trap"
+  ],
+  "category": "offensive",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "closest_enemy_in_range",
+  "defaultAutoCast": true,
+  "icon": "perk-caltrops",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 220
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "place",
+            "type": "place_trap",
+            "config": {
+              "trapType": "caltrops",
+              "durationSeconds": 12,
+              "placeIntervalSeconds": 6,
+              "radius": 60,
+              "damagePerSecond": 6,
+              "slowMultiplier": 0.35
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

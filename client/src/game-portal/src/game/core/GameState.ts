@@ -98,13 +98,8 @@ export type Unit = {
   /** Remaining seconds on a PHYSICAL/generic slow (traps, concussive perks).
    *  Not visualized today. Mirrors UnitSnapshot.slowedRemaining. */
   slowedRemaining?: number
-  /** Effective speed fraction while physically slowed (0.7 = 30% slower). */
+  /** Effective speed fraction while slowed (0.7 = 30% slower). */
   slowedMultiplier?: number
-  /** Remaining seconds on a COLD (chill) slow. > 0 ⇒ the renderer paints an icy
-   *  overlay on the unit. Mirrors UnitSnapshot.coldSlowedRemaining. */
-  coldSlowedRemaining?: number
-  /** Effective speed fraction while chilled (0.75 = 25% slower). */
-  coldSlowedMultiplier?: number
   /** CSS hex color the renderer paints over the sprite while an
    *  apply_color_overlay status is active. Mirrors UnitSnapshot.overlayColor. */
   overlayColor?: string
@@ -226,8 +221,6 @@ export function mapUnitSnapshot(unit: UnitSnapshot): Unit {
     attackSpeed: unit.attackSpeed,
     slowedRemaining: unit.slowedRemaining,
     slowedMultiplier: unit.slowedMultiplier,
-    coldSlowedRemaining: unit.coldSlowedRemaining,
-    coldSlowedMultiplier: unit.coldSlowedMultiplier,
     overlayColor: unit.overlayColor,
     burningRemaining: unit.burningRemaining,
     arcaneCharge: unit.arcaneCharge,

@@ -1,8 +1,0 @@
-{
-  "id": "fire_bolt_ignite",
-  "damage": 25,
-  "damageType": "fire",
-  "projectileID": "fire_bolt",
-  "burnDamagePerSecond": 8,
-  "burnDurationSeconds": 3
-}

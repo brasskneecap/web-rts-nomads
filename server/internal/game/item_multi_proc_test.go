@@ -32,9 +32,9 @@ func TestEquipmentBonus_MultipleProcsPerTrigger(t *testing.T) {
 		ID: "test_storm_brand", DisplayName: "Storm Brand", IconKey: "test_storm_brand",
 		Kind: ItemKindEquipment, Tier: ItemTierRare, Category: "Weapon",
 		Procs: []ItemProc{
-			{Trigger: ProcOnHit, Chance: 0.1, Effect: "fire_bolt_ignite"},
-			{Trigger: ProcOnHit, Chance: 0.25, Effect: "lightning_chain"},
-			{Trigger: ProcOnStruck, Chance: 0.5, Effect: "frost_bolt_chill"},
+			{Trigger: ProcOnHit, Chance: 0.1, Ability: "fire_bolt"},
+			{Trigger: ProcOnHit, Chance: 0.25, Ability: "chain_lightning"},
+			{Trigger: ProcOnStruck, Chance: 0.5, Ability: "frost_bolt"},
 		},
 	})
 
@@ -51,15 +51,9 @@ func TestEquipmentBonus_MultipleProcsPerTrigger(t *testing.T) {
 	if onHit[0].Chance != 0.1 || onHit[1].Chance != 0.25 {
 		t.Errorf("onHit procs must keep catalog order and their own chances, got %+v", onHit)
 	}
-	// Each proc resolves its OWN effect payload — the second must not inherit
-	// the first's.
-	fire, _ := getProcEffectDef("fire_bolt_ignite")
-	chain, _ := getProcEffectDef("lightning_chain")
-	if onHit[0].Params != fire.ProcEffectParams {
-		t.Errorf("onHit[0] params = %+v, want the fire_bolt_ignite payload %+v", onHit[0].Params, fire.ProcEffectParams)
-	}
-	if onHit[1].Params != chain.ProcEffectParams {
-		t.Errorf("onHit[1] params = %+v, want the lightning_chain payload %+v", onHit[1].Params, chain.ProcEffectParams)
+	// Each proc keeps its OWN ability — the second must not inherit the first's.
+	if onHit[0].Ability != "fire_bolt" || onHit[1].Ability != "chain_lightning" {
+		t.Errorf("onHit proc abilities = [%q %q], want [fire_bolt chain_lightning]", onHit[0].Ability, onHit[1].Ability)
 	}
 
 	onStruck := unit.EquipmentBonus.OnStruckProcs
@@ -79,8 +73,8 @@ func TestMultipleProcs_AllRollOnOneHit(t *testing.T) {
 		ID: "test_double_proc", DisplayName: "Double Proc", IconKey: "test_double_proc",
 		Kind: ItemKindEquipment, Tier: ItemTierRare, Category: "Weapon",
 		Procs: []ItemProc{
-			{Trigger: ProcOnHit, Chance: 1.0, Effect: "fire_bolt_ignite"},
-			{Trigger: ProcOnHit, Chance: 1.0, Effect: "frost_bolt_chill"},
+			{Trigger: ProcOnHit, Chance: 1.0, Ability: "fire_bolt"},
+			{Trigger: ProcOnHit, Chance: 1.0, Ability: "frost_bolt"},
 		},
 	})
 
@@ -99,16 +93,16 @@ func TestMultipleProcs_AllRollOnOneHit(t *testing.T) {
 	dead := []int{}
 	s.resolveAttackHitLocked(attacker, target, 10, &dead)
 
+	// Both guaranteed procs cast their ability; fire_bolt and frost_bolt each
+	// launch a projectile, so a single hit produces two distinct bolts.
 	if len(s.Projectiles) != 2 {
 		t.Fatalf("both guaranteed procs must fire on one hit, got %d projectiles", len(s.Projectiles))
 	}
-	fire, _ := getProcEffectDef("fire_bolt_ignite")
-	frost, _ := getProcEffectDef("frost_bolt_chill")
 	got := map[string]bool{}
 	for _, p := range s.Projectiles {
 		got[p.Variant] = true
 	}
-	if !got[fire.ProjectileID] || !got[frost.ProjectileID] {
-		t.Errorf("expected one %q and one %q bolt, got %v", fire.ProjectileID, frost.ProjectileID, got)
+	if !got["fire_bolt"] || !got["frost_bolt"] {
+		t.Errorf("expected one fire_bolt and one frost_bolt, got %v", got)
 	}
 }

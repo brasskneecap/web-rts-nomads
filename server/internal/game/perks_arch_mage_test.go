@@ -171,10 +171,9 @@ func TestArcaneConduit_TriggersItemOnHitProcs(t *testing.T) {
 	defer s.mu.Unlock()
 	target := spawnEnemy(t, s, 360, 300)
 
-	guaranteedProc := EquipmentProc{
-		Chance: 1.0,
-		Params: ProcEffectParams{Damage: 10, DamageType: "arcane", ProjectileID: "fire_bolt"},
-	}
+	// A guaranteed on-hit proc that casts fire_bolt (which launches a projectile),
+	// so "the proc fired" is observable as exactly one new projectile.
+	guaranteedProc := EquipmentProc{Chance: 1.0, Ability: "fire_bolt"}
 
 	// Without the perk: equipped proc does NOT fire from a missile hit.
 	noPerk := spawnArchMageCasterLocked(s)

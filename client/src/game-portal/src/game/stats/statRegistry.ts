@@ -52,7 +52,16 @@ export const STAT_DEFS: StatDef[] = [
   { id: 'projectileDamageReduction', label: 'Projectile Damage Reduction', isFraction: true, auraOnly: true },
   { id: 'armorPercent', label: 'Percent Armor', isFraction: true, auraOnly: true },
   { id: 'healingReceived', label: 'Healing Received', isFraction: true, auraOnly: false },
+  { id: 'lifesteal', label: 'Lifesteal', isFraction: true, auraOnly: false },
+  { id: 'thorns', label: 'Thorns', isFraction: true, auraOnly: false },
 ]
+
+/** Stats a designer can author a per-unit-type BASE value for on a unit's
+ *  `baseStats` (mirrors Go's statBaseAuthorable, stat_modifiers.go): the stats
+ *  with NO typed Unit field, whose base is otherwise a hardcoded global default
+ *  (critChance 5%, critMultiplier 2×, lifesteal 0, thorns 0). Keep IN SYNC with
+ *  the Go map — the server rejects a baseStats key outside this set. */
+const BASE_AUTHORABLE_IDS = new Set(['critChance', 'critMultiplier', 'lifesteal', 'thorns'])
 
 const LABEL_BY_ID = new Map(STAT_DEFS.map((d) => [d.id, d.label]))
 const FRACTION_BY_ID = new Map(STAT_DEFS.map((d) => [d.id, d.isFraction]))
@@ -84,6 +93,13 @@ export function selfStatDefs(): StatDef[] {
  *  STAT_DEFS inline in a component. */
 export function allStatDefs(): StatDef[] {
   return STAT_DEFS
+}
+
+/** Stat options for a unit's Base Stats section (the "add stat" dropdown) —
+ *  only base-authorable stats (critChance, critMultiplier, lifesteal). Single
+ *  source of truth; do not filter STAT_DEFS inline in a component. */
+export function baseAuthorableStatDefs(): StatDef[] {
+  return STAT_DEFS.filter((d) => BASE_AUTHORABLE_IDS.has(d.id))
 }
 
 /** Stat operations as authored. */

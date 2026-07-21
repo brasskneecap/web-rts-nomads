@@ -44,18 +44,15 @@ func (s *GameState) ApplyStunLocked(targetID int, duration float64) {
 	}
 }
 
-// Slows come in independent CATEGORIES that are tracked and timed separately
-// and STACK multiplicatively (see slowFactorLocked):
+// There is ONE generic move/attack slow track (SlowedRemaining/
+// SlowedMultiplier): traps, melee concussive perks, and the legacy
+// apply_status(slow|chill) primitive all land on it via ApplySlowLocked. The
+// separate "cold" slow track was retired — chill is now a change_stat
+// composition (with its own apply_color_overlay tint), not a distinct CC track,
+// so there is nothing left that needs to stack independently of physical slow.
 //
-//   - Physical/generic slow (SlowedRemaining/SlowedMultiplier): traps, melee
-//     concussive perks. Applied via ApplySlowLocked.
-//   - Cold slow (ColdSlowedRemaining/ColdSlowedMultiplier): chill from cold
-//     equipment procs (frost_sword). Applied via ApplyColdSlowLocked. Drives
-//     the client's icy overlay.
-//
-// Within a category, refreshing follows refresh-stronger (keep the lower
-// multiplier) + refresh-longer (keep the greater duration), independently.
-// Across categories the two never overwrite each other.
+// Refreshing follows refresh-stronger (keep the lower multiplier) +
+// refresh-longer (keep the greater duration), independently.
 
 // slowTargetLocked validates a slow request and returns the target unit, or nil
 // when the request is a no-op (out-of-range values, missing/dead target).
@@ -91,32 +88,6 @@ func (s *GameState) ApplySlowLocked(targetID int, multiplier, duration float64) 
 	}
 }
 
-// ApplyColdSlowLocked stamps a COLD (chill) slow onto the target — a separate
-// track from the physical slow, so a chilled unit can also carry a trap slow
-// and both apply. Drives the client's icy overlay. No-op if target is not found
-// or is dead.
-//
-// Must be called under s.mu write lock.
-func (s *GameState) ApplyColdSlowLocked(targetID int, multiplier, duration float64) {
-	if target := s.slowTargetLocked(targetID, multiplier, duration); target != nil {
-		applySlowToTrack(&target.ColdSlowedRemaining, &target.ColdSlowedMultiplier, multiplier, duration)
-	}
-}
-
-// applyProcSlowLocked routes an equipment proc's on-hit slow to the correct
-// track by the proc's damage type: cold damage lands a chill (cold slow → icy
-// overlay), anything else lands a physical/generic slow. Both no-op on zero /
-// out-of-range values. The shared seam both the projectile and beam proc-land
-// paths call so a cold proc always chills and a physical proc never does.
-//
-// Must be called under s.mu write lock.
-func (s *GameState) applyProcSlowLocked(targetID int, multiplier, duration float64, dmgType DamageType) {
-	if dmgType == DamageCold {
-		s.ApplyColdSlowLocked(targetID, multiplier, duration)
-	} else {
-		s.ApplySlowLocked(targetID, multiplier, duration)
-	}
-}
 
 // applyProcBurnLocked ignites an equipment proc's target with a fire
 // damage-over-time stack (fire_sword). It reuses the shared burn system that
@@ -197,19 +168,16 @@ func (s *GameState) applyAbilityBurnLocked(targetID int, dps, duration float64, 
 	)
 }
 
-// slowFactorLocked returns the effective speed fraction for unit from ALL active
-// slow categories, composed multiplicatively (physical × cold). Returns 1.0
-// when nothing is active. Applied to both movement step (state.go Update()) and
-// attack cadence (state_combat.go) so every slow scales both.
+// slowFactorLocked returns the effective speed fraction for unit from the
+// generic slow track. Returns 1.0 when nothing is active. Applied to both the
+// movement step (state.go Update()) and attack cadence (state_combat.go) so a
+// slow scales both.
 //
 // This is a pure function of the unit pointer; no GameState receiver is needed.
 func slowFactorLocked(unit *Unit) float64 {
 	factor := 1.0
 	if unit.SlowedRemaining > 0 && unit.SlowedMultiplier > 0 {
 		factor *= unit.SlowedMultiplier
-	}
-	if unit.ColdSlowedRemaining > 0 && unit.ColdSlowedMultiplier > 0 {
-		factor *= unit.ColdSlowedMultiplier
 	}
 	return factor
 }

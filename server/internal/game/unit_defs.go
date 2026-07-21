@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"math"
 	"sort"
 )
 
@@ -199,6 +200,14 @@ type UnitDef struct {
 	// and the sum must be > 0 when the map is non-empty (loadUnitDefsByType).
 	PathChances map[string]float64 `json:"pathChances,omitempty"`
 
+	// BaseStats authors per-unit-type BASE values for registered stats that have
+	// no typed field above — critChance / critMultiplier today (their base was
+	// otherwise a hardcoded global default), and future base-authorable stats
+	// like lifesteal. Seeded onto Unit.BaseStats at spawn and read via
+	// unitBaseStat. Validated at load: every key must be a base-authorable stat
+	// (statBaseAuthorable) and the value finite/sane — see validateUnitDef.
+	BaseStats map[string]float64 `json:"baseStats,omitempty"`
+
 	// ── Advancement-granted bonuses (not authored in unit JSON) ──────────────
 	// These three fields are zero in the catalog and are only set by the Archer
 	// "Master Huntsman" advancement (advancement_defs.go effect kinds
@@ -378,6 +387,32 @@ func validateUnitDef(def *UnitDef) error {
 		}
 		if sum <= 0 {
 			return fmt.Errorf("unit %q: pathChances weights must sum to > 0", def.Type)
+		}
+	}
+	if len(def.BaseStats) > 0 {
+		// Sorted keys → the reported stat is deterministic when several are bad
+		// (determinism invariant; mirrors the PathChances loop above).
+		statIDs := make([]string, 0, len(def.BaseStats))
+		for stat := range def.BaseStats {
+			statIDs = append(statIDs, stat)
+		}
+		sort.Strings(statIDs)
+		for _, stat := range statIDs {
+			v := def.BaseStats[stat]
+			if !isBaseAuthorableStat(stat) {
+				return fmt.Errorf("unit %q: baseStats[%q] is not base-authorable — a per-unit base can only be set for a stat with no typed field (critChance, critMultiplier, lifesteal)", def.Type, stat)
+			}
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				return fmt.Errorf("unit %q: baseStats[%q] must be finite, got %v", def.Type, stat, v)
+			}
+			if v < 0 {
+				return fmt.Errorf("unit %q: baseStats[%q] must be >= 0, got %v", def.Type, stat, v)
+			}
+			// Fraction stats (critChance, lifesteal — a 0-1 ratio) are clamped to
+			// [0,1]; non-fraction ones (critMultiplier ≈ 2×) only require >= 0.
+			if isFractionStat(stat) && v > 1 {
+				return fmt.Errorf("unit %q: baseStats[%q] is a fraction and must be in [0,1], got %v", def.Type, stat, v)
+			}
 		}
 	}
 	for _, b := range def.RequiresBuildings {

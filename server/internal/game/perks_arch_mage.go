@@ -80,24 +80,8 @@ func (s *GameState) fireUnstableMagicLocked(caster, target *Unit, effectiveness 
 	if abilityID == "" {
 		return // no learned abilities yet — nothing to unleash
 	}
-	def, ok := getAbilityDef(abilityID)
-	if !ok {
-		return
-	}
-	eff := s.effectiveSpellLocked(caster, def)
-	eff.ManaCost = 0 // free proc: never spends mana or builds Arcane Charge
-	eff = scaleEffectiveSpellDamage(eff, effectiveness)
-	if def.TargetsPoint {
-		s.resolveAbilityCastAtPointLocked(caster, def, eff, target.X, target.Y)
-	} else {
-		// Route through the shared unit-targeted seam (branches on
-		// SchemaVersion exactly like resolveAbilityCastAtPointLocked does
-		// above) instead of reaching past it into the legacy-only
-		// resolveAbilityCastOnTargetLocked — see resolveAbilityCastWithEffLocked's
-		// doc comment for why that direct call was a silent no-op bug for a
-		// v2 unit-targeted spell.
-		s.resolveAbilityCastWithEffLocked(caster, def, eff, []*Unit{target})
-	}
+	// Reduced-effectiveness free cast via the shared proc-cast seam.
+	s.castAbilityAsProcLocked(caster, target, abilityID, effectiveness)
 }
 
 // randomLearnedAbilityLocked returns one of the caster's learned pool

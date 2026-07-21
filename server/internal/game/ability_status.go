@@ -126,21 +126,23 @@ type AbilityStatus struct {
 	// active — the full-body-tint sibling of Icon, set by apply_color_overlay
 	// (ability_color_overlay.go). Empty means no overlay (the zero-value/no-op
 	// case for every status that doesn't author one). Serialized onto
-	// UnitSnapshot.OverlayColor via unitStatusOverlayColorLocked; generalizes
+	// UnitSnapshot.OverlayColor via unitOverlayColorLocked; generalizes
 	// the hardcoded chill/blue overlay so any status can tint its target.
 	OverlayColor string
 }
 
-// unitStatusOverlayColorLocked returns the tint color of the first active
-// AbilityStatus on unitID that authored one (apply_color_overlay), or "" when
-// none. Mirrors the per-unit status scan activeDebuffIconsLocked uses for
-// overhead icons (perks_icons.go). First-writer-wins when a unit somehow
-// carries two color-overlay statuses at once — a deliberate, deterministic
-// pick (append order, never map iteration) rather than blending. Caller holds
-// s.mu.
-func (s *GameState) unitStatusOverlayColorLocked(unitID int) string {
+// unitOverlayColorLocked returns the CSS color the client paints over unit's
+// sprite, or "" for no overlay — the ONE place the sprite tint is decided. The
+// first live authored apply_color_overlay status on the unit wins (append
+// order — a deterministic pick, never blending); otherwise no overlay. A status
+// authors its own tint (Shatter/frost_bolt's chill authors the icy blue
+// explicitly, a poison could author green). Caller holds s.mu.
+func (s *GameState) unitOverlayColorLocked(unit *Unit) string {
+	if unit == nil {
+		return ""
+	}
 	for _, st := range s.AbilityStatuses {
-		if st == nil || st.TargetUnitID != unitID || st.OverlayColor == "" {
+		if st == nil || st.TargetUnitID != unit.ID || st.OverlayColor == "" {
 			continue
 		}
 		return st.OverlayColor

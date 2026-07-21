@@ -1047,11 +1047,7 @@ func TestSanctuaryMigration_OrderingGuard_MarkThenSanctuaryThenFlatReduction(t *
 	// Drive a mark stack directly (same pattern as trap_test.go's mark-stack
 	// tests) using marker_trap's authored markMultiplier — a real catalog
 	// value, not a hardcoded balance literal.
-	markerDef := perkDefByID("marker_trap")
-	if markerDef == nil {
-		t.Fatal("marker_trap perk def not found")
-	}
-	markMult := markerDef.Config["markMultiplier"]
+	markMult := mustTrapAbilityConfig(t, "marker_trap", "").MarkMultiplier
 	if markMult <= 0 {
 		t.Fatalf("setup: marker_trap markMultiplier must be > 0, got %.4f", markMult)
 	}

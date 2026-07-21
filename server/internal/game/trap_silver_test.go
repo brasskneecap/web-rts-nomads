@@ -41,9 +41,9 @@ func newTrapSilverState(t *testing.T) *GameState {
 	return s
 }
 
-// spawnTrapArcher spawns an archer for "p1" at (400,400) with a Bronze trap
-// perk already granted, ready for placement (LastCombatSeconds set, cooldown 0).
-func spawnTrapArcher(t *testing.T, s *GameState, trapPerkID string) *Unit {
+// spawnTrapArcher spawns an archer for "p1" at (400,400) with a trap ability
+// already granted, ready for placement (LastCombatSeconds set, cooldown 0).
+func spawnTrapArcher(t *testing.T, s *GameState, trapAbilityID string) *Unit {
 	t.Helper()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -55,10 +55,28 @@ func spawnTrapArcher(t *testing.T, s *GameState, trapPerkID string) *Unit {
 		t.Fatal("spawnTrapArcher: failed to spawn unit")
 	}
 	u.Visible = true
-	u.PerkIDs = append(u.PerkIDs, trapPerkID)
+	grantTrapAbility(u, trapAbilityID)
 	u.PerkState.LastCombatSeconds = 1.5
 	u.PerkState.TrapPlaceCooldownRemaining = 0
 	return u
+}
+
+// rapidDeploymentCooldownMultFor returns the CooldownMult that rapid_deployment's
+// AbilityModifiers apply to the given trap ability id. Derived from the perk
+// def itself so tests never pin the balance constant.
+func rapidDeploymentCooldownMultFor(t *testing.T, trapID string) float64 {
+	t.Helper()
+	def := perkDefByID("rapid_deployment")
+	if def == nil {
+		t.Fatal("rapid_deployment perk def not found")
+	}
+	for _, m := range def.AbilityModifiers {
+		if m.Target == trapID {
+			return m.CooldownMult
+		}
+	}
+	t.Fatalf("rapid_deployment has no AbilityModifiers entry for target %q", trapID)
+	return 0
 }
 
 // assertFloatEq fails if got and want differ by more than 1e-6.
@@ -85,23 +103,20 @@ func TestTrapModifiers_Identity_BronzeCaltropsUnchanged(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"caltrops"}
+	grantTrapAbility(u, "caltrops")
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false for unit with caltrops")
 	}
 
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
+	cfg := mustTrapAbilityConfig(t, "caltrops", u.Rank)
 
-	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, def.Config["durationSeconds"])
-	assertFloatEq(t, "Radius", stats.Radius, def.Config["radius"])
-	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, def.Config["placeIntervalSeconds"])
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, def.Config["damagePerSecond"])
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, def.Config["slowMultiplier"])
+	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, cfg.DurationSeconds)
+	assertFloatEq(t, "Radius", stats.Radius, cfg.Radius)
+	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, cfg.PlaceIntervalSeconds)
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, cfg.DamagePerSecond)
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, cfg.SlowMultiplier)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,21 +134,22 @@ func TestTrapModifiers_ExtendedSetup_DurationCaltrops(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"caltrops", "extended_setup"}
+	grantTrapAbility(u, "caltrops")
+	u.PerkIDs = []string{"extended_setup"}
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	caltrops := perkDefByID("caltrops").Config
+	caltrops := mustTrapAbilityConfig(t, "caltrops", u.Rank)
 	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
 
 	// extended_setup scales durationSeconds by durationMultiplier.
-	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, caltrops["durationSeconds"]*durMult)
+	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, caltrops.DurationSeconds*durMult)
 	// Other fields must remain at base values.
-	assertFloatEq(t, "Radius", stats.Radius, caltrops["radius"])
-	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, caltrops["placeIntervalSeconds"])
+	assertFloatEq(t, "Radius", stats.Radius, caltrops.Radius)
+	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, caltrops.PlaceIntervalSeconds)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,14 +166,15 @@ func TestTrapModifiers_WiderNets_RadiusCaltrops(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"caltrops", "wider_nets"}
+	grantTrapAbility(u, "caltrops")
+	u.PerkIDs = []string{"wider_nets"}
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	caltropsRadius := perkDefByID("caltrops").Config["radius"]
+	caltropsRadius := mustTrapAbilityConfig(t, "caltrops", u.Rank).Radius
 	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
 	assertFloatEq(t, "Radius", stats.Radius, caltropsRadius*widerNets)
 }
@@ -173,17 +190,18 @@ func TestTrapModifiers_WiderNets_ExplosiveBothRadii(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"explosive_trap", "wider_nets"}
+	grantTrapAbility(u, "explosive_trap")
+	u.PerkIDs = []string{"wider_nets"}
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	explosive := perkDefByID("explosive_trap").Config
+	explosive := mustTrapAbilityConfig(t, "explosive_trap", u.Rank)
 	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
-	assertFloatEq(t, "Radius (explosion)", stats.Radius, explosive["explosionRadius"]*widerNets)
-	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, explosive["triggerRadius"]*widerNets)
+	assertFloatEq(t, "Radius (explosion)", stats.Radius, explosive.ExplosionRadius*widerNets)
+	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, explosive.TriggerRadius*widerNets)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,7 +209,13 @@ func TestTrapModifiers_WiderNets_ExplosiveBothRadii(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops verifies that
-// placeIntervalSeconds 6 → 4.2 in DebugEffectiveTrapStats.
+// rapid_deployment's AbilityModifiers CooldownMult scales caltrops'
+// placeIntervalSeconds in DebugEffectiveTrapStats. Placement cadence is now
+// the caltrops ability's own cooldown (folded via
+// abilityScalarModifiersForCasterLocked), so this test no longer drives a
+// placement-cadence tick — that driver (tickTrapPlacementLocked /
+// PerkState.TrapPlaceCooldownRemaining) was deleted in the traps→abilities
+// migration.
 func TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops(t *testing.T) {
 	s := newTrapSilverState(t)
 	s.mu.Lock()
@@ -201,39 +225,19 @@ func TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"caltrops", "rapid_deployment"}
+	grantTrapAbility(u, "caltrops")
+	u.PerkIDs = []string{"rapid_deployment"}
 	u.PerkState.LastCombatSeconds = 1.5
-	u.PerkState.TrapPlaceCooldownRemaining = 0
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	caltropsInterval := perkDefByID("caltrops").Config["placeIntervalSeconds"]
-	cooldownMult := perkDefByID("rapid_deployment").Config["cooldownMultiplier"]
+	caltropsInterval := mustTrapAbilityConfig(t, "caltrops", u.Rank).PlaceIntervalSeconds
+	cooldownMult := rapidDeploymentCooldownMultFor(t, "caltrops")
 	wantInterval := caltropsInterval * cooldownMult
 	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, wantInterval)
-
-	// Spawn a hostile inside the trapper's AttackRange so the placement gate
-	// fires (idle trappers no longer drop traps without an enemy nearby).
-	hostile := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: u.X + u.AttackRange*0.5, Y: u.Y})
-	if hostile == nil {
-		t.Fatal("hostile spawn failed")
-	}
-
-	// Verify TrapPlaceCooldownRemaining after a plant cycle.
-	// tickTrapPlacementLocked only decays when the cooldown is > 0 at entry.
-	// Starting at 0, the decay block is skipped, the trap plants, and the
-	// cooldown is reset to the full scaled interval. No partial decay
-	// is subtracted in the same tick.
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
-	s.tickTrapPlacementLocked(u, def, 0.05)
-
-	assertFloatEq(t, "CooldownRemaining after plant", u.PerkState.TrapPlaceCooldownRemaining, wantInterval)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -252,19 +256,20 @@ func TestTrapModifiers_AmplifiedEffects_Caltrops(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"caltrops", "amplified_effects"}
+	grantTrapAbility(u, "caltrops")
+	u.PerkIDs = []string{"amplified_effects"}
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	caltrops := perkDefByID("caltrops").Config
+	caltrops := mustTrapAbilityConfig(t, "caltrops", u.Rank)
 	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
 
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, caltrops["damagePerSecond"]*effectMult)
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, caltrops.DamagePerSecond*effectMult)
 	// SlowMultiplier composes through the slow-amount helper, not a flat scale.
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, amplifySlow(caltrops["slowMultiplier"], effectMult))
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, amplifySlow(caltrops.SlowMultiplier, effectMult))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -282,14 +287,15 @@ func TestTrapModifiers_AmplifiedEffects_ExplosiveTrap(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"explosive_trap", "amplified_effects"}
+	grantTrapAbility(u, "explosive_trap")
+	u.PerkIDs = []string{"amplified_effects"}
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	burst := perkDefByID("explosive_trap").Config["burstDamage"]
+	burst := mustTrapAbilityConfig(t, "explosive_trap", u.Rank).BurstDamage
 	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
 	wantBurst := int(burst*effectMult + 0.5)
 	if stats.BurstDamage != wantBurst {
@@ -313,18 +319,19 @@ func TestTrapModifiers_AmplifiedEffects_MarkerTrap(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"marker_trap", "amplified_effects"}
+	grantTrapAbility(u, "marker_trap")
+	u.PerkIDs = []string{"amplified_effects"}
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	marker := perkDefByID("marker_trap").Config
+	marker := mustTrapAbilityConfig(t, "marker_trap", u.Rank)
 	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
 
-	assertFloatEq(t, "MarkMultiplier", stats.MarkMultiplier, marker["markMultiplier"]*effectMult)
-	assertFloatEq(t, "MarkDuration", stats.MarkDuration, marker["markDuration"]*effectMult)
+	assertFloatEq(t, "MarkMultiplier", stats.MarkMultiplier, marker.MarkMultiplier*effectMult)
+	assertFloatEq(t, "MarkDuration", stats.MarkDuration, marker.MarkDuration*effectMult)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -342,24 +349,25 @@ func TestTrapModifiers_AllSilverStack_Caltrops(t *testing.T) {
 	if u == nil {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
-	u.PerkIDs = []string{"caltrops", "extended_setup", "wider_nets", "rapid_deployment", "amplified_effects"}
+	grantTrapAbility(u, "caltrops")
+	u.PerkIDs = []string{"extended_setup", "wider_nets", "rapid_deployment", "amplified_effects"}
 
 	stats, ok := s.DebugEffectiveTrapStats(u)
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	caltrops := perkDefByID("caltrops").Config
+	caltrops := mustTrapAbilityConfig(t, "caltrops", u.Rank)
 	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
 	radiusMult := perkDefByID("wider_nets").Config["radiusMultiplier"]
-	cooldownMult := perkDefByID("rapid_deployment").Config["cooldownMultiplier"]
+	cooldownMult := rapidDeploymentCooldownMultFor(t, "caltrops")
 	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
 
-	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, caltrops["durationSeconds"]*durMult)
-	assertFloatEq(t, "Radius", stats.Radius, caltrops["radius"]*radiusMult)
-	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, caltrops["placeIntervalSeconds"]*cooldownMult)
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, caltrops["damagePerSecond"]*effectMult)
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, amplifySlow(caltrops["slowMultiplier"], effectMult))
+	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, caltrops.DurationSeconds*durMult)
+	assertFloatEq(t, "Radius", stats.Radius, caltrops.Radius*radiusMult)
+	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, caltrops.PlaceIntervalSeconds*cooldownMult)
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, caltrops.DamagePerSecond*effectMult)
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, amplifySlow(caltrops.SlowMultiplier, effectMult))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -379,43 +387,33 @@ func TestTrapModifiers_PlantEndToEnd_SnapshotScaled(t *testing.T) {
 		u = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
 	u.Visible = true
-	u.PerkIDs = []string{"caltrops", "extended_setup", "wider_nets", "amplified_effects"}
-	// Arm for immediate placement.
+	grantTrapAbility(u, "caltrops")
+	u.PerkIDs = []string{"extended_setup", "wider_nets", "amplified_effects"}
 	u.PerkState.LastCombatSeconds = 1.5
-	u.PerkState.TrapPlaceCooldownRemaining = 0
-
-	// Spawn a hostile inside the trapper's AttackRange so the placement gate
-	// fires (idle trappers no longer drop traps without an enemy nearby).
-	hostile := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: u.X + u.AttackRange*0.5, Y: u.Y})
-	if hostile == nil {
-		t.Fatal("hostile spawn failed")
-	}
-
-	def := perkDefByID("caltrops")
-	if def == nil {
-		t.Fatal("caltrops perk def not found")
-	}
 
 	trapsBefore := len(s.Traps)
 
-	// Drive one tick past the (already-zero) cooldown; dt > 0 so decay runs.
-	s.tickTrapPlacementLocked(u, def, 0.05)
+	// plantTrapLocked constructs the trap directly from the base ability
+	// config; it resolves and applies the unit's Silver/Gold trap modifiers
+	// internally (trapModifiersForUnitLocked), so this replaces the old
+	// placement-cadence driver (tickTrapPlacementLocked) as the plant path.
+	s.plantTrapLocked(u, mustTrapAbilityConfig(t, "caltrops", u.Rank))
 
 	if len(s.Traps) != trapsBefore+1 {
-		t.Fatalf("expected one new trap after placement tick, got %d total (was %d)", len(s.Traps), trapsBefore)
+		t.Fatalf("expected one new trap after plant, got %d total (was %d)", len(s.Traps), trapsBefore)
 	}
 
 	planted := s.Traps[len(s.Traps)-1]
 
-	caltrops := perkDefByID("caltrops").Config
+	caltrops := mustTrapAbilityConfig(t, "caltrops", u.Rank)
 	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
 	radiusMult := perkDefByID("wider_nets").Config["radiusMultiplier"]
 	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
 
-	assertFloatEq(t, "planted.RemainingSeconds", planted.RemainingSeconds, caltrops["durationSeconds"]*durMult)
-	assertFloatEq(t, "planted.Radius", planted.Radius, caltrops["radius"]*radiusMult)
-	assertFloatEq(t, "planted.DamagePerSecond", planted.DamagePerSecond, caltrops["damagePerSecond"]*effectMult)
-	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, amplifySlow(caltrops["slowMultiplier"], effectMult))
+	assertFloatEq(t, "planted.RemainingSeconds", planted.RemainingSeconds, caltrops.DurationSeconds*durMult)
+	assertFloatEq(t, "planted.Radius", planted.Radius, caltrops.Radius*radiusMult)
+	assertFloatEq(t, "planted.DamagePerSecond", planted.DamagePerSecond, caltrops.DamagePerSecond*effectMult)
+	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, amplifySlow(caltrops.SlowMultiplier, effectMult))
 	// Ownership
 	if planted.OwnerPlayerID != "p1" {
 		t.Errorf("planted.OwnerPlayerID: got %q, want p1", planted.OwnerPlayerID)
@@ -471,7 +469,6 @@ func TestSilverTrapPerkDefs_AllLoaded(t *testing.T) {
 	}{
 		{"extended_setup", "durationMultiplier", true},
 		{"wider_nets", "radiusMultiplier", true},
-		{"rapid_deployment", "cooldownMultiplier", false},
 		{"amplified_effects", "effectMultiplier", true},
 	}
 	for _, p := range perks {
@@ -493,6 +490,31 @@ func TestSilverTrapPerkDefs_AllLoaded(t *testing.T) {
 			if got <= 0.0 || got >= 1.0 {
 				t.Errorf("perk %q config[%q] = %v; a cooldown-reducing multiplier must be in (0, 1)", p.id, p.configKey, got)
 			}
+		}
+	}
+
+	// rapid_deployment is a data perk: its cooldown reduction is authored as
+	// AbilityModifiers ({target: <trap>, cooldownMult}) rather than a freeform
+	// Config key (see trapConfigFromAbilityLocked's caller,
+	// DebugEffectiveTrapStats, and rapidDeploymentCooldownMultFor above).
+	// Verify it targets all four trap abilities with a cooldown-reducing mult.
+	rapid := perkDefByID("rapid_deployment")
+	if rapid == nil {
+		t.Fatal(`perk "rapid_deployment" not found in catalog`)
+	}
+	wantTargets := map[string]bool{"caltrops": false, "fire_pit": false, "explosive_trap": false, "marker_trap": false}
+	for _, m := range rapid.AbilityModifiers {
+		if _, ok := wantTargets[m.Target]; !ok {
+			continue
+		}
+		wantTargets[m.Target] = true
+		if m.CooldownMult <= 0.0 || m.CooldownMult >= 1.0 {
+			t.Errorf("rapid_deployment AbilityModifiers[target=%q].CooldownMult = %v; must be in (0, 1)", m.Target, m.CooldownMult)
+		}
+	}
+	for target, found := range wantTargets {
+		if !found {
+			t.Errorf("rapid_deployment has no AbilityModifiers entry for target %q", target)
 		}
 	}
 }
@@ -521,13 +543,10 @@ func newExplosiveChainState(t *testing.T) (s *GameState, owner *Unit, trap *Trap
 		owner = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
 	owner.Visible = true
-	owner.PerkIDs = []string{"explosive_trap", "explosive_chain"}
+	grantTrapAbility(owner, "explosive_trap")
+	owner.PerkIDs = []string{"explosive_chain"}
 
-	def := perkDefByID("explosive_trap")
-	if def == nil {
-		t.Fatal("explosive_trap perk def not found")
-	}
-	s.plantTrapLocked(owner, trapConfigFromPerkLocked(def, owner.Rank))
+	s.plantTrapLocked(owner, mustTrapAbilityConfig(t, "explosive_trap", owner.Rank))
 
 	if len(s.Traps) == 0 {
 		t.Fatal("plantTrapLocked did not create a trap")
@@ -705,13 +724,9 @@ func TestExplosiveChain_NoAftershockWithoutPerk(t *testing.T) {
 		owner = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	}
 	owner.Visible = true
-	owner.PerkIDs = []string{"explosive_trap"} // no explosive_chain
+	grantTrapAbility(owner, "explosive_trap") // no explosive_chain
 
-	def := perkDefByID("explosive_trap")
-	if def == nil {
-		t.Fatal("explosive_trap perk def not found")
-	}
-	s.plantTrapLocked(owner, trapConfigFromPerkLocked(def, owner.Rank))
+	s.plantTrapLocked(owner, mustTrapAbilityConfig(t, "explosive_trap", owner.Rank))
 	trap := s.Traps[len(s.Traps)-1]
 
 	if trap.AftershockDelaySeconds != 0 {

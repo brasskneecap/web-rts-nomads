@@ -2493,7 +2493,6 @@ export class CanvasRenderer {
       mana?: number
       maxMana?: number
       attackSpeed?: number
-      coldSlowedRemaining?: number
       overlayColor?: string
       burningRemaining?: number
       burningAnchor?: string
@@ -2900,15 +2899,10 @@ export class CanvasRenderer {
             dx, dy, w, h,
           )
           ctx.imageSmoothingEnabled = prevSmoothing
-          // Chill overlay: a gently-pulsing icy-blue tint masked to the sprite
-          // silhouette while the unit carries a COLD slow (frost_sword proc,
-          // etc.). Physical/trap slows use a separate track and get no overlay.
-          if ((unit.coldSlowedRemaining ?? 0) > 0) {
-            this.drawColorOverlay(frame, dx, dy, w, h, 'rgb(150, 214, 255)')
-          }
-          // Authored color overlay: a status that applied an apply_color_overlay
-          // effect tints the unit its chosen color (poison green, burn red, …)
-          // for the status's lifetime — the general form of the chill tint.
+          // Sprite tint: a gently-pulsing color masked to the silhouette. The
+          // server decides the color (UnitSnapshot.overlayColor) in ONE place —
+          // an authored apply_color_overlay status (e.g. chill's icy blue). The
+          // client just paints whatever color the server sends.
           if (unit.overlayColor) {
             this.drawColorOverlay(frame, dx, dy, w, h, unit.overlayColor)
           }

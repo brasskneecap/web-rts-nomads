@@ -1,0 +1,49 @@
+{
+  "id": "explosive_trap",
+  "displayName": "Explosive Trap",
+  "type": "spell",
+  "canTargetEnemies": true,
+  "castRange": 220,
+  "castTime": 0,
+  "manaCost": 0,
+  "cooldown": 10,
+  "tags": [
+    "trap"
+  ],
+  "category": "offensive",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "closest_enemy_in_range",
+  "defaultAutoCast": true,
+  "icon": "perk-explosive-trap",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 220
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "place",
+            "type": "place_trap",
+            "config": {
+              "trapType": "explosive_trap",
+              "durationSeconds": 20,
+              "placeIntervalSeconds": 10,
+              "explosionRadius": 100,
+              "triggerRadius": 50,
+              "burstDamage": 75
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

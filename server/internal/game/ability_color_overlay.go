@@ -12,7 +12,7 @@ import (
 // apply_status_duration's On Apply (on_action_complete) trigger, exactly like
 // change_stat / apply_mark: it writes a chosen tint COLOR onto
 // ctx.CurrentStatus (AbilityStatus.OverlayColor, ability_status.go), which the
-// snapshot serializes (unitStatusOverlayColorLocked) and the client paints over
+// snapshot serializes (unitOverlayColorLocked) and the client paints over
 // the afflicted unit's sprite for the status's lifetime — generalizing the
 // hardcoded chill/blue overlay so any authored status can tint its target
 // (poison green, burn red, …). Cleared automatically on the container's expiry

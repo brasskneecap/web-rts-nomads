@@ -38,6 +38,20 @@ describe('unitEditorForm round-trip', () => {
     expect(def.faction).toBe('human')
     expect(def.attackVisual).toBeUndefined()
   })
+
+  it('round-trips baseStats as a modeled field', () => {
+    const withBase: AuthoredUnitDef = { ...fullDef, baseStats: { critChance: 0.15, lifesteal: 0.1 } }
+    const out = saveRequestFromForm(formFromDef(withBase))
+    expect(out.baseStats).toEqual({ critChance: 0.15, lifesteal: 0.1 })
+  })
+
+  it('drops an empty baseStats map rather than emitting {}', () => {
+    const form = createBlankForm()
+    form.type = 'x'
+    form.faction = 'human'
+    form.baseStats = {}
+    expect(saveRequestFromForm(form).baseStats).toBeUndefined()
+  })
 })
 
 describe('blank unit defaults', () => {

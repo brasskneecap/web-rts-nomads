@@ -289,12 +289,6 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string, chan
 						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false, false, loopVars)
 					}
 				}
-			case ActionApplyStatus:
-				if ac, ok := cfg.(applyStatusConfig); ok {
-					for i, child := range ac.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false, false, loopVars)
-					}
-				}
 			case ActionApplyStatusDuration:
 				// The ONE place insideStatusDuration is set true — but ONLY for
 				// the container's On Apply (on_action_complete) child triggers.

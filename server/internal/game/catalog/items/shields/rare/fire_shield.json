@@ -1,7 +1,7 @@
 {
   "id": "fire_shield",
   "displayName": "Fire Shield",
-  "description": "+35 armor. +15% block chance. 10% chance when hit to launch a firebolt (25 fire damage) at the attacker, setting them ablaze (8 fire/sec for 3s).",
+  "description": "+35 armor. +15% block chance. 10% chance when hit to cast Fire Bolt at the attacker, setting them ablaze (burning fire damage over time).",
   "iconKey": "fire_shield",
   "kind": "equipment",
   "tier": "rare",
@@ -15,7 +15,7 @@
     {
       "trigger": "onStruck",
       "chance": 0.1,
-      "effect": "fire_bolt_ignite"
+      "ability": "fire_bolt"
     }
   ],
   "crafting": {

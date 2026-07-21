@@ -83,6 +83,11 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		BaseArmor:          0,
 		BaseAttackSpeed:    def.AttackSpeed,
 		BaseMoveSpeed:      def.MoveSpeed,
+		// Per-unit-type base values for fieldless stats (critChance, …). `def` is
+		// the advancement-effective def (see spawnPlayerUnitLocked), so an
+		// advancement that raised a base stat flows through here too. Copied so a
+		// later per-unit mutation can't scribble on the shared catalog def's map.
+		BaseStats:          copyBaseStats(def.BaseStats),
 		Damage:             def.Damage,
 		Armor:              def.Armor,
 		AttackRange:        def.AttackRange,

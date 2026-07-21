@@ -1,0 +1,49 @@
+{
+  "id": "marker_trap",
+  "displayName": "Marker Trap",
+  "type": "spell",
+  "canTargetEnemies": true,
+  "castRange": 220,
+  "castTime": 0,
+  "manaCost": 0,
+  "cooldown": 7,
+  "tags": [
+    "trap"
+  ],
+  "category": "offensive",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "closest_enemy_in_range",
+  "defaultAutoCast": true,
+  "icon": "perk-marker-trap",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 220
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "place",
+            "type": "place_trap",
+            "config": {
+              "trapType": "marker_trap",
+              "durationSeconds": 12,
+              "placeIntervalSeconds": 7,
+              "radius": 115,
+              "markMultiplier": 0.2,
+              "markDuration": 4
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

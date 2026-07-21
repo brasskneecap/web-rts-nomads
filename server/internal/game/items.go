@@ -78,80 +78,18 @@ func IsValidProcTrigger(t ItemProcTrigger) bool {
 }
 
 // ItemProc is one percent-chance proc on an item: on each Trigger event the
-// wielder rolls Chance against the seeded perk RNG and, on success, fires the
-// referenced proc effect (catalog/procs). Effect names the ProcEffectDef
-// (required); the embedded ProcEffectOverrides let this item re-tune the
-// effect's numbers (damage, scale, bounce, slow, burn) without authoring a new
-// def — the effect's element and emitter are fixed by the def. Damage is
-// applied as its own instance and does NOT re-trigger on-hit effects (no
-// recursion).
-//
-// An item may carry any number of procs, including several on the same
-// trigger; each rolls independently (see ItemDef.Procs).
+// wielder rolls Chance against the seeded perk RNG and, on success, CASTS the
+// referenced composable ability (Ability) at what it hit, via
+// castAbilityAsProcLocked — free of mana/cooldown, so the ability is the single
+// source of truth for what the proc does (a frost/lightning weapon proc is
+// literally "cast Frost Bolt / Chain Lightning"). The bespoke ProcEffectDef
+// path this used to support was removed once every catalog item moved to
+// abilities. An item may carry any number of procs, including several on the
+// same trigger; each rolls independently (see ItemDef.Procs).
 type ItemProc struct {
 	Trigger ItemProcTrigger `json:"trigger"`
 	Chance  float64         `json:"chance"`
-	Effect  string          `json:"effect"`
-	ProcEffectOverrides
-}
-
-// ResolveParams returns the proc's effective payload: the referenced effect
-// def with this item's non-zero overrides applied. ok is false when Effect
-// names no registered proc effect — validateItemDef rejects that at load, so
-// a false here can only come from a hand-built def in tests.
-func (p *ItemProc) ResolveParams() (ProcEffectParams, bool) {
-	def, ok := getProcEffectDef(p.Effect)
-	if !ok {
-		return ProcEffectParams{}, false
-	}
-	return resolveProcEffectParams(def, p.ProcEffectOverrides), true
-}
-
-// itemProcWire is the JSON shape emitted for ItemProc. See MarshalJSON for why
-// this exists.
-type itemProcWire struct {
-	Trigger ItemProcTrigger `json:"trigger"`
-	Chance  float64         `json:"chance"`
-	Effect  string          `json:"effect"`
-
-	Damage              int        `json:"damage,omitempty"`
-	DamageType          DamageType `json:"damageType,omitempty"`
-	ProjectileID        string     `json:"projectileID,omitempty"`
-	ProjectileScale     float64    `json:"projectileScale,omitempty"`
-	BounceCount         int        `json:"bounceCount,omitempty"`
-	BounceRange         float64    `json:"bounceRange,omitempty"`
-	BounceDamageFalloff int        `json:"bounceDamageFalloff,omitempty"`
-	SlowMultiplier      float64    `json:"slowMultiplier,omitempty"`
-	SlowDurationSeconds float64    `json:"slowDurationSeconds,omitempty"`
-	BurnDamagePerSecond float64    `json:"burnDamagePerSecond,omitempty"`
-	BurnDurationSeconds float64    `json:"burnDurationSeconds,omitempty"`
-}
-
-// MarshalJSON exists for ONE reason: the /catalog/items route serves ItemDef
-// to the SPA, and the client tooltip contract predates the effect-reference
-// schema — it reads resolved payload fields (damage, damageType,
-// projectileID) directly off the proc. Marshal therefore emits the RESOLVED
-// params (def + overrides, via ResolveParams) alongside the effect
-// reference, so the client stays a dumb view with no proc-catalog knowledge
-// of its own. There is deliberately no UnmarshalJSON on ItemProc: catalog
-// files keep unmarshaling into Effect + the embedded ProcEffectOverrides
-// untouched.
-func (p ItemProc) MarshalJSON() ([]byte, error) {
-	wire := itemProcWire{Trigger: p.Trigger, Chance: p.Chance, Effect: p.Effect}
-	if params, ok := p.ResolveParams(); ok {
-		wire.Damage = params.Damage
-		wire.DamageType = params.DamageType
-		wire.ProjectileID = params.ProjectileID
-		wire.ProjectileScale = params.ProjectileScale
-		wire.BounceCount = params.BounceCount
-		wire.BounceRange = params.BounceRange
-		wire.BounceDamageFalloff = params.BounceDamageFalloff
-		wire.SlowMultiplier = params.SlowMultiplier
-		wire.SlowDurationSeconds = params.SlowDurationSeconds
-		wire.BurnDamagePerSecond = params.BurnDamagePerSecond
-		wire.BurnDurationSeconds = params.BurnDurationSeconds
-	}
-	return json.Marshal(wire)
+	Ability string          `json:"ability"`
 }
 
 // defaultConsumableRangeUnits is the AoE radius (world units) a consumable
@@ -485,17 +423,13 @@ func validateItemProc(itemID string, i int, p *ItemProc) error {
 	if p.Chance < 0 || p.Chance > 1 {
 		return fmt.Errorf("item %q %s.chance %v out of range [0,1]", itemID, field, p.Chance)
 	}
-	if p.Effect == "" {
-		return fmt.Errorf("item %q %s.effect is required (a catalog/procs id)", itemID, field)
+	// A proc casts a composable ability at what it hit; the ability id is
+	// required and must resolve.
+	if p.Ability == "" {
+		return fmt.Errorf("item %q %s.ability is required (an ability id to cast)", itemID, field)
 	}
-	if _, ok := getProcEffectDef(p.Effect); !ok {
-		return fmt.Errorf("item %q %s.effect %q is not a registered proc effect", itemID, field, p.Effect)
-	}
-	if p.Damage < 0 {
-		return fmt.Errorf("item %q %s.damage override %v must be >= 0", itemID, field, p.Damage)
-	}
-	if p.ProjectileScale < 0 {
-		return fmt.Errorf("item %q %s.projectileScale override %v must be >= 0", itemID, field, p.ProjectileScale)
+	if _, ok := getAbilityDef(p.Ability); !ok {
+		return fmt.Errorf("item %q %s.ability %q is not a registered ability", itemID, field, p.Ability)
 	}
 	return nil
 }

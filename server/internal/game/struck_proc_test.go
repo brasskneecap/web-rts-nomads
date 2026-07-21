@@ -13,7 +13,7 @@ func struckProcPair(t *testing.T, s *GameState) (defender, attacker *Unit) {
 	defender = s.spawnPlayerUnitLocked("soldier", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
 	defender.HP, defender.MaxHP = 1_000_000, 1_000_000
 	disableEvasion(defender)
-	defender.EquipmentBonus.OnStruckProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
+	defender.EquipmentBonus.OnStruckProcs = []EquipmentProc{{Chance: 1.0, Ability: "fire_bolt"}}
 	attacker = &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 1_000_000, MaxHP: 1_000_000, X: 10, Y: 0}
 	s.nextUnitID++
 	s.addUnitLocked(attacker)
@@ -37,9 +37,6 @@ func TestStruckProc_FiresAtAttackerOnLandedHit(t *testing.T) {
 	bolt := s.Projectiles[0]
 	if bolt.TargetUnitID != attacker.ID || bolt.OwnerUnitID != defender.ID {
 		t.Errorf("bolt target=%d owner=%d, want target=%d owner=%d (defender retaliates at attacker)", bolt.TargetUnitID, bolt.OwnerUnitID, attacker.ID, defender.ID)
-	}
-	if !bolt.SkipOnHitEffects {
-		t.Error("retaliation bolt must skip the on-hit hub (no proc loops)")
 	}
 }
 
@@ -87,7 +84,7 @@ func TestStruckProc_RangedAttackerGetsBoltBack(t *testing.T) {
 	s.landProjectileLocked(&Projectile{ID: "arrow", OwnerUnitID: attacker.ID, OwnerPlayerID: attacker.OwnerID, TargetUnitID: defender.ID, Damage: 10}, defender, &dead)
 	found := false
 	for _, p := range s.Projectiles {
-		if p.SkipOnHitEffects && p.TargetUnitID == attacker.ID && p.OwnerUnitID == defender.ID {
+		if p.TargetUnitID == attacker.ID && p.OwnerUnitID == defender.ID {
 			found = true
 		}
 	}
@@ -97,17 +94,17 @@ func TestStruckProc_RangedAttackerGetsBoltBack(t *testing.T) {
 }
 
 // TestValidateItemDef_OnStruckProc: an onStruck proc obeys the same rules as an
-// onHit one (chance range, effect required + registered).
+// onHit one (chance range, ability required + registered).
 func TestValidateItemDef_OnStruckProc(t *testing.T) {
-	good := &ItemDef{ID: "ok", Kind: ItemKindEquipment, Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 0.1, Effect: "fire_bolt_ignite"}}}
+	good := &ItemDef{ID: "ok", Kind: ItemKindEquipment, Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 0.1, Ability: "fire_bolt"}}}
 	if err := validateItemDef(good); err != nil {
 		t.Fatalf("valid onStruck proc rejected: %v", err)
 	}
-	unknown := &ItemDef{ID: "bad", Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 0.1, Effect: "no_such_effect"}}}
+	unknown := &ItemDef{ID: "bad", Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 0.1, Ability: "no_such_ability"}}}
 	if err := validateItemDef(unknown); err == nil {
-		t.Error("expected error for unregistered onStruck proc effect, got nil")
+		t.Error("expected error for unregistered onStruck proc ability, got nil")
 	}
-	badChance := &ItemDef{ID: "bad2", Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 1.5, Effect: "fire_bolt_ignite"}}}
+	badChance := &ItemDef{ID: "bad2", Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 1.5, Ability: "fire_bolt"}}}
 	if err := validateItemDef(badChance); err == nil {
 		t.Error("expected error for onStruck proc chance > 1, got nil")
 	}

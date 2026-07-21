@@ -366,6 +366,47 @@ func (s *GameState) resolveAbilityProgramCastLocked(caster *Unit, def AbilityDef
 	s.runProgramTriggersLocked(ctx, def.Program.Triggers, TriggerOnCastComplete)
 }
 
+// castAbilityAsProcLocked fires abilityID from caster at target as a FREE proc —
+// no mana, no cooldown, no cast time, no Arcane Charge — by handing a
+// mana-zeroed EffectiveSpell to the SAME cast-resolution seam a hand-cast uses
+// (resolveAbilityCastAtPointLocked for point spells, resolveAbilityCastWithEffLocked
+// for unit-targeted), so a proc-launched ability behaves EXACTLY like the real
+// spell: same projectile, same damage-modifier fold, same status/chill
+// composition, same kill attribution (to caster). This is the single seam every
+// "an X triggers an ability" caller shares — Unstable Magic (perks_arch_mage.go)
+// and equipment on-hit procs whose item names an `ability` instead of a
+// ProcEffectDef (state_combat.go). It closes the loop the composable-ability
+// work opened: a frost/lightning weapon proc is now literally "cast Frost Bolt /
+// Chain Lightning at what you hit," not a parallel bespoke effect.
+//
+// effectiveness scales the damage-bearing fields (1.0 = full strength; Unstable
+// Magic passes < 1). No-op for a nil caster/target, empty id, unregistered
+// ability, or non-positive effectiveness. Caller holds s.mu write lock.
+func (s *GameState) castAbilityAsProcLocked(caster, target *Unit, abilityID string, effectiveness float64) {
+	if caster == nil || target == nil || abilityID == "" || effectiveness <= 0 {
+		return
+	}
+	def, ok := getAbilityDef(abilityID)
+	if !ok {
+		return
+	}
+	eff := s.effectiveSpellLocked(caster, def)
+	eff.ManaCost = 0 // free proc: never spends mana or builds Arcane Charge
+	if effectiveness != 1.0 {
+		eff = scaleEffectiveSpellDamage(eff, effectiveness)
+	}
+	if def.TargetsPoint {
+		s.resolveAbilityCastAtPointLocked(caster, def, eff, target.X, target.Y)
+	} else {
+		// Route through the shared unit-targeted seam (branches on SchemaVersion
+		// exactly like resolveAbilityCastAtPointLocked) rather than the
+		// legacy-only resolveAbilityCastOnTargetLocked — see
+		// resolveAbilityCastWithEffLocked's doc comment for why the direct call
+		// was a silent no-op for a v2 unit-targeted spell.
+		s.resolveAbilityCastWithEffLocked(caster, def, eff, []*Unit{target})
+	}
+}
+
 // playEffectAtPointLocked queues a registered effect at a WORLD position
 // (anchorUnitID 0) through the shared transient-effect pipeline, so it renders
 // via the same path unit/perk effects use. No-op for an empty id or an
@@ -467,9 +508,9 @@ func (s *GameState) resolveAbilityAoeAtPointLocked(caster *Unit, def AbilityDef,
 				DamageType:     dmgType,
 			})
 		}
-		// Chill / slow every unit in the burst. No-op when the ability declares
-		// no slow, or the value is out of range, or the unit just died.
-		s.applyProcSlowLocked(u.ID, def.SlowMultiplier, def.SlowDurationSeconds, dmgType)
+		// Slow every unit in the burst (generic slow track). No-op when the
+		// ability declares no slow, the value is out of range, or the unit died.
+		s.ApplySlowLocked(u.ID, def.SlowMultiplier, def.SlowDurationSeconds)
 	}
 }
 

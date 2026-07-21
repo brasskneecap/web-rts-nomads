@@ -14,7 +14,10 @@ func onHitProcAttacker(t *testing.T, s *GameState) *Unit {
 	t.Helper()
 	a := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
 	a.Damage = 10
-	a.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
+	// A guaranteed on-hit proc that casts fire_bolt at what it hits — fire_bolt
+	// launches a projectile toward its target, so a fired proc shows up as a new
+	// projectile aimed at the hit enemy.
+	a.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Ability: "fire_bolt"}}
 	return a
 }
 

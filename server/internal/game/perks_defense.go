@@ -210,6 +210,11 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	// post-mitigation amount that landed — the same value recordHitDamageLocked
 	// and the client's floating number use.
 	s.fireOnDamageDealtLocked(target, damage, src)
+	// Lifesteal: heal the attacker for its effective lifesteal fraction of the
+	// amount that just landed (lifesteal.go). A peer of the on_damage_dealt
+	// dispatch — same canonical HP-loss point, same post-mitigation `damage`.
+	// No-op for the common case (no lifesteal source).
+	s.applyLifestealLocked(target, damage, src)
 	// Shared Pain: redistribute a fraction of the pre-mitigation damage to
 	// other marked enemies. Propagate attribution so indirect kills credit the
 	// original attacker.
@@ -654,14 +659,22 @@ func (s *GameState) perkOutgoingDamageDebuffMultiplierLocked(unit *Unit) float64
 // ADD NEW DEFENDER-SIDE PERK REACTIONS HERE.
 // ─────────────────────────────────────────────────────────────────────────────
 func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) {
-	if target == nil || attacker == nil || damage <= 0 || len(target.PerkIDs) == 0 {
+	if target == nil || attacker == nil || damage <= 0 {
 		return
 	}
 	// Skip reactions if the unit is already dead this tick.
 	if target.HP <= 0 {
 		return
 	}
+	// Thorns is a base-authorable STAT, not a perk (thorns.go) — it reflects
+	// even for a unit that owns no perks, so it runs BEFORE the no-perk bail
+	// below. No-op (bails after an identity stage fold) when nothing grants the
+	// target thorns, so an existing unit's behavior is unchanged.
+	s.applyThornsLocked(target, attacker, damage)
 
+	if len(target.PerkIDs) == 0 {
+		return
+	}
 	for _, perkID := range target.PerkIDs {
 		def := perkDefByID(perkID)
 		if def == nil {
@@ -870,33 +883,20 @@ func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 		s.perkBonusArmorFromBuffsLocked(unit)
 	percentBonus := s.perkArmorPercentBonusLocked(unit) + auraPercent
 	core := float64(unit.Armor)*(1.0+percentBonus) + float64(flatBonus)
-	// Zone-aura armor: a flat add and a multiplier from the owner's controlled
-	// zones, folded as (existing + add) × mul. No active aura ⇒ (0, 1) identity,
-	// so this is exactly the prior result. Reuses this single armor formula —
-	// no second percent path (AI_RULES: avoid duplicate stat calculation).
-	//
-	// Data-driven perk stat modifiers (PerkStatModifier{Stat: "armor"}) fold
-	// into the same merge via mergeZoneIntoBaseStage/applyStatStages. No perk
-	// authors statModifiers today, so this is byte-identical to the prior
-	// zone-only fold.
-	auraAdd, auraMul := s.playerStatModifierLocked(unit.OwnerID, statArmor)
-	armorPerkStages := s.unitPerkStatModifiersLocked(unit, statArmor)
-	// Status-sourced stat modifiers (AbilityStatus.StatModifiers, the third
-	// PerkStatModifier emitter — see perk_stat_modifiers.go's file doc
-	// comment) fold into the SAME pool via mergeStatStagePools, at the same
-	// arithmetic position as the perk-sourced pool above, before the
-	// zone-aura merge. mark_of_weakness (Siphoner bronze, granted as an
-	// ability) is the pilot author of an "armor" StatModifiers entry
-	// ({add, -N}): applied here, after all positive bonuses, so it always
-	// lands at face value rather than being scaled by percent armor
-	// sources — exactly where the old bespoke PerkState-backed flat
-	// subtraction used to apply (see the deletion note in this migration's
-	// report; that bespoke read is GONE, this fold is now the only armor
-	// debuff path, so there is no double-application).
-	armorPerkStages = mergeStatStagePools(armorPerkStages, s.unitStatusStatModifiersLocked(unit, statArmor))
-	if auraAdd != 0 || auraMul != 1 || len(armorPerkStages) > 0 {
-		core = applyStatStages(core, mergeZoneIntoBaseStage(armorPerkStages, auraAdd, auraMul))
-	}
+	// Fold the perk + status + zone-aura "armor" stat pool onto the
+	// percent/flat core through the shared chokepoint (effectiveStatLocked):
+	//   - perk-sourced PerkStatModifier{Stat:"armor"} entries,
+	//   - status-sourced AbilityStatus.StatModifiers (mark_of_weakness's
+	//     {armor, add, -N} debuff is the pilot author — applied here, after
+	//     all positive bonuses, so it lands at face value rather than being
+	//     scaled by percent-armor sources; this is the ONLY armor debuff path),
+	//   - the owner's zone-aura (add, mul).
+	// All three compose as (core + Σadd) × Πmul with intrinsic/base/final
+	// staging. Empty pool + no zone aura ⇒ identity, byte-identical to the
+	// pre-chokepoint result. The bespoke PerkAura flat/percent contributions
+	// are already folded into `core` above (they land at a different arithmetic
+	// position than this pooled fold — see effectiveStatLocked's aura note).
+	core = s.effectiveStatLocked(unit, core, statArmor)
 	// Clamp at 0 so a stacked debuff against a low-armor unit doesn't
 	// produce negative armor (the damage pipeline treats negative armor as
 	// "no mitigation", but a clearly-clamped zero is easier to reason about

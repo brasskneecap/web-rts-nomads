@@ -311,6 +311,14 @@ type UnitPerkState struct {
 	// Reset to false immediately after the reflected damage call returns.
 	RetaliationActive bool
 
+	// ThornsActive is the same recursion guard for the thorns STAT's reflected
+	// damage (applyThornsLocked, thorns.go) — the stat-based twin of
+	// RetaliationActive. Belt-and-suspenders: reflected damage already routes
+	// through applyUnitDamageWithSourceLocked, which does not re-enter the
+	// attack-hit reaction hook, so no thorns loop can form today — the flag
+	// keeps that safe if a future path ever adds re-entry.
+	ThornsActive bool
+
 	// ── last_stand (silver vanguard) ──────────────────────────────────────────
 	// LastStandTriggered latches to true when HP first crosses below threshold,
 	// preventing the perk from re-firing during a single dip. Reset to false when
@@ -1056,6 +1064,9 @@ func (s *GameState) eligiblePerksAfterFiltersLocked(unit *Unit, rank string) []*
 		if def.RequiresPerk != "" && !containsString(unit.PerkIDs, def.RequiresPerk) {
 			continue
 		}
+		if def.RequiresAbility != "" && !containsAbility(unit, def.RequiresAbility) {
+			continue
+		}
 		filtered = append(filtered, def)
 	}
 	return filtered
@@ -1219,13 +1230,11 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			}
 
 		// ── trapper (archer bronze) ──────────────────────────────────────────
-		// All four Bronze trap perks share the same placement timer logic.
-		// A unit can own at most one Bronze trap perk, so the shared
-		// TrapPlaceCooldownRemaining field has no collision risk.
-		// Note: LastCombatSeconds decay is handled in state.go Update() per-unit
-		// loop (cross-unit pattern, same as WeakenedRemaining).
-		case "caltrops", "fire_pit", "explosive_trap", "marker_trap":
-			s.tickTrapPlacementLocked(unit, def, dt)
+		// The four traps are no longer perks: they are pool ABILITIES
+		// (catalog/abilities/<trap>), placed by the auto-cast ability system via
+		// the place_trap action, so there is no perk-tick placement dispatch
+		// here anymore. Silver/Gold trap-modifier perks still apply at plant
+		// time inside plantOneTrapLocked.
 
 		case "double_shot":
 			// Marksman gold — defer-fire timer. The arming logic lives in

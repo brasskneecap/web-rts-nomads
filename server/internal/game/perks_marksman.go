@@ -532,11 +532,10 @@ func (s *GameState) fireDeferredDoubleShotLocked(attacker *Unit) {
 	// bonus that the primary shot still gets.
 	bonus := s.perkBonusDamageMultiplierLocked(attacker, target)
 	raw := float64(attacker.Damage) * (1.0 + bonus)
-	dmgAdd, dmgMul := s.playerStatModifierLocked(attacker.OwnerID, statDamage)
-	dmgPerkStages := s.unitPerkStatModifiersLocked(attacker, statDamage)
-	if dmgAdd != 0 || dmgMul != 1 || len(dmgPerkStages) > 0 {
-		raw = applyStatStages(raw, mergeZoneIntoBaseStage(dmgPerkStages, dmgAdd, dmgMul))
-	}
+	// Same perk + status + zone-aura "damage" fold as applyDelayedAttackLocked,
+	// through the shared chokepoint — without it a double-shot second arrow would
+	// silently drop the bonus the primary shot gets.
+	raw = s.effectiveStatLocked(attacker, raw, statDamage)
 	isCrit := false
 	if rolled := s.rollCritDamage(attacker, target); rolled > 1.0 {
 		raw *= rolled

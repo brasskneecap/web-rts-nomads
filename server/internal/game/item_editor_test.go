@@ -33,7 +33,7 @@ func TestSaveEditorItem_CraftableItemOwnsItsRecipe(t *testing.T) {
 		Item: ItemDef{ID: "editor_test_blade", DisplayName: "Editor Blade", IconKey: "editor_test_blade",
 			Kind: ItemKindEquipment, Tier: ItemTierRare, Category: "Weapon",
 			CostGold: 120, Modifiers: &ItemModifiers{Damage: 9},
-			Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Effect: "fire_bolt_ignite"}},
+			Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Ability: "fire_bolt"}},
 			Crafting: &ItemCrafting{
 				Inputs:         []string{"broad_sword", "fire_ring"},
 				CraftCostGold:  150,
@@ -101,14 +101,14 @@ func TestSaveEditorItem_DroppingCraftingMakesItUncraftable(t *testing.T) {
 	}
 }
 
-// TestSaveEditorItem_ValidationRejectsBeforeAnyWrite: an invalid proc effect
+// TestSaveEditorItem_ValidationRejectsBeforeAnyWrite: an invalid proc ability
 // reference fails validation and never registers the item.
 func TestSaveEditorItem_ValidationRejectsBeforeAnyWrite(t *testing.T) {
 	editorEnv(t)
 	req := EditorItemSaveRequest{
 		Item: ItemDef{ID: "bad_item", DisplayName: "Bad", IconKey: "x", Kind: ItemKindEquipment,
 			Tier: ItemTierCommon,
-			Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Effect: "no_such_effect"}}},
+			Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Ability: "no_such_ability"}}},
 	}
 	err := SaveEditorItem(req)
 	if err == nil {

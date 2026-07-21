@@ -11,13 +11,13 @@ import (
 // on-hit elemental bonus, and proc definition.
 func TestCraftedSwords_LoadAllThree(t *testing.T) {
 	cases := []struct {
-		id             string
-		wantElement    DamageType
-		wantProjectile string
+		id          string
+		wantElement DamageType
+		wantAbility string
 	}{
-		{"fire_sword", DamageFire, "fire_bolt"},
-		{"frost_sword", DamageCold, "frost_bolt"},
-		{"lightning_sword", DamageLightning, "lightning_bolt"},
+		{id: "fire_sword", wantElement: DamageFire, wantAbility: "fire_bolt"},
+		{id: "frost_sword", wantElement: DamageCold, wantAbility: "frost_bolt"},
+		{id: "lightning_sword", wantElement: DamageLightning, wantAbility: "chain_lightning"},
 	}
 
 	for _, tc := range cases {
@@ -46,28 +46,103 @@ func TestCraftedSwords_LoadAllThree(t *testing.T) {
 				t.Fatalf("%s: expected an onHitElemental entry of type %s with a positive amount, got %+v", tc.id, tc.wantElement, def.OnHitElemental)
 			}
 
-			// Proc structural wiring: the sword's onHit proc must fire the
-			// element's own projectile for positive damage at a valid
-			// probability. Damage and chance are catalog-owned tunables, so
-			// assert invariants not numbers.
 			proc := firstProcFor(t, def, ProcOnHit)
-			params, ok := proc.ResolveParams()
-			if !ok {
-				t.Fatalf("%s: proc effect %q is not a registered proc effect", tc.id, proc.Effect)
-			}
-			if params.Damage <= 0 {
-				t.Errorf("%s: proc damage want > 0, got %d", tc.id, params.Damage)
-			}
-			if params.DamageType != tc.wantElement {
-				t.Errorf("%s: proc damageType want %s, got %s", tc.id, tc.wantElement, params.DamageType)
-			}
-			if params.ProjectileID != tc.wantProjectile {
-				t.Errorf("%s: proc projectileID want %q, got %q", tc.id, tc.wantProjectile, params.ProjectileID)
-			}
 			if proc.Chance <= 0 || proc.Chance > 1 {
 				t.Errorf("%s: proc chance %v is not a valid probability in (0,1]", tc.id, proc.Chance)
 			}
+			// The sword's proc casts a registered ability of the sword's element.
+			if proc.Ability != tc.wantAbility {
+				t.Errorf("%s: proc ability want %q, got %q", tc.id, tc.wantAbility, proc.Ability)
+			}
+			adef, ok := getAbilityDef(proc.Ability)
+			if !ok {
+				t.Fatalf("%s: proc ability %q is not a registered ability", tc.id, proc.Ability)
+			}
+			if adef.DamageType != tc.wantElement {
+				t.Errorf("%s: proc ability damageType want %s, got %s", tc.id, tc.wantElement, adef.DamageType)
+			}
 		})
+	}
+}
+
+// TestFrostSword_ProcCastsFrostBolt_EndToEnd drives the full-circle path: an
+// on-hit proc that names an ability launches that ability (free, no mana) at
+// the struck target, and the landed Frost Bolt both damages AND chills via the
+// composed status — the same chill composition Shatter uses. No cold-slow track
+// involved.
+func TestFrostSword_ProcCastsFrostBolt_EndToEnd(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0xF205)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
+	attacker.CurrentMana = 0 // prove the proc is FREE (no mana required)
+
+	target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 1000, MaxHP: 1000, X: 60, Y: 0, MoveSpeed: 100, AttackSpeed: 1.0}
+	s.nextUnitID++
+	s.addUnitLocked(target)
+
+	// Force the frost_sword-style ability proc to fire (Chance 1.0), then land
+	// the launched projectile on the target.
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Ability: "frost_bolt"}}
+	s.rollEquipmentProcsLocked(attacker, target)
+
+	if len(s.Projectiles) == 0 {
+		t.Fatal("frost_bolt proc cast launched no projectile")
+	}
+	dead := []int{}
+	s.landProjectileLocked(s.Projectiles[0], target, &dead)
+
+	if target.HP >= 1000 {
+		t.Errorf("frost_bolt impact dealt no damage: HP = %d, want < 1000", target.HP)
+	}
+	// Chilled via the composition (overlay + real move/attack slow), NOT the
+	// cold-slow track.
+	if got := s.unitOverlayColorLocked(target); got != "#96d6ff" {
+		t.Errorf("target not tinted by frost_bolt chill: overlay = %q, want #96d6ff", got)
+	}
+	if mult := s.perkMoveSpeedMultiplierLocked(target); mult >= 1.0 {
+		t.Errorf("target move speed not slowed by frost_bolt chill: multiplier = %v, want < 1", mult)
+	}
+}
+
+// TestFireSword_ProcCastsFireBolt_EndToEnd proves fire_sword's ability proc
+// lands the Fire Bolt and that its burn is a real damage-over-time COMPOSITION
+// (apply_status_duration + on_tick deal_damage), not the bespoke BurnStacks
+// proc effect: the target keeps losing HP as the status ticks.
+func TestFireSword_ProcCastsFireBolt_EndToEnd(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0xF12E)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
+	attacker.CurrentMana = 0 // free proc
+
+	target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 1000, MaxHP: 1000, X: 60, Y: 0}
+	s.nextUnitID++
+	s.addUnitLocked(target)
+
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Ability: "fire_bolt"}}
+	s.rollEquipmentProcsLocked(attacker, target)
+	if len(s.Projectiles) == 0 {
+		t.Fatal("fire_bolt proc cast launched no projectile")
+	}
+	dead := []int{}
+	s.landProjectileLocked(s.Projectiles[0], target, &dead)
+
+	afterImpact := target.HP
+	if afterImpact >= 1000 {
+		t.Errorf("fire_bolt impact dealt no direct damage: HP = %d, want < 1000", afterImpact)
+	}
+	// The burn tint marks the composed DoT status.
+	if got := s.unitOverlayColorLocked(target); got == "" {
+		t.Errorf("target not tinted by fire_bolt burn status")
+	}
+	// Tick the status once past its interval — the on_tick deal_damage must burn
+	// the afflicted unit for more HP.
+	s.tickAbilityStatusesLocked(1.1)
+	if target.HP >= afterImpact {
+		t.Errorf("fire_bolt burn dealt no damage-over-time: HP %d did not drop below post-impact %d", target.HP, afterImpact)
 	}
 }
 
@@ -80,9 +155,8 @@ func TestFireSword_EndToEnd(t *testing.T) {
 		t.Fatalf("fire_sword should grant positive physical damage, got %+v", def.Modifiers)
 	}
 	proc := firstProcFor(t, def, ProcOnHit)
-	params, ok := proc.ResolveParams()
-	if !ok || params.Damage <= 0 || params.DamageType != DamageFire || params.ProjectileID != "fire_bolt" {
-		t.Fatalf("fire_sword proc unexpected: resolved=%+v ok=%v", params, ok)
+	if proc.Ability != "fire_bolt" {
+		t.Fatalf("fire_sword proc should cast fire_bolt, got ability=%q", proc.Ability)
 	}
 	if proc.Chance <= 0 || proc.Chance > 1 {
 		t.Fatalf("fire_sword proc chance %v is not a valid probability in (0,1]", proc.Chance)

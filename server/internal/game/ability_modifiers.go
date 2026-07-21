@@ -7,11 +7,12 @@ type AbilityModifierSet struct {
 	HealMult     float64
 	ManaCostMult float64
 	RangeMult    float64
+	CooldownMult float64
 }
 
 func identityAbilityModifierSet() AbilityModifierSet {
 	return AbilityModifierSet{
-		DamageMult: 1, HealMult: 1, ManaCostMult: 1, RangeMult: 1,
+		DamageMult: 1, HealMult: 1, ManaCostMult: 1, RangeMult: 1, CooldownMult: 1,
 	}
 }
 
@@ -47,6 +48,9 @@ func (s *GameState) abilityScalarModifiersForCasterLocked(caster *Unit, abilityI
 			}
 			if m.RangeMult > 0 {
 				set.RangeMult *= m.RangeMult
+			}
+			if m.CooldownMult > 0 {
+				set.CooldownMult *= m.CooldownMult
 			}
 		}
 	}

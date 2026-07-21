@@ -99,12 +99,8 @@ func assertScenesEquivalent(t *testing.T, sLegacy, sExec *GameState, label strin
 			t.Errorf("%s: unit id=%d mana mismatch: legacy=%d exec=%d", label, lu.ID, lu.CurrentMana, eu.CurrentMana)
 		}
 		if lu.SlowedRemaining != eu.SlowedRemaining || lu.SlowedMultiplier != eu.SlowedMultiplier {
-			t.Errorf("%s: unit id=%d physical-slow mismatch: legacy=(remaining=%v,mult=%v) exec=(remaining=%v,mult=%v)",
+			t.Errorf("%s: unit id=%d slow mismatch: legacy=(remaining=%v,mult=%v) exec=(remaining=%v,mult=%v)",
 				label, lu.ID, lu.SlowedRemaining, lu.SlowedMultiplier, eu.SlowedRemaining, eu.SlowedMultiplier)
-		}
-		if lu.ColdSlowedRemaining != eu.ColdSlowedRemaining || lu.ColdSlowedMultiplier != eu.ColdSlowedMultiplier {
-			t.Errorf("%s: unit id=%d cold-slow mismatch: legacy=(remaining=%v,mult=%v) exec=(remaining=%v,mult=%v)",
-				label, lu.ID, lu.ColdSlowedRemaining, lu.ColdSlowedMultiplier, eu.ColdSlowedRemaining, eu.ColdSlowedMultiplier)
 		}
 	}
 	for _, eu := range sExec.Units {
@@ -343,106 +339,15 @@ func TestAbilityCompileGolden_GreaterHeal(t *testing.T) {
 
 // ── shatter (instant point-AoE + slow) ──────────────────────────────────────
 
-// buildGoldenShatterScene spawns a caster, an ally standing inside where the
-// burst radius will be (must NOT be hit — wrong relation), an enemy inside
-// the burst radius (must be hit + chilled), and an enemy outside the burst
-// radius (must be untouched). The cast point (150,0) is well within the
-// caster's 400px cast range, so clampPointToRange is a no-op on both paths —
-// the point the legacy resolver clamps to and the ctx.CastPoint fed to the
-// executor are identical. Lock held on return; caller must s.mu.Unlock().
-func buildGoldenShatterScene(t *testing.T, mod *SpellModifier) (s *GameState, caster, enemyNear, enemyFar, allyNear *Unit, castX, castY float64) {
-	t.Helper()
-	s = newProjectileTestState(t)
-	s.mu.Lock()
-	setTeam(s, "p1", 0)
-	setTeam(s, "p2", 1)
-
-	caster = teamCombatUnit(t, s, "p1", 0, 0)
-	caster.MaxMana, caster.CurrentMana = 100, 100
-	if mod != nil {
-		caster.SpellModifiers = []SpellModifier{*mod}
-	}
-
-	allyNear = teamCombatUnit(t, s, "p1", 150, 10) // inside the burst radius, same team — must not be hit
-
-	enemyNear = teamCombatUnit(t, s, "p2", 150, 50) // dist from (150,0) = 50 < radius 110
-	enemyNear.HP, enemyNear.MaxHP = 500, 500        // survives even the modified-caster damage
-
-	enemyFar = teamCombatUnit(t, s, "p2", 150, 300) // dist from (150,0) = 300 > radius 110
-	enemyFar.HP, enemyFar.MaxHP = 500, 500
-
-	return s, caster, enemyNear, enemyFar, allyNear, 150, 0
-}
-
-func TestAbilityCompileGolden_Shatter(t *testing.T) {
-	legacyDef := legacyShatterFixture()
-	catalogDef := requireMigratedV2(t, "shatter")
-
-	run := func(t *testing.T, mod *SpellModifier, label string) (sLegacy, sExec *GameState, enemyNearL, enemyFarL, allyNearL *Unit, wantDamage int) {
-		var casterL *Unit
-		var cx, cy float64
-		sLegacy, casterL, enemyNearL, enemyFarL, allyNearL, cx, cy = buildGoldenShatterScene(t, mod)
-		var casterE *Unit
-		sExec, casterE, _, _, _, _, _ = buildGoldenShatterScene(t, mod)
-
-		preAllyHP, preFarHP := allyNearL.HP, enemyFarL.HP
-
-		// Legacy: frozen pre-migration fixture.
-		effL := sLegacy.effectiveSpellLocked(casterL, legacyDef)
-		wantDamage = effL.Damage // the SCALED per-hit damage — asserted below, never hardcoded
-		sLegacy.resolveAbilityCastAtPointLocked(casterL, legacyDef, effL, cx, cy)
-
-		// Executor: real catalog def through the real entry point.
-		effE := sExec.effectiveSpellLocked(casterE, catalogDef)
-		sExec.resolveAbilityCastAtPointLocked(casterE, catalogDef, effE, cx, cy)
-
-		// Sanity on the legacy side: the enemy inside the radius took EXACTLY
-		// the effective (modifier-scaled) damage and was chilled; the ally
-		// (wrong relation) and the far enemy (outside the radius) were
-		// untouched. All derived from the frozen fixture/eff fields, never
-		// hardcoded.
-		if wantEnemyHP := enemyNearL.MaxHP - wantDamage; enemyNearL.HP != wantEnemyHP {
-			t.Fatalf("%s: legacy fixture drifted: enemyNear.HP = %d, want %d (maxHP %d - effective damage %d)",
-				label, enemyNearL.HP, wantEnemyHP, enemyNearL.MaxHP, wantDamage)
-		}
-		if enemyNearL.ColdSlowedRemaining <= 0 {
-			t.Fatalf("%s: legacy fixture drifted: enemyNear.ColdSlowedRemaining = %v, want > 0", label, enemyNearL.ColdSlowedRemaining)
-		}
-		if enemyNearL.ColdSlowedMultiplier != legacyDef.SlowMultiplier {
-			t.Fatalf("%s: legacy fixture drifted: enemyNear.ColdSlowedMultiplier = %v, want %v (frozen fixture SlowMultiplier)",
-				label, enemyNearL.ColdSlowedMultiplier, legacyDef.SlowMultiplier)
-		}
-		if allyNearL.HP != preAllyHP {
-			t.Fatalf("%s: legacy fixture drifted: allyNear.HP = %d, want unchanged %d (wrong relation, must not be hit)", label, allyNearL.HP, preAllyHP)
-		}
-		if enemyFarL.HP != preFarHP {
-			t.Fatalf("%s: legacy fixture drifted: enemyFar.HP = %d, want unchanged %d (outside burst radius)", label, enemyFarL.HP, preFarHP)
-		}
-
-		assertScenesEquivalent(t, sLegacy, sExec, label)
-		return sLegacy, sExec, enemyNearL, enemyFarL, allyNearL, wantDamage
-	}
-
-	t.Run("unmodified_caster", func(t *testing.T) {
-		sLegacy, sExec, _, _, _, wantDamage := run(t, nil, "shatter/unmodified")
-		defer sLegacy.mu.Unlock()
-		defer sExec.mu.Unlock()
-		if wantDamage != legacyDef.DamageAmount {
-			t.Fatalf("unmodified-caster effective damage = %d, want base damageAmount %d (no modifier active)", wantDamage, legacyDef.DamageAmount)
-		}
-	})
-	t.Run("modified_caster", func(t *testing.T) {
-		m := goldenDamageModifier(string(legacyDef.DamageType)) // "cold" — matches shatter's own school
-		sLegacy, sExec, _, _, _, wantDamage := run(t, &m, "shatter/modified")
-		defer sLegacy.mu.Unlock()
-		defer sExec.mu.Unlock()
-		// Proves Task 3's scaling seam actually fired: the effective damage
-		// under the +50% multiply modifier must exceed the unmodified base.
-		if wantDamage <= legacyDef.DamageAmount {
-			t.Fatalf("modified-caster effective damage = %d, want > base damageAmount %d (the +50%% modifier should have scaled it up)", wantDamage, legacyDef.DamageAmount)
-		}
-	})
-}
+// NOTE: the Shatter golden equivalence test (legacy cold-track chill vs. the
+// v2 executor) was RETIRED when Shatter's chill migrated off the dedicated
+// cold-slow track to a status composition — change_stat(moveSpeed) +
+// change_stat(attackSpeed) + apply_color_overlay (shatter.json). That migration
+// DELIBERATELY diverges from the frozen legacy mechanism (the legacy resolver
+// still stamps ColdSlowedRemaining; the executor no longer does), so a
+// byte-for-byte legacy-vs-v2 comparison is no longer meaningful for Shatter.
+// Shatter's damage/targeting/kill behaviour is covered directly by
+// shatter_test.go, and its new chill composition by TestShatter_* there.
 
 // ── raise_skeleton (summon) ─────────────────────────────────────────────────
 

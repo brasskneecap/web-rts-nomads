@@ -537,11 +537,11 @@ func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
 		return
 	}
 	for _, proc := range attacker.EquipmentBonus.OnHitProcs {
-		if proc.Chance <= 0 || proc.Params.Damage <= 0 {
+		if proc.Chance <= 0 || proc.Ability == "" {
 			continue
 		}
 		if s.rngPerks.Float64() < proc.Chance {
-			s.executeProcEffectLocked(procSourceFromUnit(attacker), target, proc.Params)
+			s.castAbilityAsProcLocked(attacker, target, proc.Ability, 1.0)
 		}
 	}
 }
@@ -562,11 +562,11 @@ func (s *GameState) rollEquipmentStruckProcsLocked(defender, attacker *Unit) {
 		return
 	}
 	for _, proc := range defender.EquipmentBonus.OnStruckProcs {
-		if proc.Chance <= 0 || proc.Params.Damage <= 0 {
+		if proc.Chance <= 0 || proc.Ability == "" {
 			continue
 		}
 		if s.rngPerks.Float64() < proc.Chance {
-			s.executeProcEffectLocked(procSourceFromUnit(defender), attacker, proc.Params)
+			s.castAbilityAsProcLocked(defender, attacker, proc.Ability, 1.0)
 		}
 	}
 }
@@ -635,20 +635,11 @@ func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, des
 		// projectile carries the pre-crit damage in that case.
 		isPierce := !profile.Melee && containsString(unit.PerkIDs, "pierce")
 		rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
-		// Zone-aura damage: a flat add and a multiplier from the attacker owner's
-		// controlled zones, folded as (existing + add) × mul before crit/armor.
-		// Covers both melee and ranged (this is pre-branch). No active aura ⇒
-		// (0, 1) identity. Ability damage is a separate system, out of v1 scope.
-		//
-		// Data-driven perk stat modifiers (PerkStatModifier{Stat: "damage"})
-		// fold into the same merge via mergeZoneIntoBaseStage/applyStatStages.
-		// No perk authors statModifiers today, so this is byte-identical to
-		// the prior zone-only fold.
-		dmgAdd, dmgMul := s.playerStatModifierLocked(unit.OwnerID, statDamage)
-		dmgPerkStages := s.unitPerkStatModifiersLocked(unit, statDamage)
-		if dmgAdd != 0 || dmgMul != 1 || len(dmgPerkStages) > 0 {
-			rawDamage = applyStatStages(rawDamage, mergeZoneIntoBaseStage(dmgPerkStages, dmgAdd, dmgMul))
-		}
+		// Fold the perk + status + zone-aura "damage" pool onto rawDamage before
+		// crit/armor, through the shared chokepoint. Covers both melee and ranged
+		// (this is pre-branch). Empty pool + no zone aura ⇒ identity, byte-identical
+		// to the pre-chokepoint zone-only fold. Ability damage is a separate system.
+		rawDamage = s.effectiveStatLocked(unit, rawDamage, statDamage)
 		critMult := 1.0
 		isCrit := false
 		if !isPierce {

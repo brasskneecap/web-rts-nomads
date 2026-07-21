@@ -46,15 +46,15 @@ export function validateItemForm(form: ItemEditorForm, ctx: ValidationContext): 
       ? { ok: false, message: `${badPct.join(' and ')} chance must be between 0 and 99%.` }
       : { ok: true, message: 'Stat values are in range.' })
 
-    // A proc with no effect is dropped at save rather than rejected, so flag it
-    // as an unfinished row instead of an error the server would return.
-    const unfinished = form.procs.filter((p) => !p.effect).length
+    // A proc with no ability chosen is dropped at save rather than rejected, so
+    // flag it as an unfinished row instead of an error the server would return.
+    const unfinished = form.procs.filter((p) => !p.ability).length
     const badChance = form.procs.some((p) => p.chancePct <= 0 || p.chancePct > 100)
     checks.push(
       badChance
         ? { ok: false, message: 'Every proc chance must be between 1 and 100%.' }
         : unfinished > 0
-          ? { ok: false, message: `${unfinished} proc${unfinished > 1 ? 's have' : ' has'} no effect selected and will not be saved.` }
+          ? { ok: false, message: `${unfinished} proc${unfinished > 1 ? 's have' : ' has'} no ability selected and will not be saved.` }
           : { ok: true, message: form.procs.length > 0 ? 'All procs are valid.' : 'No procs.' },
     )
   }
