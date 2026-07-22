@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { AuthoredAbilityDef } from '@/game/abilities/abilityEditorForm'
 import AbilityBuilderPanel from './AbilityBuilderPanel.vue'
+import { settle, useConfirmDialogState } from '@/components/ui/useConfirmDialog'
+
+// The delete/reset prompts go through the app's themed dialog rather than
+// window.confirm (see useConfirmDialog's doc comment), so these tests drive that
+// singleton: assert what it was ASKED, then settle it.
+const confirmState = useConfirmDialogState()
 import AbilityPreviewPanel from './AbilityPreviewPanel.vue'
 
 // A legacy (pre-schemaVersion-2) ability — mirrors useAbilityBuilder.test.ts's
@@ -406,7 +412,6 @@ describe('AbilityBuilderPanel delete/reset (3-way contract)', () => {
   it('cancelling the confirm does NOT call the delete API (the anti-misclick guard)', async () => {
     const customAbility: AuthoredAbilityDef = { ...composableAbility, custom: true }
     const { deleteCalls } = stubFetch([customAbility])
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
 
     const wrapper = mount(AbilityBuilderPanel)
     await flushPromises()
@@ -417,7 +422,12 @@ describe('AbilityBuilderPanel delete/reset (3-way contract)', () => {
     await removeButton!.trigger('click')
     await flushPromises()
 
-    expect(window.confirm).toHaveBeenCalledOnce()
+    // The themed dialog is open and nothing has been sent yet.
+    expect(confirmState.open.value).toBe(true)
+    expect(deleteCalls).toEqual([])
+
+    settle(false)
+    await flushPromises()
     expect(deleteCalls).toEqual([])
     // The ability is still open — a cancelled confirm must not close the editor.
     expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(true)
@@ -426,7 +436,6 @@ describe('AbilityBuilderPanel delete/reset (3-way contract)', () => {
   it('confirming Delete on a custom ability names the permanent-removal consequence, then calls the API and closes the editor', async () => {
     const customAbility: AuthoredAbilityDef = { ...composableAbility, custom: true }
     const { deleteCalls } = stubFetch([customAbility], 'deleted')
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const wrapper = mount(AbilityBuilderPanel)
     await flushPromises()
@@ -437,9 +446,12 @@ describe('AbilityBuilderPanel delete/reset (3-way contract)', () => {
     await removeButton!.trigger('click')
     await flushPromises()
 
-    expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringMatching(/permanently removes it and cannot be undone/),
-    )
+    // The prompt must name the CONSEQUENCE, not just ask "are you sure?".
+    expect(confirmState.request.value?.title).toMatch(/Delete ability/)
+    expect(confirmState.request.value?.lines.join(' ')).toMatch(/cannot be undone/)
+
+    settle(true)
+    await flushPromises()
     expect(deleteCalls).toEqual(['fireball'])
     expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Select an ability, or create a new one.')
@@ -447,7 +459,6 @@ describe('AbilityBuilderPanel delete/reset (3-way contract)', () => {
 
   it('confirming Reset on a shipped ability names the discard-unsaved-changes consequence, then reloads it back into the editor', async () => {
     const { deleteCalls } = stubFetch([composableAbility], 'reverted')
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const wrapper = mount(AbilityBuilderPanel)
     await flushPromises()
@@ -458,9 +469,11 @@ describe('AbilityBuilderPanel delete/reset (3-way contract)', () => {
     await removeButton!.trigger('click')
     await flushPromises()
 
-    expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringMatching(/unsaved editor changes.*discarded/),
-    )
+    expect(confirmState.request.value?.title).toMatch(/Reset "/)
+    expect(confirmState.request.value?.lines.join(' ')).toMatch(/unsaved editor changes.*discarded/)
+
+    settle(true)
+    await flushPromises()
     expect(deleteCalls).toEqual(['fireball'])
     // reverted/reset keeps the ability open, reselected — not closed.
     expect(wrapper.find('[data-test="identity-tab"]').exists()).toBe(true)

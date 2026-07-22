@@ -31,6 +31,21 @@ import (
 const (
 	statOpAdd      = "add"
 	statOpMultiply = "multiply"
+	// statOpAmplify scales a value's DISTANCE FROM 1.0 rather than the value
+	// itself: result = 1 - (1 - value) x factor. It exists for INVERSE-SENSE
+	// quantities, where a lower number is a stronger effect — a slow multiplier
+	// of 0.35 ("slowed to 35% speed") is stronger than 0.7, so "make this slow
+	// 35% stronger" is NOT value x 1.35 (that would WEAKEN it to 0.4725); it is
+	// amplifying the 0.65 reduction to 0.8775, giving 0.1225.
+	//
+	// This is not a new idea — amplifySlow (perks_trapper.go) has always done
+	// exactly this for the Trapper's amplified_effects perk. The op makes that
+	// math expressible as DATA so an inverse-sense ability parameter can be
+	// amplified by a perk/item/advancement like any other.
+	//
+	// Composition is a product of the factors (1 - (1-b)*f1*f2), so it is
+	// order-independent — which the deterministic fold requires.
+	statOpAmplify = "amplify"
 )
 
 // Stat-modifier STAGES — the evaluation order a stat's accumulated
@@ -135,6 +150,60 @@ const (
 	// "healingReceived" makes just as much sense authored directly as a
 	// status's own StatModifiers entry as it would inside a PerkAura.
 	statHealingReceived = "healingReceived"
+
+	// statAbilityDamage is a PERCENTAGE amplifier — the multiplicative half of
+	// the pair it forms with statAbilityPower below. It scales an ability's
+	// damage by whatever that damage already is (including any ability-power
+	// contribution), so "+20%" is worth more on a big nuke than a small tick.
+	// Contrast abilityPower, which adds a FIXED amount normalized by a per-action
+	// ratio. Labelled "Ability Damage %" so the two are never confused in a
+	// picker that lists them adjacently.
+	//
+	// statAbilityDamage is a multiplier on the damage every ABILITY this unit
+	// casts deals (base 1.0 = "abilities deal their authored damage"; +0.15 =
+	// "+15% ability damage"). It is the unit-level "my spells hit harder" axis,
+	// deliberately a STAT rather than a per-ability parameter so it composes
+	// through the one stat chokepoint every other source already uses: a rank,
+	// an ITEM, an ADVANCEMENT, a perk, a status or a zone aura all raise it the
+	// same way with no per-ability authoring
+	// (docs/design/ability_perk_interaction.md D3).
+	//
+	// Fixed-1.0 baseline like healingReceived/gatherSpeed, so an `add` of 0.15
+	// is unambiguously +15 percentage points ⇒ IsFraction. Base-authorable, so
+	// a unit type can carry its own baseline via UnitDef.baseStats the way
+	// critChance/lifesteal/thorns do.
+	//
+	// Folded at effectiveAbilityDamageLocked (spell_modifier.go), the single
+	// seam a composable deal_damage action's amount already passes through.
+	// NOTE: deal_damage's amountRef path deliberately bypasses that seam (it
+	// applies a referenced scalar RAW — see dealDamageConfig), so ability
+	// damage derived from a context scalar is not scaled by this stat.
+	statAbilityDamage = "abilityDamage"
+	// statAbilityPower is a FLAT pool a unit contributes to its abilities'
+	// magnitudes. It is not a multiplier: an ability opts in per damage/heal
+	// action with a RATIO (dealDamageConfig.APRatio), and contributes
+	// abilityPower x ratio to that action's amount.
+	//
+	// The ratio is what makes a DoT and a burst nuke comparable. A flat "+10
+	// ability damage" is wildly stronger on a 8-tick burn than on a one-shot
+	// hit; a burn authoring apRatio 0.125 per tick and a nuke authoring 1.0 both
+	// gain the SAME total from one point of ability power. Ratios above 1 are
+	// legitimate (a long-cooldown ultimate); the engine imposes no ceiling —
+	// 0..1 is a balance convention, not a constraint.
+	statAbilityPower = "abilityPower"
+
+	// statDamageTaken multiplies every point of damage a unit RECEIVES (base
+	// 1.0 = "take normal damage"; +0.2 = "take 20% more"). It is the
+	// data-driven form of the Trapper marker trap's "marked enemies take bonus
+	// damage from all sources", and generalizes to any buff/debuff that makes a
+	// unit more or less fragile — a status, an aura or a perk raises it the same
+	// way, with no new fold site.
+	//
+	// Fixed-1.0 baseline like healingReceived/abilityDamage, so an `add` of 0.2
+	// is unambiguously +20 percentage points ⇒ IsFraction. Folded at the
+	// incoming-damage amplification step (perks_defense.go), the same position
+	// the legacy hand-rolled mark multiplier occupies.
+	statDamageTaken = "damageTaken"
 )
 
 // statDef describes a registered stat: its id, the human label the editor and
@@ -272,6 +341,19 @@ var statRegistry = []statDef{
 	{statProjectileDamageReduction, "Projectile Damage Reduction", false, true, true},
 	{statArmorPercent, "Percent Armor", false, true, true},
 	{statHealingReceived, "Healing Received", true, true, false},
+	// Ability Damage: fixed-1.0-baseline multiplier on ability damage, so an
+	// `add` is a percentage-point amount (IsFraction). Real top-level fold site
+	// (effectiveAbilityDamageLocked) ⇒ not AuraOnly.
+	{statAbilityDamage, "Ability Damage %", true, true, false},
+	// Ability Power: a FLAT pool (not a fixed-1.0 multiplier), so an `add` is a
+	// whole amount, not a percentage point ⇒ NOT IsFraction — the one place it
+	// differs from Ability Damage directly above. AllowMultiply so a perk can
+	// scale the pool; real fold site (deal_damage's ratio term) ⇒ not AuraOnly.
+	{statAbilityPower, "Ability Power", true, false, false},
+	// Damage Taken: fixed-1.0-baseline multiplier on incoming damage, so an
+	// `add` is a percentage-point amount (IsFraction). Real top-level fold site
+	// (perks_defense.go's amplification step) ⇒ not AuraOnly.
+	{statDamageTaken, "Damage Taken", true, true, false},
 }
 
 // statRegistryByID is the O(1) lookup index built once at init.
@@ -343,15 +425,55 @@ func isAuraOnlyStat(id string) bool {
 // same "no inert / no double-source authoring" rule the perk/status vocabulary
 // uses).
 var statBaseAuthorable = map[string]bool{
-	statCritChance: true,
-	statCritMult:   true,
-	statLifesteal:  true,
-	statThorns:     true,
+	statCritChance:    true,
+	statCritMult:      true,
+	statLifesteal:     true,
+	statThorns:        true,
+	statAbilityDamage: true,
+	statAbilityPower:  true,
 }
 
 // isBaseAuthorableStat reports whether a per-unit base value may be authored for
 // stat on UnitDef.BaseStats.
 func isBaseAuthorableStat(stat string) bool { return statBaseAuthorable[stat] }
+
+// baseAuthorableStatIDs returns the base-authorable stat ids, sorted — used to
+// build designer-facing validation messages so they can never go stale as the
+// set grows.
+func baseAuthorableStatIDs() []string {
+	out := make([]string, 0, len(statBaseAuthorable))
+	for id := range statBaseAuthorable {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// statUnitInterval lists the base-authorable stats whose value is a genuine
+// 0-1 probability/ratio, so an authored base above 1 is certainly a mistake
+// (a designer typing 50 meaning "50%").
+//
+// This is deliberately SEPARATE from statDef.IsFraction. IsFraction is a
+// RENDERING concern — "an `add` on this stat is a percentage-point amount, so
+// show +0.1 as +10%" — and it is true for two different families:
+//
+//   - genuine 0-1 probabilities (critChance, lifesteal, thorns), whose value
+//     must stay within [0,1]; and
+//   - fixed-1.0-baseline MULTIPLIERS (abilityDamage, healingReceived,
+//     gatherSpeed), whose value legitimately exceeds 1 — "1.5x ability damage"
+//     is a perfectly good base.
+//
+// Only the first family may be range-clamped. Conflating the two was harmless
+// while every base-authorable fraction stat happened to be a probability;
+// abilityDamage is the first that is not.
+var statUnitInterval = map[string]bool{
+	statCritChance: true,
+	statLifesteal:  true,
+	statThorns:     true,
+}
+
+// isUnitIntervalStat reports whether stat's value must lie within [0,1].
+func isUnitIntervalStat(stat string) bool { return statUnitInterval[stat] }
 
 // statBaseDefault returns the base value a unit has for a base-authorable stat
 // when it authors none — the former hardcoded global default. 0 for any stat
@@ -363,6 +485,14 @@ func statBaseDefault(stat string) float64 {
 		return defaultCritChance
 	case statCritMult:
 		return defaultCritMultiplier
+	case statAbilityDamage:
+		// Identity multiplier: a unit authoring no base deals exactly the
+		// ability's authored damage, so introducing this stat is a no-op.
+		return 1
+	case statAbilityPower:
+		// A flat pool, so 0 is the identity: a unit authoring no base
+		// contributes nothing through any ability's ratio.
+		return 0
 	}
 	return 0
 }

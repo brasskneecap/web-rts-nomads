@@ -10,8 +10,6 @@
     "trap"
   ],
   "category": "offensive",
-  "targetCount": 1,
-  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
@@ -32,27 +30,153 @@
         "type": "on_cast_complete",
         "actions": [
           {
-            "id": "place",
-            "type": "place_trap",
+            "id": "pit",
+            "type": "create_zone",
             "config": {
-              "trapType": "fire_pit",
-              "durationSeconds": 10,
-              "placeIntervalSeconds": 8,
+              "name": "Fire Pit",
+              "position": {
+                "key": "initial_target"
+              },
               "radius": 55,
-              "damagePerSecond": 16,
-              "configByRank": {
-                "silver": {
-                  "damagePerSecond": 28,
-                  "radius": 75
-                },
-                "gold": {
-                  "damagePerSecond": 45,
-                  "radius": 95
+              "duration": 10,
+              "tickInterval": 1,
+              "sprite": "fire_pit",
+              "triggers": [
+                {
+                  "id": "tick",
+                  "type": "on_tick",
+                  "actions": [
+                    {
+                      "id": "inzone",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "origin": "zone_center",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radiusRef": "zone_radius"
+                      },
+                      "outputs": {
+                        "targets": "burning"
+                      }
+                    },
+                    {
+                      "id": "deliver",
+                      "type": "conditional",
+                      "config": {
+                        "conditions": [
+                          {
+                            "op": "has_perk",
+                            "right": "lasting_flames"
+                          }
+                        ],
+                        "then": [
+                          {
+                            "id": "burn",
+                            "type": "apply_status_duration",
+                            "input": {
+                              "targets": {
+                                "key": "burning"
+                              }
+                            },
+                            "config": {
+                              "name": "Burning",
+                              "duration": 8,
+                              "stacking": "refresh",
+                              "tickInterval": 1,
+                              "triggers": [
+                                {
+                                  "id": "burn_applied",
+                                  "type": "on_action_complete",
+                                  "actions": [
+                                    {
+                                      "id": "burn_vfx",
+                                      "type": "play_presentation",
+                                      "config": {
+                                        "asset": "burning",
+                                        "bindToStatusDuration": true
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
+                                  "id": "burn_tick",
+                                  "type": "on_tick",
+                                  "actions": [
+                                    {
+                                      "id": "burn_dmg",
+                                      "type": "deal_damage",
+                                      "config": {
+                                        "amount": 16,
+                                        "type": "fire"
+                                      }
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          }
+                        ],
+                        "else": [
+                          {
+                            "id": "direct_dmg",
+                            "type": "deal_damage",
+                            "input": {
+                              "targets": {
+                                "key": "burning"
+                              }
+                            },
+                            "config": {
+                              "amount": 16,
+                              "type": "fire"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
                 }
-              }
+              ]
             }
           }
         ]
+      }
+    ]
+  },
+  "byRank": {
+    "silver": [
+      {
+        "action": "pit",
+        "field": "radius",
+        "value": 75
+      },
+      {
+        "action": "direct_dmg",
+        "field": "amount",
+        "value": 28
+      },
+      {
+        "action": "burn_dmg",
+        "field": "amount",
+        "value": 28
+      }
+    ],
+    "gold": [
+      {
+        "action": "pit",
+        "field": "radius",
+        "value": 95
+      },
+      {
+        "action": "direct_dmg",
+        "field": "amount",
+        "value": 45
+      },
+      {
+        "action": "burn_dmg",
+        "field": "amount",
+        "value": 45
       }
     ]
   }

@@ -199,4 +199,21 @@ describe('consumable items', () => {
     expect(item.consumable).toEqual({ type: 'heal', amount: 50, split: true })
     expect(item.maxStacks).toBeUndefined()
   })
+
+  // An item's abilityStats is the BROAD addressing mode it needs — it cannot
+  // name an ability, so it targets a kind. Must round-trip as a modeled field.
+  it('round-trips abilityStats and drops an empty map', () => {
+    const def = {
+      id: 'ring', displayName: 'Ring', iconKey: 'i', kind: 'equipment', tier: 'rare', costGold: 100,
+      abilityStats: { radius: { pct: 0.15 } },
+    } as never
+    const form = formFromDef(def)
+    expect(form.abilityStats).toEqual({ radius: { pct: 0.15 } })
+
+    const { item } = saveRequestFromForm(form)
+    expect(item.abilityStats).toEqual({ radius: { pct: 0.15 } })
+
+    const bare = saveRequestFromForm({ ...form, abilityStats: {} })
+    expect('abilityStats' in bare.item).toBe(false)
+  })
 })

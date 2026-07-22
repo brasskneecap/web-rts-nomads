@@ -7,5 +7,34 @@
   "config": {
     "durationMultiplier": 1.5
   },
-  "wired": false
+  "abilityFields": [
+    {
+      "target": "fire_pit",
+      "action": "pit",
+      "field": "duration",
+      "op": "multiply",
+      "value": 1.5
+    },
+    {
+      "target": "caltrops",
+      "action": "field",
+      "field": "duration",
+      "op": "multiply",
+      "value": 1.5
+    },
+    {
+      "target": "explosive_trap",
+      "action": "arm",
+      "field": "duration",
+      "op": "multiply",
+      "value": 1.5
+    },
+    {
+      "target": "marker_trap",
+      "action": "zone",
+      "field": "duration",
+      "op": "multiply",
+      "value": 1.5
+    }
+  ]
 }

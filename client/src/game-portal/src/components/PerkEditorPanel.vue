@@ -279,6 +279,7 @@
 </template>
 
 <script setup lang="ts">
+import { confirmDelete } from '@/components/editor/confirmDelete'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createBlankForm, formFromDef, saveRequestFromForm,
@@ -719,6 +720,7 @@ async function save() {
 
 async function removePerk() {
   if (!selectedId.value) return
+  if (!(await confirmDelete('perk', selectedId.value, undefined, 'If it ships with the game it will reset to its built-in default; a custom one is removed.'))) return
   saveError.value = ''
   statusMessage.value = ''
   busy.value = true

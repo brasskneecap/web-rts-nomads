@@ -1,6 +1,7 @@
 package game
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -760,4 +761,218 @@ func TestRunAbilityPreview_ChargeFirePassive_FiresWhenSeeded(t *testing.T) {
 		t.Fatalf("enemy HP changed (%d -> %d) with no seeded charge; passive should be dormant",
 			dormant.Units[0].HPBefore, dormant.Units[0].HPAfter)
 	}
+}
+
+// TestRunAbilityPreview_ConditionalOverrides proves the editor can preview
+// BOTH sides of a perk-gated branch. The preview harness's caster owns no
+// perks, so fire_pit's `has_perk lasting_flames` conditional always evaluates
+// false on its own — without an override the THEN branch (the lingering burn)
+// would be unreachable in the editor no matter what the author did.
+func TestRunAbilityPreview_ConditionalOverrides(t *testing.T) {
+	def, ok := getAbilityDef("fire_pit")
+	if !ok {
+		t.Fatal(`getAbilityDef("fire_pit") = _, false`)
+	}
+	// The id of the conditional inside fire_pit's program — read from the
+	// catalog rather than hardcoded, so renaming the node fails this test
+	// loudly instead of silently making it assert nothing.
+	condID := onlyConditionalActionID(t, def)
+
+	run := func(overrides map[string]bool) PreviewResult {
+		t.Helper()
+		res, err := RunAbilityPreview(PreviewRequest{
+			Ability: def, Seed: 1, CasterX: 0, CasterY: 0, CastX: 40, CastY: 0, Target: -1,
+			DurationSeconds:      1,
+			Units:                []PreviewSceneUnit{{Team: "enemy", X: 40, Y: 0, HP: 500, MaxHP: 500}},
+			ConditionalOverrides: overrides,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Error != "" {
+			t.Fatalf("unexpected cast failure: %q", res.Error)
+		}
+		return res
+	}
+
+	t.Run("no override evaluates normally (perkless caster takes ELSE)", func(t *testing.T) {
+		res := run(nil)
+		if !previewTraceHasType(res.Trace, "condition_failed") {
+			t.Error("expected the ELSE branch: a perkless preview caster fails has_perk")
+		}
+		if previewTraceHasType(res.Trace, "conditional_taken") {
+			t.Error("THEN branch taken without an override")
+		}
+	})
+
+	t.Run("forcing true takes THEN", func(t *testing.T) {
+		res := run(map[string]bool{condID: true})
+		if !previewTraceHasType(res.Trace, "conditional_taken") {
+			t.Fatal("override true did not take the THEN branch")
+		}
+		// The trace must not claim the condition passed on its own merits.
+		for _, e := range res.Trace {
+			if e.Type == "conditional_taken" {
+				if forced, _ := e.Payload["forced"].(bool); !forced {
+					t.Error(`conditional_taken payload should carry forced:true so the event log doesn't imply the condition was evaluated`)
+				}
+			}
+		}
+	})
+
+	t.Run("forcing false is a real forced value, not merely an absent key", func(t *testing.T) {
+		// Observationally the ELSE branch runs either way here (a perkless
+		// caster fails has_perk on its own), so the thing that distinguishes a
+		// FORCED false from an unset key is the trace payload — which is also
+		// what the editor's event log reads to say "forced" instead of
+		// "evaluated". Assert exactly that, rather than a branch outcome the
+		// two cases genuinely share.
+		res := run(map[string]bool{condID: false})
+		saw := false
+		for _, e := range res.Trace {
+			if e.Type == "condition_failed" {
+				saw = true
+				if forced, _ := e.Payload["forced"].(bool); !forced {
+					t.Error("condition_failed payload should carry forced:true when the outcome was overridden")
+				}
+			}
+		}
+		if !saw {
+			t.Fatal("no condition_failed event recorded")
+		}
+
+		// ... and the unset case must report the opposite, or "forced" would
+		// be a constant rather than a signal.
+		for _, e := range run(nil).Trace {
+			if e.Type == "condition_failed" {
+				if forced, _ := e.Payload["forced"].(bool); forced {
+					t.Error("an unset override must report forced:false")
+				}
+			}
+		}
+	})
+
+	t.Run("an id matching no conditional is ignored", func(t *testing.T) {
+		res := run(map[string]bool{"no_such_action": true})
+		if previewTraceHasType(res.Trace, "conditional_taken") {
+			t.Error("a stale override id must not affect an unrelated conditional")
+		}
+	})
+}
+
+// TestRunAbilityPreview_ForcedBranchRendersItsVisual is the END-TO-END check
+// behind "the burning effect never shows up in the preview". Two independent
+// things had to be true for the editor to render it, and neither was:
+//
+//  1. The burn lives behind a has_perk branch, and the preview caster owns no
+//     perks — so the THEN side was unreachable until ConditionalOverrides
+//     existed. Nothing the author did to the visual could have mattered.
+//  2. The visual is only anchored to the afflicted unit when play_presentation
+//     sets bindToStatusDuration; without it the same action renders one effect
+//     at the CAST POINT instead of on the enemy.
+//
+// Asserting on captured FRAMES (not just the trace) is deliberate: frames are
+// literally what the preview canvas draws, so this fails if the effect is
+// produced but never reaches the wire.
+func TestRunAbilityPreview_ForcedBranchRendersItsVisual(t *testing.T) {
+	def, ok := getAbilityDef("fire_pit")
+	if !ok {
+		t.Fatal(`getAbilityDef("fire_pit") = _, false`)
+	}
+	condID := onlyConditionalActionID(t, def)
+
+	res, err := RunAbilityPreview(PreviewRequest{
+		Ability: def, Seed: 1, CasterX: 0, CasterY: 0, CastX: 40, CastY: 0, Target: -1,
+		DurationSeconds:      2,
+		Units:                []PreviewSceneUnit{{Team: "enemy", X: 40, Y: 0, HP: 500, MaxHP: 500}},
+		ConditionalOverrides: map[string]bool{condID: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Error != "" {
+		t.Fatalf("unexpected cast failure: %q", res.Error)
+	}
+
+	// The enemy is the only scene unit, so anything anchored elsewhere (or
+	// anchored to nothing — the at-point shape reports id 0) is a regression.
+	var framesWithFlame, maxPerFrame int
+	for _, f := range res.Frames {
+		n := 0
+		for _, e := range f.Snapshot.Effects {
+			if e.Name != "burning" {
+				continue
+			}
+			n++
+			if e.AnchorUnitID == 0 {
+				t.Fatalf("burn flame reached the preview unanchored (rendered at the cast point, not on the enemy): %+v", e)
+			}
+		}
+		if n > 0 {
+			framesWithFlame++
+		}
+		if n > maxPerFrame {
+			maxPerFrame = n
+		}
+	}
+	if framesWithFlame == 0 {
+		t.Fatal("no burning effect in any preview frame — the forced branch's visual never reached the canvas")
+	}
+	// One flame, however many times the pit re-applies the refreshing burn.
+	if maxPerFrame != 1 {
+		t.Errorf("up to %d simultaneous burn flames in one frame, want 1", maxPerFrame)
+	}
+}
+
+// onlyConditionalActionID finds the single `conditional` action in def's
+// program and returns its authored id, failing if there isn't exactly one.
+// Tests key overrides off this rather than a hardcoded string so that renaming
+// (or adding a second) conditional in the catalog surfaces as a loud failure
+// instead of a test that quietly stops exercising the override path.
+func onlyConditionalActionID(t *testing.T, def AbilityDef) string {
+	t.Helper()
+	if def.Program == nil {
+		t.Fatalf("ability %q has no v2 program", def.ID)
+	}
+	var found []string
+	var walkActions func(actions []AbilityActionDef)
+	var walkTriggers func(triggers []AbilityTriggerDef)
+	walkTriggers = func(triggers []AbilityTriggerDef) {
+		for i := range triggers {
+			walkActions(triggers[i].Actions)
+		}
+	}
+	walkActions = func(actions []AbilityActionDef) {
+		for i := range actions {
+			a := &actions[i]
+			if a.Type == ActionConditional {
+				found = append(found, a.ID)
+			}
+			walkTriggers(a.Children)
+			// Branch/body/container actions live in the opaque Config bag —
+			// decode just enough to recurse without duplicating the executor's
+			// typed shapes.
+			var bag struct {
+				Triggers []AbilityTriggerDef `json:"triggers"`
+				Then     []AbilityActionDef  `json:"then"`
+				Else     []AbilityActionDef  `json:"else"`
+				Body     []AbilityActionDef  `json:"body"`
+				Actions  []AbilityActionDef  `json:"actions"`
+			}
+			if len(a.Config) > 0 {
+				_ = json.Unmarshal(a.Config, &bag)
+			}
+			walkTriggers(bag.Triggers)
+			walkActions(bag.Then)
+			walkActions(bag.Else)
+			walkActions(bag.Body)
+			walkActions(bag.Actions)
+		}
+	}
+	walkTriggers(def.Program.Triggers)
+
+	if len(found) != 1 {
+		t.Fatalf("expected exactly one conditional in %q's program, found %d %v", def.ID, len(found), found)
+	}
+	return found[0]
 }

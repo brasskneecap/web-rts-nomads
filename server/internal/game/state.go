@@ -146,6 +146,14 @@ type Unit struct {
 	// usually nil — a unit that authors none behaves on the stat's global
 	// default. Extends the "unit carries a base for any registered stat" model.
 	BaseStats           map[string]float64
+	// AbilityStats carries this unit's broad, kind-targeted ability modifiers,
+	// copied from UnitDef.AbilityStats at spawn (so an advancement that raised
+	// one flows through the same seam). Read via abilityStatFoldLocked; usually
+	// nil. See ability_stats.go.
+	AbilityStats        map[string]AbilityStatMod
+	// AbilityFields carries this unit's precise per-action ability modifiers,
+	// copied from UnitDef.AbilityFields at spawn. See ability_field_mods.go.
+	AbilityFields       []AbilityFieldModifier
 	XP                  int
 	XPValue             int // raw XP yielded when killed in "split" mode; seeded at spawn
 	XPProgressRemainder float64
@@ -1052,6 +1060,21 @@ type GameState struct {
 	previewTrace *AbilityExecutionTrace
 	previewClock float64
 
+	// previewConditionalOverrides forces individual `conditional` actions to a
+	// fixed outcome for the duration of a RunAbilityPreview run, keyed by the
+	// conditional action's own id. Present ⇒ that conditional takes the mapped
+	// branch without evaluating its conditions at all; absent ⇒ it evaluates
+	// normally. This exists because the preview harness's synthetic caster owns
+	// no perks, items or advancements, so every `has_perk` branch — the whole
+	// point of a perk-gated ability like fire_pit — would always be false and
+	// its THEN side would be unreachable in the editor.
+	//
+	// nil in every real match (the map is only ever populated by
+	// RunAbilityPreview from PreviewRequest.ConditionalOverrides), so a
+	// production conditional never consults it — a nil-map read is the same
+	// two-word lookup the zero value would be.
+	previewConditionalOverrides map[string]bool
+
 	// simTime accumulates dt every Update() tick, in production and preview
 	// alike (unlike previewClock, which stays 0 in production). It is a
 	// plain dt-accumulator, never wall-clock — see the determinism rule in
@@ -1866,6 +1889,8 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 			Triggered:        trap.Triggered, // one-tick VFX flash flag (fires on every detonation)
 		})
 	}
+	// Visible ability zones ride the same array (see visibleZoneSnapshotsLocked).
+	traps = append(traps, s.visibleZoneSnapshotsLocked()...)
 
 	var gameOver *protocol.GameOverSnapshot
 	if len(s.lostPlayerIDs) > 0 {
@@ -2263,6 +2288,14 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			RemainingSeconds: trap.RemainingSeconds,
 			Triggered:        trap.Triggered,
 		})
+	}
+	// Visible ability zones ride the same array (see visibleZoneSnapshotsLocked)
+	// and get the identical own-or-revealed fog test the traps above get.
+	for _, zs := range s.visibleZoneSnapshotsLocked() {
+		if zs.OwnerID != viewerID && !fow.isClearAtWorld(zs.X, zs.Y, cellSize) {
+			continue
+		}
+		traps = append(traps, zs)
 	}
 
 	var effects []protocol.EffectSnapshot
@@ -2772,6 +2805,8 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			Triggered:        trap.Triggered,
 		})
 	}
+	// Visible ability zones ride the same array (see visibleZoneSnapshotsLocked).
+	traps = append(traps, s.visibleZoneSnapshotsLocked()...)
 
 	var gameOver *protocol.GameOverSnapshot
 	if len(s.lostPlayerIDs) > 0 {

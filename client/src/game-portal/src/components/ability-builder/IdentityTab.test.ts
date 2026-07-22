@@ -26,8 +26,9 @@ function makeBuilderStub(overrides: {
   selected?: NodeRef
   issues?: ValidationIssue[]
 } = {}) {
+  const form = shallowRef<AbilityEditorForm>(overrides.form ?? createBlankForm())
   return {
-    form: shallowRef<AbilityEditorForm>(overrides.form ?? createBlankForm()),
+    form,
     program: shallowRef<AbilityProgram>(overrides.program ?? emptyProgram()),
     schema: shallowRef<ActionSchemaBundle | null>(overrides.schema ?? null),
     catalogs: shallowRef<AbilityBuilderCatalogs>(overrides.catalogs ?? emptyCatalogs()),
@@ -38,6 +39,14 @@ function makeBuilderStub(overrides: {
     updateActionConfig: vi.fn(),
     updateTrigger: vi.fn(),
     select: vi.fn(),
+    // params + its ops: read/called by the nested ParametersCard (see
+    // ParametersCard.test.ts for its own dedicated coverage — this stub only
+    // needs to exist so mounting IdentityTab doesn't throw).
+    params: shallowRef<Record<string, number>>(form.value.params ?? {}),
+    setParam: vi.fn(),
+    removeParam: vi.fn(),
+    setParamForRank: vi.fn(),
+    renameParam: vi.fn(),
   }
 }
 

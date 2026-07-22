@@ -90,6 +90,15 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	if totalMult := target.PerkState.totalMarkMultiplier(); totalMult > 0 {
 		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+totalMult))))
 	}
+	// Step 3a: generic damage-taken amplification. Same position as the
+	// hand-rolled mark multiplier above, but sourced from the shared stat
+	// vocabulary — so a STATUS (a migrated marker trap's mark), an aura or a
+	// perk all make a unit take more (or less) damage through one fold with no
+	// per-source code. Identity (1.0) unless something contributes, so this is
+	// a no-op for every unit that has nothing on it.
+	if mult := s.effectiveStatLocked(target, 1.0, statDamageTaken); mult != 1.0 {
+		damage = int(math.Round(float64(damage) * mult))
+	}
 	// Step 3b: Sanctuary aura mitigation (projectile-only). max-wins, no-stack.
 	// Applied after mark amplification and before flat reduction so sanctuary
 	// reduces on top of any mark bonus — consistent with the design intent that

@@ -1624,6 +1624,7 @@
 </template>
 
 <script setup lang="ts">
+import { ask } from '@/components/ui/useConfirmDialog'
 import type { ListDef } from '@/game/maps/listDefs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -3200,8 +3201,12 @@ function clearMap() {
 // while preserving setup metadata (id / name / description / grid size /
 // default ground / wave config). Confirms before acting because the change
 // isn't undoable.
-function clearEverything() {
-  if (!window.confirm('Clear all terrain, tiles, obstacles, and buildings? This cannot be undone.')) return
+async function clearEverything() {
+  if (!(await ask({
+    title: 'Clear the whole map?',
+    lines: ['All terrain, tiles, obstacles and buildings are removed.', 'This cannot be undone.'],
+    confirmLabel: 'Clear',
+  }))) return
   model.value = createEditorMapConfig(model.value.gridCols, model.value.gridRows, {
     id: model.value.id,
     name: model.value.name,
@@ -3506,11 +3511,15 @@ async function handleLevelConflict(conflict: LevelConflict) {
     // author entered — they just don't get the field carry-over.
   }
 
-  const confirmed = window.confirm(
-    `Level "${conflict.levelId}" is currently the map "${conflict.ownerMapName}".\n\n` +
-      `Move it to this map instead? "${conflict.ownerMapName}" will no longer be a ` +
-      `campaign level (its other map content is untouched).`,
-  )
+  const confirmed = await ask({
+    title: `Move level "${conflict.levelId}" to this map?`,
+    lines: [
+      `It is currently the map "${conflict.ownerMapName}".`,
+      `"${conflict.ownerMapName}" will no longer be a campaign level (its other map content is untouched).`,
+    ],
+    confirmLabel: 'Move',
+    danger: false,
+  })
   if (!confirmed) {
     saveLabel.value = 'Save to Server'
     return

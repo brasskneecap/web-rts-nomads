@@ -16,16 +16,22 @@
 //     "triggers[N].actions[M].config.triggers[K].actions[L]" -> nested action
 //     "presentations[P].triggers[N]" / ".actions[M]" / deeper still, same as
 //       above once inside a presentation's trigger.
+//     "triggers[N].actions[M].body[K]"                       -> nested action
+//       (a loop's config.body); ".then[K]" / ".else[K]" are the same shape for
+//       a conditional's config.then/config.else. Any of the three can be
+//       followed by further steps (another ".actions[..]", nested trigger
+//       slot, or another nested action list), same as any other action node.
 //   `namedTriggers[id]...` paths exist in this grammar too but namedTriggers
 //   AUTHORING is out of scope for phase 7 (see plan's "Out of scope") — this
 //   function doesn't special-case them; they simply don't match either root
 //   regex below and fall through to null, same as any other unaddressable
 //   shape.
 //   The walk here is a small local state machine (root match, then a loop
-//   consuming ".actions[M]" then optionally ".children[K]" or
-//   ".config.triggers[K]", repeating) rather than one fixed-depth regex,
-//   because the grammar's depth is unbounded — this mirrors
-//   programTree.ts's `walkPath`, just driven by index tokens instead of ids.
+//   consuming ".actions[M]" then optionally ".children[K]", ".config.
+//   triggers[K]", ".body[K]", ".then[K]", or ".else[K]", repeating) rather
+//   than one fixed-depth regex, because the grammar's depth is unbounded —
+//   this mirrors programTree.ts's `walkPath`, just driven by index tokens
+//   instead of ids.
 //
 //   ID grammar (RunAbilityPreview's execution trace —
 //   AbilityExecutionTraceEvent.path — see server/internal/game/ability_exec.go
@@ -76,7 +82,7 @@
 // grammar.
 
 import type { AbilityActionDef, AbilityProgram, AbilityTriggerDef } from '@/game/abilities/program/abilityProgram'
-import { findNodePathById, loopBodyOf, nestedTriggersFor, type NodePath, type NodeRef } from './programTree'
+import { findNodePathById, nestedActionListOf, nestedTriggersFor, type NodePath, type NodeRef } from './programTree'
 
 // --- Index grammar (walk top-down; unbounded depth) ------------------------
 
@@ -85,9 +91,14 @@ const ROOT_TRIGGER = /^triggers\[(\d+)\]/
 const STEP_ACTION = /^\.actions\[(\d+)\]/
 const STEP_CHILDREN = /^\.children\[(\d+)\]/
 const STEP_CONFIG_TRIGGERS = /^\.config\.triggers\[(\d+)\]/
-// A loop action's nested ACTION list — the one place ".body[K]" leads to
-// another action rather than a trigger.
+// A nested ACTION list — a loop's config.body or a conditional's
+// config.then/config.else — the only place ".<key>[K]" leads to another
+// action rather than a trigger. Mirrors programTree.ts's
+// NESTED_ACTION_LIST_KEYS; kept as its own small regex group (rather than one
+// combined alternation) so each key stays independently greppable.
 const STEP_BODY = /^\.body\[(\d+)\]/
+const STEP_THEN = /^\.then\[(\d+)\]/
+const STEP_ELSE = /^\.else\[(\d+)\]/
 
 // configTriggersOf is a local mirror of programTree.ts's (unexported)
 // helper of the same name — `config` is an OPAQUE bag (see
@@ -173,14 +184,26 @@ function refFromIndexPath(program: AbilityProgram, path: string): NodeRef | null
       continue
     }
 
-    // A loop action's config.body: ".body[K]" resolves to a nested ACTION (not
-    // a trigger), so state stays an action and can be followed by further steps.
+    // A nested ACTION list — a loop's config.body, or a conditional's
+    // config.then/config.else — resolves to a nested ACTION (not a trigger),
+    // so state stays an action and can be followed by further steps.
     const bodyMatch = STEP_BODY.exec(rest)
-    if (bodyMatch) {
-      const nested: AbilityActionDef | undefined = loopBodyOf(state.node)[Number(bodyMatch[1])]
+    const thenMatch = STEP_THEN.exec(rest)
+    const elseMatch = STEP_ELSE.exec(rest)
+    const nestedActionMatch = bodyMatch
+      ? { key: 'body', idx: Number(bodyMatch[1]), length: bodyMatch[0].length }
+      : thenMatch
+        ? { key: 'then', idx: Number(thenMatch[1]), length: thenMatch[0].length }
+        : elseMatch
+          ? { key: 'else', idx: Number(elseMatch[1]), length: elseMatch[0].length }
+          : null
+    if (nestedActionMatch) {
+      const nested: AbilityActionDef | undefined = nestedActionListOf(state.node, nestedActionMatch.key)[
+        nestedActionMatch.idx
+      ]
       if (!nested) return null
       state = { kind: 'action', node: nested, path: [...state.path, { kind: 'action', id: nested.id }] }
-      rest = rest.slice(bodyMatch[0].length)
+      rest = rest.slice(nestedActionMatch.length)
       continue
     }
 

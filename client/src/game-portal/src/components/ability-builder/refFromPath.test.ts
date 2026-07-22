@@ -196,6 +196,59 @@ describe('refFromPath', () => {
     it('returns null for a trigger directly followed by .children (no .actions in between)', () => {
       expect(refFromPath(program(), 'triggers[0].children[0]')).toBeNull()
     })
+
+    // .body[k] (a loop's nested action list) / .then[k] / .else[k] (a
+    // conditional's two nested action lists) all resolve to a nested ACTION,
+    // not a trigger — so, unlike .children[k]/.config.triggers[k], the walk
+    // can continue with another ".actions[..]" or nested-list step straight
+    // after one of these.
+    it('resolves a loop action under .body[k]', () => {
+      const prog: AbilityProgram = {
+        entry: { type: 'self', range: 0 },
+        triggers: [
+          {
+            id: 'r',
+            type: 'on_cast_complete',
+            actions: [{ id: 'lp', type: 'loop', config: { iterations: 3, body: [{ id: 'b1', type: 'wait' }] } }],
+          },
+        ],
+      }
+      expect(refFromPath(prog, 'triggers[0].actions[0].body[0]')).toEqual({
+        kind: 'action',
+        path: [{ kind: 'trigger', id: 'r' }, { kind: 'action', id: 'lp' }, { kind: 'action', id: 'b1' }],
+      })
+    })
+
+    it('resolves a conditional action under .then[k] and .else[k]', () => {
+      const prog: AbilityProgram = {
+        entry: { type: 'self', range: 0 },
+        triggers: [
+          {
+            id: 'r',
+            type: 'on_cast_complete',
+            actions: [
+              {
+                id: 'cond',
+                type: 'conditional',
+                config: {
+                  conditions: [{ op: 'has_perk', right: 'lasting_flames' }],
+                  then: [{ id: 'burn', type: 'apply_status_duration' }],
+                  else: [{ id: 'dmg', type: 'deal_damage' }],
+                },
+              },
+            ],
+          },
+        ],
+      }
+      expect(refFromPath(prog, 'triggers[0].actions[0].then[0]')).toEqual({
+        kind: 'action',
+        path: [{ kind: 'trigger', id: 'r' }, { kind: 'action', id: 'cond' }, { kind: 'action', id: 'burn' }],
+      })
+      expect(refFromPath(prog, 'triggers[0].actions[0].else[0]')).toEqual({
+        kind: 'action',
+        path: [{ kind: 'trigger', id: 'r' }, { kind: 'action', id: 'cond' }, { kind: 'action', id: 'dmg' }],
+      })
+    })
   })
 
   describe('id grammar (RunAbilityPreview execution trace paths)', () => {

@@ -324,7 +324,7 @@ const timingKind = computed<TimingKind>(() => {
   const t = selectedTrigger.value?.type
   if (t === 'on_animation_marker') return 'marker'
   // on_tick carries NO trigger-level interval — the tick cadence is authored on
-  // the enclosing container (Apply Duration / create_zone / …), so show no
+  // the enclosing container (Apply Status Duration / create_zone / …), so show no
   // timing field here (a second "Tick Interval" would just be confusing).
   if (t === 'on_tick') return 'none'
   return 'frame'

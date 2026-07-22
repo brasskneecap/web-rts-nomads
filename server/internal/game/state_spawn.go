@@ -88,6 +88,8 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		// advancement that raised a base stat flows through here too. Copied so a
 		// later per-unit mutation can't scribble on the shared catalog def's map.
 		BaseStats:          copyBaseStats(def.BaseStats),
+		AbilityStats:       copyAbilityStats(def.AbilityStats),
+		AbilityFields:      append([]AbilityFieldModifier(nil), def.AbilityFields...),
 		Damage:             def.Damage,
 		Armor:              def.Armor,
 		AttackRange:        def.AttackRange,

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"math"
 	"sort"
+	"strings"
 )
 
 // Embeds the entire per-unit catalog tree. Layout:
@@ -208,6 +209,34 @@ type UnitDef struct {
 	// (statBaseAuthorable) and the value finite/sane — see validateUnitDef.
 	BaseStats map[string]float64 `json:"baseStats,omitempty"`
 
+	// AbilityStats are BROAD, kind-targeted contributions this unit type makes to
+	// every ability it casts — "+2s duration", "+15% radius" (ability_stats.go).
+	// Where AbilityParams below names a specific ability, these name a KIND, so a
+	// unit that is natively "long duration" stays that way for abilities authored
+	// after it. Keys are ids from AbilityStatDefs(): a bare kind ("duration") or
+	// an action-scoped one ("create_zone.duration"). Validated at load.
+	AbilityStats map[string]AbilityStatMod `json:"abilityStats,omitempty"`
+
+	// AbilityFields are this unit type's PRECISE, per-action contributions —
+	// the seam a RANK bonus or an advancement uses to raise one specific number
+	// on one specific ability. See ability_field_mods.go.
+	AbilityFields []AbilityFieldModifier `json:"abilityFields,omitempty"`
+
+	// AbilityParams are contributions this UNIT TYPE makes to the parameters of
+	// abilities it casts — the third wired source family alongside perks and
+	// items (see ability_params.go). Two things feed it:
+	//
+	//   - authored directly on the unit type ("this archer's traps are always
+	//     bigger"), and
+	//   - ADVANCEMENTS, which append entries here when their effects are applied
+	//     to the player's effective defs at match start (the
+	//     "unitAbilityParamAdd"/"unitAbilityParamMul" effect kinds,
+	//     advancement_defs.go). That is what lets a meta-progression node tune an
+	//     ability's numbers with no per-ability and no per-advancement code.
+	//
+	// Copied onto Unit.AbilityParams at spawn (spawnUnitFromDefLocked), which is
+	// the point the advancement-effective def is already resolved.
+
 	// ── Advancement-granted bonuses (not authored in unit JSON) ──────────────
 	// These three fields are zero in the catalog and are only set by the Archer
 	// "Master Huntsman" advancement (advancement_defs.go effect kinds
@@ -389,6 +418,12 @@ func validateUnitDef(def *UnitDef) error {
 			return fmt.Errorf("unit %q: pathChances weights must sum to > 0", def.Type)
 		}
 	}
+	if err := validateAbilityFieldModifiers(fmt.Sprintf("unit %q", def.Type), def.AbilityFields); err != nil {
+		return err
+	}
+	if err := validateAbilityStats(fmt.Sprintf("unit %q", def.Type), def.AbilityStats); err != nil {
+		return err
+	}
 	if len(def.BaseStats) > 0 {
 		// Sorted keys → the reported stat is deterministic when several are bad
 		// (determinism invariant; mirrors the PathChances loop above).
@@ -400,7 +435,7 @@ func validateUnitDef(def *UnitDef) error {
 		for _, stat := range statIDs {
 			v := def.BaseStats[stat]
 			if !isBaseAuthorableStat(stat) {
-				return fmt.Errorf("unit %q: baseStats[%q] is not base-authorable — a per-unit base can only be set for a stat with no typed field (critChance, critMultiplier, lifesteal)", def.Type, stat)
+				return fmt.Errorf("unit %q: baseStats[%q] is not base-authorable — a per-unit base can only be set for a stat with no typed field (%s)", def.Type, stat, strings.Join(baseAuthorableStatIDs(), ", "))
 			}
 			if math.IsNaN(v) || math.IsInf(v, 0) {
 				return fmt.Errorf("unit %q: baseStats[%q] must be finite, got %v", def.Type, stat, v)
@@ -408,10 +443,13 @@ func validateUnitDef(def *UnitDef) error {
 			if v < 0 {
 				return fmt.Errorf("unit %q: baseStats[%q] must be >= 0, got %v", def.Type, stat, v)
 			}
-			// Fraction stats (critChance, lifesteal — a 0-1 ratio) are clamped to
-			// [0,1]; non-fraction ones (critMultiplier ≈ 2×) only require >= 0.
-			if isFractionStat(stat) && v > 1 {
-				return fmt.Errorf("unit %q: baseStats[%q] is a fraction and must be in [0,1], got %v", def.Type, stat, v)
+			// Only genuine 0-1 probabilities (critChance, lifesteal, thorns) are
+			// range-clamped. Multiplier stats legitimately exceed 1 — a 2x
+			// critMultiplier or a 1.5x abilityDamage base is valid — so the
+			// clamp keys off isUnitIntervalStat, NOT isFractionStat (which is a
+			// rendering concern; see statUnitInterval's doc comment).
+			if isUnitIntervalStat(stat) && v > 1 {
+				return fmt.Errorf("unit %q: baseStats[%q] is a 0-1 fraction and must be in [0,1], got %v", def.Type, stat, v)
 			}
 		}
 	}

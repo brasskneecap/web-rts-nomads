@@ -57,6 +57,7 @@
 </template>
 
 <script setup lang="ts">
+import { confirmDelete } from '@/components/editor/confirmDelete'
 import { onMounted, ref } from 'vue'
 import {
   createBlankForm, formFromDef, saveRequestFromForm,
@@ -126,6 +127,7 @@ async function save() {
 
 async function removeProjectile() {
   if (!selectedId.value) return
+  if (!(await confirmDelete('projectile', selectedId.value, undefined, 'If it ships with the game it will reset to its built-in default; a custom one is removed.'))) return
   saveError.value = ''
   statusMessage.value = ''
   busy.value = true

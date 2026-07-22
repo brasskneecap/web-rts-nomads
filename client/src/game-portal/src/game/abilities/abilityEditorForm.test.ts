@@ -64,6 +64,14 @@ describe('abilityEditorForm', () => {
     expect('custom' in out).toBe(false)
   })
 
+
+  it('a def with no params/paramsByRank round-trips without inventing empty objects', () => {
+    const def: AuthoredAbilityDef = { id: 'heal' } as AuthoredAbilityDef
+    const out = saveRequestFromForm(formFromDef(def))
+    expect('params' in out).toBe(false)
+    expect('paramsByRank' in out).toBe(false)
+  })
+
   it('inferFamily picks the family from non-zero fields', () => {
     expect(inferFamily({ id: 'a', channelType: 'beam' } as AuthoredAbilityDef)).toBe('channel')
     expect(inferFamily({ id: 'a', chargeRequired: 5 } as AuthoredAbilityDef)).toBe('charge')

@@ -143,6 +143,15 @@ func registerAbilityCatalogRoutes(mux *http.ServeMux) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"damageTypes": game.DamageTypes()})
 	})
 
+	// Ability-stat rows are DERIVED from the action registry (every action x
+	// kind pair that exists), so they are served rather than mirrored
+	// client-side: a hand-maintained copy would silently rot the moment an
+	// action gained or lost a kinded field.
+	mux.HandleFunc("/catalog/ability-stats", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"stats": game.AbilityStatDefs()})
+	})
+
 	mux.HandleFunc("/catalog/action-schema", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"actions": game.ActionSchemas(), "enums": game.ProgramEnums()})

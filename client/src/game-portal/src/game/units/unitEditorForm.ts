@@ -44,6 +44,12 @@ export interface AuthoredUnitDef {
   // editor's Base Stats section; validated server-side (base-authorable keys,
   // sane values). Absent/empty ⇒ the stat's global default.
   baseStats?: Record<string, number>
+  // BROAD ability modifiers this unit type contributes to every ability it
+  // casts — "+2s duration", "+15% radius". Keyed by stat id (a bare kind like
+  // "duration", or an action-scoped "create_zone.duration"); the ids are served
+  // by /catalog/ability-stats, derived from the action registry. See
+  // ability_stats.go. Absent/empty ⇒ this unit changes no ability.
+  abilityStats?: Record<string, { flat?: number; pct?: number }>
   dominionPointDropChance?: number
   dominionPointAmount?: number
   spawnExp?: number
@@ -65,7 +71,7 @@ const MODELED_KEYS = [
   'projectile','projectileScale','goldGatherAmount','woodGatherAmount','maxMana',
   'manaRegenRate','visionRange','flyer','abilities','requiresBuildings','pathChances',
   'dominionPointDropChance','dominionPointAmount','spawnExp','experience','nonCombat',
-  'trainLabel','channelLoop','attackOrigin','baseStats',
+  'trainLabel','channelLoop','attackOrigin','baseStats','abilityStats',
 ] as const
 
 export interface UnitEditorForm extends AuthoredUnitDef {
@@ -128,6 +134,8 @@ export function saveRequestFromForm(form: UnitEditorForm): AuthoredUnitDef {
     // Drop an empty baseStats map rather than emitting `"baseStats": {}` — the
     // server treats absent and empty identically, and a bare {} is noise on disk.
     if (k === 'baseStats' && (!v || Object.keys(v as Record<string, number>).length === 0)) continue
+    // Same for abilityStats — absent and empty mean the same thing server-side.
+    if (k === 'abilityStats' && (!v || Object.keys(v as Record<string, unknown>).length === 0)) continue
     out[k] = v
   }
   return out as AuthoredUnitDef

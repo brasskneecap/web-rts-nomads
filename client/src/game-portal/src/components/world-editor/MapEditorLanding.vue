@@ -4,7 +4,7 @@
        surface that stays empty until the author picks a map or starts a new
        one. Nothing is loaded into the canvas until the author acts — the
        parent only switches to the editing view on `open`/`create`. -->
-  <EditorShell class="map-landing" theme="forge">
+  <EditorShell class="map-landing">
     <template #sidebar>
       <EditorSidebar
         title="Maps"

@@ -1,5 +1,5 @@
 <template>
-  <EditorShell class="ab-panel" wide-rail theme="forge">
+  <EditorShell class="ab-panel" wide-rail>
     <!-- ── Sidebar: abilities grouped by damage school ─────────────────────── -->
     <template #sidebar>
       <div class="ab-panel__sidebar">
@@ -141,6 +141,8 @@
 </template>
 
 <script setup lang="ts">
+import { confirmDelete } from '@/components/editor/confirmDelete'
+import { ask } from '@/components/ui/useConfirmDialog'
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import EditorShell from '@/components/editor/EditorShell.vue'
 import EditorSidebar from '@/components/editor/EditorSidebar.vue'
@@ -279,21 +281,27 @@ const sidebarGroups = computed<SidebarGroup[]>(() => {
 })
 
 // ── Unsaved-changes guard ─────────────────────────────────────────────────
-// A plain window.confirm is sufficient for Task 2; a nicer in-app dialog can
-// replace this later without changing the call sites below.
-function confirmDiscard(): boolean {
+// Routed through the app's themed dialog (useConfirmDialog) rather than
+// window.confirm — a native OS dialog restores the system cursor this project
+// suppresses, and in the Tauri/Steam build JS dialogs depend on platform-webview
+// behaviour we cannot rely on.
+async function confirmDiscard(): Promise<boolean> {
   if (!builder.dirty.value) return true
-  return window.confirm('Discard unsaved changes?')
+  return ask({
+    title: 'Discard unsaved changes?',
+    confirmLabel: 'Discard',
+    danger: false,
+  })
 }
 
-function onSelect(id: string) {
-  if (!confirmDiscard()) return
+async function onSelect(id: string) {
+  if (!(await confirmDiscard())) return
   builder.selectAbility(id)
   activeTab.value = 'identity'
 }
 
-function onNew() {
-  if (!confirmDiscard()) return
+async function onNew() {
+  if (!(await confirmDiscard())) return
   builder.newAbility()
   activeTab.value = 'identity'
 }
@@ -302,8 +310,8 @@ function onNew() {
 // refinement (needs a dedicated composable op so the id/undo-stack reset
 // happens atomically). For now, open the source ability for editing so the
 // author has a starting point to rename and Save-As.
-function onDuplicate(id: string) {
-  if (!confirmDiscard()) return
+async function onDuplicate(id: string) {
+  if (!(await confirmDiscard())) return
   builder.selectAbility(id)
 }
 
@@ -351,13 +359,17 @@ const issueSummary = computed(() => {
 // button gave no warning before this fix, which is exactly how uncommitted
 // authored work got permanently lost to a misclick. Wording names the ACTUAL
 // consequence for the case at hand rather than a generic "are you sure?".
-// window.confirm matches confirmDiscard's existing pattern above (the
-// project's established affordance for this kind of guard).
-function onRemove() {
+// Uses the app's themed dialog, matching confirmDiscard above.
+async function onRemove() {
   const name = builder.form.value.displayName || builder.form.value.id
   const ok = selectedIsCustom.value
-    ? window.confirm(`Delete the ability "${name}"? This permanently removes it and cannot be undone.`)
-    : window.confirm(`Reset "${name}" to its saved/default state? Your unsaved editor changes to it will be discarded.`)
+    ? await confirmDelete('ability', name)
+    : await ask({
+        title: `Reset "${name}" to its saved/default state?`,
+        lines: ['Your unsaved editor changes to it will be discarded.'],
+        confirmLabel: 'Reset',
+        danger: false,
+      })
   if (!ok) return
   void builder.remove()
 }

@@ -78,6 +78,35 @@
       </EditorField>
     </div>
 
+    <!-- Force-a-branch toggles, one per `conditional` in the program. The
+         preview caster owns no perks/items/advancements, so every has_perk
+         branch evaluates false on its own and its THEN side would be
+         unreachable here. Checking a box sends conditionalOverrides[id]=true
+         (see Go's PreviewRequest.ConditionalOverrides); unchecking sends
+         `false`, which is a REAL forced value, not "evaluate normally" — a
+         conditional with no entry at all is what evaluates normally, and that
+         only happens for a node the author has never touched (see
+         conditionalOverrides below). Every conditional is independent. -->
+    <div v-if="conditionals.length" class="pv-scene__conditionals" data-test="preview-conditionals">
+      <span class="pv-scene__conditionals-label">Force branches</span>
+      <label
+        v-for="c in conditionals"
+        :key="c.id"
+        class="pv-scene__conditional"
+        :data-test="`preview-conditional-${c.id}`"
+      >
+        <input
+          type="checkbox"
+          :checked="conditionalOverrides[c.id] === true"
+          @change="onConditionalToggle(c.id, $event)"
+        />
+        <span class="pv-scene__conditional-summary">{{ c.summary }}</span>
+      </label>
+      <p class="pv-scene__hint">
+        Checked runs the THEN branch, unchecked the ELSE branch — regardless of what the condition would evaluate to.
+      </p>
+    </div>
+
     <p class="pv-scene__hint">
       Drag units (and the caster) on the preview canvas above to place them. Allies start pre-damaged so heals show.
     </p>
@@ -99,6 +128,7 @@ import { computed, ref, watch } from 'vue'
 import EditorField from '@/components/editor/EditorField.vue'
 import SectionCard from '@/components/editor/SectionCard.vue'
 import { defaultPreviewRequest } from '@/game/abilities/program/programPreview'
+import type { ConditionalRef } from './programTree'
 
 export type TargetSelector = 'first_enemy' | 'first_ally' | 'self' | 'point'
 
@@ -115,6 +145,11 @@ export interface PreviewSceneConfig {
   seed: number
   durationSeconds: number
   casterCharge: number
+  /** Forced outcomes for named `conditional` actions, keyed by action id. See
+      the template comment on the Force-branches block, and Go's
+      PreviewRequest.ConditionalOverrides. Empty for a program with no
+      conditionals, or one whose branches the author hasn't touched. */
+  conditionalOverrides: Record<string, boolean>
 }
 
 // chargeRequired: the ability-under-preview's own charge threshold, supplied by
@@ -122,7 +157,17 @@ export interface PreviewSceneConfig {
 // the Charge input (prefilled to this value so one volley is ready); null hides
 // it. The emitted casterCharge is still sent regardless — it's simply ignored
 // server-side for any ability that isn't a charge-fire passive.
-const props = defineProps<{ chargeRequired?: number | null }>()
+// conditionals: every `conditional` action in the program under preview, in
+// document order (collectConditionals), each rendered as one force-the-branch
+// toggle. Supplied by the panel rather than read from the builder context so
+// this control stays a pure props-in/config-out component like the rest of its
+// fields.
+const props = defineProps<{
+  chargeRequired?: number | null
+  conditionals?: ConditionalRef[]
+}>()
+
+const conditionals = computed(() => props.conditionals ?? [])
 
 const emit = defineEmits<{ 'update:modelValue': [config: PreviewSceneConfig] }>()
 
@@ -137,6 +182,31 @@ const targetSelector = ref<TargetSelector>('first_enemy')
 const seed = ref(seedDefaults.seed)
 const durationSeconds = ref(seedDefaults.durationSeconds)
 const casterCharge = ref(seedDefaults.casterCharge)
+
+// conditionalOverrides holds ONLY the conditionals the author has actually
+// toggled. An id absent from this map is sent as no override at all, so the
+// server evaluates that conditional normally — which keeps an untouched
+// preview behaving exactly as it did before this control existed, rather than
+// silently pinning every branch to false the moment the panel mounts.
+const conditionalOverrides = ref<Record<string, boolean>>({})
+
+// Drop overrides for conditionals that no longer exist. Without this, deleting
+// a branch (or switching to another ability) would leave its entry riding along
+// in every subsequent request — harmless server-side (unknown ids are ignored)
+// but a lie in the emitted config, and it would come back to life if the author
+// ever re-created an action with the same id.
+watch(
+  conditionals,
+  (list) => {
+    const live = new Set(list.map((c) => c.id))
+    const next: Record<string, boolean> = {}
+    for (const [id, v] of Object.entries(conditionalOverrides.value)) {
+      if (live.has(id)) next[id] = v
+    }
+    conditionalOverrides.value = next
+  },
+  { immediate: true },
+)
 
 // Keep casterCharge in lockstep with whether a charge field is even shown:
 // prefill to the ability's own threshold when a charge-fire ability is under
@@ -159,6 +229,7 @@ const config = computed<PreviewSceneConfig>(() => ({
   seed: seed.value,
   durationSeconds: durationSeconds.value,
   casterCharge: casterCharge.value,
+  conditionalOverrides: { ...conditionalOverrides.value },
 }))
 
 watch(config, (v) => emit('update:modelValue', v), { immediate: true })
@@ -187,6 +258,13 @@ function onDurationInput(e: Event) {
   durationSeconds.value = Number.isFinite(n) && n > 0 ? n : 0.1
 }
 
+function onConditionalToggle(id: string, e: Event) {
+  conditionalOverrides.value = {
+    ...conditionalOverrides.value,
+    [id]: (e.target as HTMLInputElement).checked,
+  }
+}
+
 function onCasterChargeInput(e: Event) {
   const n = Number((e.target as HTMLInputElement).value)
   casterCharge.value = Number.isFinite(n) && n >= 0 ? n : 0
@@ -197,6 +275,37 @@ function onCasterChargeInput(e: Event) {
 /* All five controls flow in a single wrapping row, each as a compact
    label-left-of-input pair. flex-wrap keeps them on one row when the rail is
    wide enough and gracefully drops to a second row when it isn't. */
+.pv-scene__conditionals {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ed-line);
+}
+
+.pv-scene__conditionals-label {
+  font-family: var(--font-title);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ed-brass);
+}
+
+.pv-scene__conditional {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--ed-text);
+}
+
+.pv-scene__conditional-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pv-scene__row {
   display: flex;
   flex-wrap: wrap;

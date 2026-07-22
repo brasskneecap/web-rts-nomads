@@ -3,7 +3,11 @@
     <!-- Preview Scene sits ABOVE the canvas (collapsible) so scene setup reads
          top-to-bottom into the canvas it configures, and can be folded away to
          give the canvas/timeline more room. -->
-    <PreviewSceneControls :charge-required="chargeRequired" @update:model-value="onSceneConfigUpdate" />
+    <PreviewSceneControls
+      :charge-required="chargeRequired"
+      :conditionals="conditionals"
+      @update:model-value="onSceneConfigUpdate"
+    />
 
     <!-- Canvas is ALWAYS mounted (Task 5) — the renderer is the top-most,
          always-visible element in the rail. It renders its own idle
@@ -131,7 +135,7 @@ import type { PreviewRequest, PreviewResult, PreviewSceneUnit } from '@/game/abi
 import { runAbilityPreview } from '@/game/abilities/abilityEditorApi'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
 import { refFromPath } from './refFromPath'
-import type { NodePath, NodeRef } from './programTree'
+import { collectConditionals, type NodePath, type NodeRef } from './programTree'
 import { buildExecutionTimeline } from './executionTimeline'
 import { PREVIEW_FRAME_DT_SECONDS } from './previewPlayback'
 import PreviewSceneControls, { type PreviewSceneConfig } from './PreviewSceneControls.vue'
@@ -188,7 +192,14 @@ const sceneConfig = ref<PreviewSceneConfig>({
   seed: 1,
   durationSeconds: 3,
   casterCharge: 0,
+  conditionalOverrides: {},
 })
+
+// conditionals: every `conditional` action in the program under edit, so the
+// scene controls can offer one force-the-branch toggle each. Recomputed from
+// the live program, so adding/removing/re-labelling a branch in the flow view
+// updates the toggle list immediately.
+const conditionals = computed(() => collectConditionals(builder.program.value))
 
 function onSceneConfigUpdate(v: PreviewSceneConfig) {
   sceneConfig.value = v
@@ -498,6 +509,7 @@ async function onRun() {
       casterCharge: sceneConfig.value.casterCharge,
       seed: sceneConfig.value.seed,
       durationSeconds: sceneConfig.value.durationSeconds,
+      conditionalOverrides: sceneConfig.value.conditionalOverrides,
     }
     lastRequestDuration.value = req.durationSeconds > 0 ? req.durationSeconds : 3
     lastCasterX.value = req.casterX

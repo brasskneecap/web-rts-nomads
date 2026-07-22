@@ -138,6 +138,7 @@
 </template>
 
 <script setup lang="ts">
+import { ask } from '@/components/ui/useConfirmDialog'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
@@ -187,9 +188,14 @@ async function grantDevConquestBadge() {
 const isResettingProfile = ref(false)
 async function resetDevProfile() {
   if (isResettingProfile.value) return
-  const ok = window.confirm(
-    'Reset this profile?\n\nThis wipes Dominion Points, stats, upgrades, advancements, and all completed campaign levels & objectives. This cannot be undone.',
-  )
+  const ok = await ask({
+    title: 'Reset this profile?',
+    lines: [
+      'This wipes Dominion Points, stats, upgrades, advancements, and all completed campaign levels & objectives.',
+      'This cannot be undone.',
+    ],
+    confirmLabel: 'Reset',
+  })
   if (!ok) return
   isResettingProfile.value = true
   try {

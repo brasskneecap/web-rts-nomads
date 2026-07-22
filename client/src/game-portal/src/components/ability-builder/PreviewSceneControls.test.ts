@@ -3,6 +3,63 @@ import { mount } from '@vue/test-utils'
 import PreviewSceneControls from './PreviewSceneControls.vue'
 
 describe('PreviewSceneControls', () => {
+  describe('force-branch toggles', () => {
+    const conditionals = [
+      { id: 'deliver', summary: 'Conditional — has perk: Lasting Flames' },
+      { id: 'gold', summary: 'Conditional — has perk: Overload Protocol' },
+    ]
+
+    function lastConfig(wrapper: ReturnType<typeof mount>) {
+      const emitted = wrapper.emitted('update:modelValue')!
+      return emitted[emitted.length - 1][0] as { conditionalOverrides: Record<string, boolean> }
+    }
+
+    it('renders nothing when the program has no conditionals', () => {
+      const wrapper = mount(PreviewSceneControls)
+      expect(wrapper.find('[data-test="preview-conditionals"]').exists()).toBe(false)
+      expect(lastConfig(wrapper).conditionalOverrides).toEqual({})
+    })
+
+    it('renders one checkbox per conditional, labelled with its branch summary', () => {
+      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
+      expect(wrapper.find('[data-test="preview-conditionals"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-conditional-deliver"]').text()).toContain('Lasting Flames')
+      expect(wrapper.find('[data-test="preview-conditional-gold"]').text()).toContain('Overload Protocol')
+    })
+
+    // An untouched conditional must send NO override, so a preview that nobody
+    // has configured behaves exactly as it did before this control existed.
+    it('emits no overrides until a box is actually toggled', () => {
+      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
+      expect(lastConfig(wrapper).conditionalOverrides).toEqual({})
+    })
+
+    it('checking a box forces that conditional true, leaving the others untouched', async () => {
+      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
+      await wrapper.find('[data-test="preview-conditional-deliver"] input').setValue(true)
+      expect(lastConfig(wrapper).conditionalOverrides).toEqual({ deliver: true })
+    })
+
+    it('tracks several conditionals independently', async () => {
+      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
+      await wrapper.find('[data-test="preview-conditional-deliver"] input').setValue(true)
+      await wrapper.find('[data-test="preview-conditional-gold"] input').setValue(true)
+      await wrapper.find('[data-test="preview-conditional-deliver"] input').setValue(false)
+      expect(lastConfig(wrapper).conditionalOverrides).toEqual({ deliver: false, gold: true })
+    })
+
+    // A deleted branch's override must not keep riding along in every later
+    // request — and must not come back to life if an action reuses that id.
+    it('drops overrides for conditionals that no longer exist', async () => {
+      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
+      await wrapper.find('[data-test="preview-conditional-gold"] input').setValue(true)
+      expect(lastConfig(wrapper).conditionalOverrides).toEqual({ gold: true })
+
+      await wrapper.setProps({ conditionals: [conditionals[0]] })
+      expect(lastConfig(wrapper).conditionalOverrides).toEqual({})
+    })
+  })
+
   it('emits a default config on mount (matching defaultPreviewRequest)', () => {
     const wrapper = mount(PreviewSceneControls)
     const emitted = wrapper.emitted('update:modelValue')

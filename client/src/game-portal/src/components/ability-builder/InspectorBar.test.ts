@@ -79,8 +79,9 @@ function makeBuilderStub(overrides: {
   selected?: NodeRef
   issues?: ValidationIssue[]
 } = {}) {
+  const form = shallowRef<AbilityEditorForm>(overrides.form ?? createBlankForm())
   return {
-    form: shallowRef<AbilityEditorForm>(overrides.form ?? createBlankForm()),
+    form,
     program: shallowRef<AbilityProgram>(overrides.program ?? emptyProgram()),
     schema: shallowRef<ActionSchemaBundle | null>(overrides.schema ?? null),
     catalogs: shallowRef<AbilityBuilderCatalogs>(overrides.catalogs ?? emptyCatalogs()),
@@ -92,6 +93,12 @@ function makeBuilderStub(overrides: {
     updateActionConfig: vi.fn(),
     updateTrigger: vi.fn(),
     select: vi.fn(),
+    // params: threaded down to every SchemaField this bar renders, so a
+    // number/duration/percentage field can offer Parameter mode (see
+    // SchemaField.vue) — defaults from the stubbed form so a test can just
+    // set `form.params` rather than wiring both up separately.
+    params: shallowRef<Record<string, number>>(form.value.params ?? {}),
+    setParam: vi.fn(),
   }
 }
 
@@ -150,6 +157,7 @@ describe('InspectorBar', () => {
     expect(builder.updateActionConfig).toHaveBeenCalledTimes(1)
     expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, { amount: 42 })
   })
+
 
   it('shows a "Save result as" field for a producing action and commits outputs.targets', async () => {
     const builder = makeBuilderStub({

@@ -119,6 +119,17 @@ type PreviewRequest struct {
 	// passive (the charge is simply never read). Default 0.
 	CasterCharge    float64 `json:"casterCharge"`
 	DurationSeconds float64 `json:"durationSeconds"`
+	// ConditionalOverrides forces named `conditional` actions to a fixed
+	// outcome, keyed by the conditional's authored action id: true takes THEN,
+	// false takes ELSE, and an id that isn't present evaluates normally. Any
+	// number of conditionals can be overridden independently in one run.
+	//
+	// This is a TESTING affordance, not a simulation input: the synthetic
+	// preview caster owns no perks, items or advancements, so a has_perk branch
+	// would otherwise always resolve false and its THEN side could never be
+	// previewed. An id that matches no conditional is silently ignored — the
+	// author may have renamed or deleted the node since the checkbox was set.
+	ConditionalOverrides map[string]bool `json:"conditionalOverrides,omitempty"`
 }
 
 // PreviewUnitResult is one scene unit's HP before/after the preview run,
@@ -226,8 +237,23 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	// either is called (self-deadlock otherwise — sync.Mutex isn't
 	// reentrant).
 	s.mu.Lock()
-	s.Players[previewCasterOwner] = &Player{ID: previewCasterOwner, TeamID: 0}
-	s.Players[previewEnemyOwner] = &Player{ID: previewEnemyOwner, TeamID: 1}
+	// The damage multipliers MUST be seeded to 1.0. applyPlayerUpgradesAtSpawnLocked
+	// runs for any owner that is not the enemy/neutral faction and scales a
+	// spawned unit's damage by its player's PhysicalDamageMultiplier — so a bare
+	// Player{} (zero value) multiplies the caster's damage by ZERO. Real players
+	// get 1.0 at construction (state.go); these synthetic ones need it too.
+	//
+	// This was invisible until an ability's damage could scale off the caster
+	// (dealDamageConfig.ADRatio): the preview caster silently had 0 damage, so an
+	// authored adRatio contributed nothing and the field looked broken.
+	s.Players[previewCasterOwner] = &Player{
+		ID: previewCasterOwner, TeamID: 0,
+		PhysicalDamageMultiplier: 1.0, MagicDamageMultiplier: 1.0,
+	}
+	s.Players[previewEnemyOwner] = &Player{
+		ID: previewEnemyOwner, TeamID: 1,
+		PhysicalDamageMultiplier: 1.0, MagicDamageMultiplier: 1.0,
+	}
 
 	caster := s.spawnPlayerUnitLocked(previewCasterUnitType, previewCasterOwner, "#3498db", protocol.Vec2{X: req.CasterX, Y: req.CasterY})
 	if caster == nil {
@@ -238,7 +264,25 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	}
 	caster.Visible = true
 	caster.MoveSpeed = 0 // preview units never move; positions are exactly what the request specifies
-	caster.Damage = 0    // no autonomous combat noise — only the ability under test may change HP
+	// The caster keeps its REAL catalog Damage. This used to be zeroed for the
+	// "no autonomous combat noise" contract, which was fine until an ability's
+	// damage could SCALE off the caster (dealDamageConfig.ADRatio): with Damage
+	// at 0 an authored adRatio contributed exactly nothing, so damage-ratio
+	// scaling was silently untestable in the one place abilities are tested.
+	//
+	// Suppress the AUTO-ATTACK instead, which is what the contract actually
+	// needs. canAutoAttack (combat_ai.go) requires BOTH Damage > 0 and the
+	// "attack" capability, and NonCombat stops the AI auto-acquiring a target at
+	// all — so removing the capability and marking it non-combat is strictly
+	// more targeted than neutering a stat the ability under test reads.
+	caster.NonCombat = true
+	caps := caster.Capabilities[:0]
+	for _, c := range caster.Capabilities {
+		if c != "attack" {
+			caps = append(caps, c)
+		}
+	}
+	caster.Capabilities = caps
 	// Large enough that a castRange:"match_attack_range" ability (e.g.
 	// greater_heal) reaches every scene unit a caller places, independent
 	// of previewCasterUnitType's catalog AttackRange.
@@ -320,6 +364,11 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	tr := &AbilityExecutionTrace{}
 	s.previewTrace = tr
 	s.previewClock = 0
+	// Forced conditional outcomes apply for the whole run (see
+	// PreviewRequest.ConditionalOverrides). Left nil when the request names
+	// none, so the executor's lookup stays the zero-value no-op it is in every
+	// real match. Cleared alongside previewTrace at collection time.
+	s.previewConditionalOverrides = req.ConditionalOverrides
 	s.mu.Unlock()
 
 	// capture appends one unfiltered wire frame (the same shape
@@ -418,6 +467,7 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 		res.CasterManaSpent = manaBefore - u.CurrentMana
 	}
 	s.previewTrace = nil
+	s.previewConditionalOverrides = nil
 	s.mu.Unlock()
 
 	return res, nil

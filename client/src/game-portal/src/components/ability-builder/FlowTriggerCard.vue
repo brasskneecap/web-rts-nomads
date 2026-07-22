@@ -33,60 +33,21 @@
     <div v-if="expanded" class="flow-trigger__body">
       <p v-if="trigger.actions.length === 0" class="flow-trigger__empty">No actions yet.</p>
 
-      <template v-for="(a, j) in trigger.actions" :key="a.id">
-        <FlowActionCard
-          :action="a"
-          :index="j"
-          :count="trigger.actions.length"
-          :path="actionPath(a)"
-        />
-
-        <!-- Nested triggers under THIS action: real, recursive
-             FlowTriggerCard instances — fully editable at any depth, not the
-             dead read-only label this used to be. nestedTriggersFor is the
-             UNION of `children` and create_zone's `config.triggers` (never
-             first-match — an action with BOTH populated shows both). Each
-             nested card gets its own NodePath (this action's path + one more
-             `trigger` segment) and one more depth level, which drives the
-             indent falloff below so a meteor-style 3-level tree stays
-             legible in a ~1/3-width flow column. -->
-        <div
-          v-for="nested in nestedTriggersFor(a)"
-          :key="nested.id"
-          class="flow-trigger__nested"
-          :style="{ marginLeft: `${nestedMarginPx}px` }"
-        >
-          <FlowTriggerCard
-            :trigger="nested"
-            :index="0"
-            :path="[...actionPath(a), { kind: 'trigger', id: nested.id }]"
-            :depth="depth + 1"
-          />
-        </div>
-
-        <!-- "+ Trigger" nested-add, scoped to THIS action. The slot an added
-             trigger lands in (children vs create_zone's config.triggers) is
-             decided by builder.addTrigger/programTree, not here — this
-             control only picks the TYPE, and hides the picker entirely when
-             there's only one type that makes sense (see
-             nestedTriggerTypeOptions), so it never presents a fake choice. -->
-        <div class="flow-trigger__nested-add" :style="{ marginLeft: `${nestedMarginPx}px` }">
-          <select
-            v-if="nestedTriggerTypeOptions(a).length > 1"
-            v-model="nestedTypeChoice[a.id]"
-            :aria-label="`New nested trigger type for ${a.id}`"
-          >
-            <option v-for="t in nestedTriggerTypeOptions(a)" :key="t" :value="t">{{ nestedTriggerLabel(a, t) }}</option>
-          </select>
-          <UiButton
-            size="sm"
-            variant="secondary"
-            data-test="flow-trigger-add-nested-trigger"
-            :data-action-id="a.id"
-            @click="addNestedTrigger(a)"
-          >+ Trigger</UiButton>
-        </div>
-      </template>
+      <!-- Each action renders its OWN subtree — nested triggers and the
+           "+ Trigger" affordance included (see FlowActionCard's
+           .flow-action__nested block). That used to live here, on this loop,
+           which meant an action nested inside a conditional branch or a loop
+           body (rendered by a recursive FlowActionCard, never by a
+           FlowTriggerCard) silently lost its nested triggers. -->
+      <FlowActionCard
+        v-for="(a, j) in trigger.actions"
+        :key="a.id"
+        :action="a"
+        :index="j"
+        :count="trigger.actions.length"
+        :path="actionPath(a)"
+        :depth="depth"
+      />
 
       <!-- Opens AddActionDialog with THIS trigger's id passed explicitly as a
            prop — not read from builder.selected. addAction() (called from
@@ -117,12 +78,12 @@
 // module reads the other's export until a render function actually runs
 // (well after both modules have finished evaluating), so the cycle never
 // observes a not-yet-initialized binding.
-import { computed, reactive, ref } from 'vue'
-import type { AbilityActionDef, AbilityTriggerDef, TriggerType } from '@/game/abilities/program/abilityProgram'
+import { computed, ref } from 'vue'
+import type { AbilityActionDef, AbilityTriggerDef } from '@/game/abilities/program/abilityProgram'
 import { issuesForPath } from '@/game/abilities/program/programValidation'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
 import { humanizeActionType } from './summarizeAction'
-import { indexPathFor, nestedTriggersFor, pathsEqual, type NodePath } from './programTree'
+import { indexPathFor, pathsEqual, type NodePath } from './programTree'
 import FlowActionCard from './FlowActionCard.vue'
 import AddActionDialog from './AddActionDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -138,9 +99,9 @@ const props = withDefaults(
     path: NodePath
     /** Nesting depth of THIS card: 0 for a root trigger, incremented by 1
         each time a FlowTriggerCard renders one of its own nested children.
-        Purely a visual signal driving indent falloff (see nestedMarginPx) —
-        identity and every mutation op always go through `path`, never
-        `depth`. */
+        Purely a visual signal driving indent falloff (see FlowActionCard's
+        nestedMarginPx, which this is threaded through) — identity and every
+        mutation op always go through `path`, never `depth`. */
     depth?: number
   }>(),
   { depth: 0 },
@@ -153,23 +114,6 @@ const expanded = ref(true)
 // through AbilityBuilderPanel; each FlowTriggerCard owns its own dialog
 // instance and open flag.
 const addActionOpen = ref(false)
-
-// nestedTypeChoice tracks the currently-picked "+ Trigger" type for each of
-// THIS trigger's actions, keyed by action id (a trigger can have several
-// actions, each with its own independent nested-add affordance). An action
-// with no entry yet falls back to nestedTriggerTypeOptions(a)[0] — which is
-// also what an unvisited <select> would already show natively.
-const nestedTypeChoice = reactive<Record<string, TriggerType>>({})
-
-// nestedMarginPx is the indent applied to both a nested trigger card's
-// wrapper and its sibling "+ Trigger" control. The flow column is roughly
-// 1/3 of the editor's width, so indentation can't keep growing linearly with
-// depth — meteor's own 3 levels (impact -> zone -> burn) would eat most of
-// the remaining width by the bottom. Each successive level's OWN indent
-// shrinks toward a floor while the left-rule border (see .flow-trigger__nested
-// CSS) still renders at every level, so the hierarchy stays legible by "rail
-// count" rather than by raw accumulated pixels.
-const nestedMarginPx = computed(() => Math.max(8, 18 - props.depth * 6))
 
 // humanizeTriggerType reuses the same snake_case -> Title Case rule as
 // action types (the humanization is generic, not action-specific).
@@ -222,48 +166,6 @@ function actionPath(action: AbilityActionDef): NodePath {
   return [...props.path, { kind: 'action', id: action.id }]
 }
 
-// nestedTriggerTypeOptions surfaces only the trigger types that make sense to
-// nest under a given container action's config.triggers slot. Mirrors the Go
-// side's CONFIG_TRIGGER_ACTION_TYPES containers (programTree.ts / walkAction):
-// each fires a specific set of trigger moments. Every OTHER action's `children`
-// slot only ever fires via on_action_complete (see ability_program.go's
-// Children doc comment) — offering a type picker there would just be one option
-// pretending to be a choice, so the template hides the <select> entirely when
-// this returns a single-element array.
-function nestedTriggerTypeOptions(action: AbilityActionDef): TriggerType[] {
-  switch (action.type) {
-    case 'create_zone':
-      return ['on_tick', 'on_zone_enter', 'on_zone_exit']
-    // Apply Duration's three moments: On Apply (on_action_complete, binds the
-    // status), On Duration Tick (on_tick), On Complete (on_status_expire).
-    case 'apply_status_duration':
-      return ['on_action_complete', 'on_tick', 'on_status_expire']
-    case 'launch_projectile':
-      return ['on_projectile_impact', 'on_tick']
-    case 'beam':
-      return ['on_beam_impact', 'on_tick']
-    default:
-      return ['on_action_complete']
-  }
-}
-
-// nestedTriggerLabel gives the picker a container-appropriate label. Inside an
-// Apply Duration container, on_action_complete IS the "On Apply" moment — but
-// on_action_complete is a GENERIC trigger elsewhere (any action's child), so
-// this contextual relabel lives here in the picker rather than in the global
-// humanizeActionType override table where it would mislabel every other use.
-function nestedTriggerLabel(action: AbilityActionDef, type: TriggerType): string {
-  if (action.type === 'apply_status_duration' && type === 'on_action_complete') return 'On Apply'
-  return humanizeTriggerType(type)
-}
-
-function addNestedTrigger(action: AbilityActionDef) {
-  const type = nestedTypeChoice[action.id] ?? nestedTriggerTypeOptions(action)[0]
-  // builder.addTrigger's parent-path overload routes to the right SLOT
-  // itself (create_zone -> config.triggers, everything else -> children) —
-  // this call site only ever picks the TYPE.
-  builder.addTrigger(actionPath(action), type)
-}
 </script>
 
 <style scoped>
@@ -390,26 +292,4 @@ function addNestedTrigger(action: AbilityActionDef) {
   font-style: italic;
 }
 
-/* Wraps a recursively-rendered nested FlowTriggerCard. marginLeft is set
-   inline (see nestedMarginPx) so it can shrink with depth; only the rule
-   itself (rendered at every level, however far the indent has collapsed)
-   is a plain CSS concern. */
-.flow-trigger__nested {
-  padding-left: 8px;
-  border-left: 2px solid var(--ed-line);
-}
-
-/* The nested "+ Trigger" affordance sits at the same indent as the nested
-   cards it adds alongside (see nestedMarginPx), so it visually reads as
-   belonging to the same action rather than the trigger as a whole. */
-.flow-trigger__nested-add {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.flow-trigger__nested-add select {
-  flex: 0 1 auto;
-  min-width: 0;
-}
 </style>

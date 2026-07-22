@@ -52,6 +52,11 @@ export type ItemEditorForm = {
     dodgePct: number
     blockPct: number
   }
+  /** BROAD ability modifiers this item grants its holder — "+15% radius" to
+   *  every ability they cast. This is the addressing an item NEEDS: unlike a
+   *  perk it cannot name an ability, because it does not know who equipped it.
+   *  Keyed by stat id from /catalog/ability-stats. See ability_stats.go. */
+  abilityStats: Record<string, { flat?: number; pct?: number }>
   elemental: { type: string; amount: number }[]
   /** Any number of procs, in the order they will be saved. Several may share a
    *  trigger — each rolls independently server-side. */
@@ -104,6 +109,7 @@ export function createBlankForm(): ItemEditorForm {
     category: 'Weapon', costGold: 0,
     consumable: blankConsumable(), maxStacks: 0,
     mods: { hp: 0, damage: 0, armor: 0, attackSpeed: 0, moveSpeed: 0, healthRegen: 0, maxShield: 0, dodgePct: 0, blockPct: 0 },
+    abilityStats: {},
     elemental: [],
     procs: [],
     crafting: { isRecipe: false, craftCost: 150, recipeCost: 150, inputs: ['', ''], starter: false },
@@ -125,6 +131,7 @@ export function formFromDef(def: ItemDef): ItemEditorForm {
     id: def.id, isNew: false, kind: def.kind === 'consumable' ? 'consumable' : 'equipment',
     displayName: def.displayName, description: def.description ?? '',
     iconKey: def.iconKey, tier: def.tier, category: def.category ?? 'Weapon', costGold: def.costGold,
+    abilityStats: def.abilityStats ?? {},
     consumable: c
       ? { type: c.type, amount: c.amount ?? 0, range: c.range ?? 0, split: c.split ?? true, durationSeconds: c.durationSeconds ?? 0 }
       : blankConsumable(),
@@ -201,7 +208,7 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
     return { item }
   }
 
-  // Equipment: stat modifiers, on-hit elemental, and procs.
+  // Equipment: stat modifiers, ability stats, on-hit elemental, and procs.
   const m = form.mods
   const modifiers: Record<string, number> = {}
   if (m.hp) modifiers.hp = m.hp
@@ -217,6 +224,8 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   const elemental = form.elemental.filter((e) => e.amount > 0 && e.type)
 
   if (Object.keys(modifiers).length > 0) item.modifiers = modifiers
+  // Absent and empty mean the same thing server-side, so a bare {} is noise.
+  if (Object.keys(form.abilityStats).length > 0) item.abilityStats = form.abilityStats
   if (elemental.length > 0) item.onHitElemental = elemental
 
   const procs = form.procs.map(procWireFromForm).filter((p) => p !== undefined)

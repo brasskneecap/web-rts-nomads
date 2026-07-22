@@ -135,3 +135,55 @@ func TestDeleteAbilitiesRoute_NotFound(t *testing.T) {
 		t.Fatalf("status=%d body=%s, want 404", drec.Code, drec.Body.String())
 	}
 }
+
+// TestAbilityStatsEndpoint_ServesDerivedRows covers the reason this is an
+// ENDPOINT rather than a client-side mirror: the scoped ids are derived from the
+// action registry, so a hand-maintained copy would rot the moment an action
+// gained or lost a kinded field. The client must be able to ask.
+func TestAbilityStatsEndpoint_ServesDerivedRows(t *testing.T) {
+	mux := http.NewServeMux()
+	registerAbilityCatalogRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/catalog/ability-stats", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var body struct {
+		Stats []struct {
+			ID       string `json:"id"`
+			Label    string `json:"label"`
+			Kind     string `json:"kind"`
+			FlatOnly bool   `json:"flatOnly"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response did not decode: %v", err)
+	}
+	if len(body.Stats) == 0 {
+		t.Fatal("no ability stats served")
+	}
+
+	byID := map[string]bool{}
+	flatOnly := map[string]bool{}
+	for _, s := range body.Stats {
+		byID[s.ID] = true
+		flatOnly[s.ID] = s.FlatOnly
+	}
+	// Both addressing levels must reach the client, or the editor could only
+	// offer broad rows and the scoped ones would be unauthorable.
+	for _, want := range []string{"duration", "radius", "create_zone.duration", "apply_status_duration.duration"} {
+		if !byID[want] {
+			t.Errorf("stat %q not served", want)
+		}
+	}
+	// flatOnly has to travel too — it is what tells the editor to hide the
+	// percentage input for a whole quantity the server would reject.
+	if !flatOnly["count"] {
+		t.Error("count should be served as flatOnly")
+	}
+	if flatOnly["duration"] {
+		t.Error("duration is continuous and must not be flatOnly")
+	}
+}

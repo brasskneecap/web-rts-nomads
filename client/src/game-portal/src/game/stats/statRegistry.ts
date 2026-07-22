@@ -54,14 +54,31 @@ export const STAT_DEFS: StatDef[] = [
   { id: 'healingReceived', label: 'Healing Received', isFraction: true, auraOnly: false },
   { id: 'lifesteal', label: 'Lifesteal', isFraction: true, auraOnly: false },
   { id: 'thorns', label: 'Thorns', isFraction: true, auraOnly: false },
+  // "%" is in the label deliberately: this is the MULTIPLICATIVE amplifier
+  // (base 1.0, +20% => x1.2), and it sits next to Ability Power — the flat pool
+  // — in every picker. Without it the two read as the same stat.
+  { id: 'abilityDamage', label: 'Ability Damage %', isFraction: true, auraOnly: false },
+  // Ability Power is a FLAT pool, not a fixed-1.0 multiplier like Ability
+  // Damage above — an ability opts in per damage action with a RATIO, so an
+  // `add` here is a whole amount and NOT a percentage point (isFraction false).
+  { id: 'abilityPower', label: 'Ability Power', isFraction: false, auraOnly: false },
 ]
 
 /** Stats a designer can author a per-unit-type BASE value for on a unit's
  *  `baseStats` (mirrors Go's statBaseAuthorable, stat_modifiers.go): the stats
  *  with NO typed Unit field, whose base is otherwise a hardcoded global default
- *  (critChance 5%, critMultiplier 2×, lifesteal 0, thorns 0). Keep IN SYNC with
- *  the Go map — the server rejects a baseStats key outside this set. */
-const BASE_AUTHORABLE_IDS = new Set(['critChance', 'critMultiplier', 'lifesteal', 'thorns'])
+ *  (critChance 5%, critMultiplier 2×, lifesteal 0, thorns 0, abilityDamage 1×,
+ *  abilityPower 0).
+ *  Keep IN SYNC with the Go map — the server rejects a baseStats key outside
+ *  this set. */
+const BASE_AUTHORABLE_IDS = new Set([
+  'critChance',
+  'critMultiplier',
+  'lifesteal',
+  'thorns',
+  'abilityDamage',
+  'abilityPower',
+])
 
 const LABEL_BY_ID = new Map(STAT_DEFS.map((d) => [d.id, d.label]))
 const FRACTION_BY_ID = new Map(STAT_DEFS.map((d) => [d.id, d.isFraction]))

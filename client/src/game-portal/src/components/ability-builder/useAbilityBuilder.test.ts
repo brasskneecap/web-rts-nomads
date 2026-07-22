@@ -351,7 +351,6 @@ describe('useAbilityBuilder remove', () => {
     expect(b.statusNote.value).toBe('Reset to the catalog default.')
   })
 })
-
 describe('useAbilityBuilder nested selection (depth 3)', () => {
   // meteor's crater DoT shape: cast -> zone (create_zone) -> config.triggers
   // -> burn -> bdmg. Exercises select()/updateAction() against a NodePath

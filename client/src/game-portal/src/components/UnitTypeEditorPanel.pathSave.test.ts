@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import UnitTypeEditorPanel from './UnitTypeEditorPanel.vue'
+import { setAutoAnswerForTest } from '@/components/ui/useConfirmDialog'
 
 interface RecordedCall { method: string; url: string; body?: unknown }
 interface Handler { (body: unknown): { status?: number; json?: unknown } }
@@ -179,6 +180,17 @@ describe('UnitTypeEditorPanel — Add Path ordering (spec §7.1/§9.1)', () => {
 })
 
 describe('UnitTypeEditorPanel — removePath', () => {
+  // Deleting a path now prompts first (confirmDelete → the themed dialog).
+  // Auto-answer it so this test keeps exercising what the handler does AFTER
+  // confirmation; without it the promise never resolves and the test would
+  // silently assert nothing.
+  beforeEach(() => {
+    setAutoAnswerForTest(true)
+  })
+  afterEach(() => {
+    setAutoAnswerForTest(null)
+  })
+
   it('surfaces the server message and does NOT reload when the path is still referenced', async () => {
     const message = 'path "marksman" is still referenced by pathChances on: archer. Remove those rows first.'
     const calls = stubApi({

@@ -106,6 +106,8 @@ func TestCompileAllCatalogAbilities(t *testing.T) {
 				t.Fatalf("catalogProgram(%q) returned nil", def.ID)
 			}
 
+			// Pass the def's declared params so "$name" references resolve —
+			// a catalog ability may legitimately parameterize its config.
 			if issues := validateAbilityProgram(prog); hasError(issues) {
 				b, _ := json.MarshalIndent(prog, "", "  ")
 				t.Fatalf("ability %q compiled to an invalid program: issues=%+v\nprogram:\n%s", def.ID, issues, b)

@@ -155,6 +155,9 @@ func validatePerkDef(def *PerkDef) error {
 			return fmt.Errorf("abilityModifiers entry has empty target")
 		}
 	}
+	if err := validateAbilityFieldModifiers(fmt.Sprintf("perk %q", def.ID), def.AbilityFields); err != nil {
+		return err
+	}
 	for _, sm := range def.StatModifiers {
 		if err := validatePerkStatModifier(sm); err != nil {
 			return fmt.Errorf("statModifiers: %w", err)
@@ -601,6 +604,17 @@ type PerkDef struct {
 	// (data-driven replacement for bespoke per-ability modifier hooks). Empty
 	// for most perks. Read via abilityScalarModifiersForCasterLocked.
 	AbilityModifiers []AbilityModifier `json:"abilityModifiers,omitempty"`
+	// AbilityParams are this perk's contributions to target abilities' declared
+	// PARAMETERS (AbilityDef.Params) — the preferred way for a perk to change a
+	// number on an ability, and the same shape items/advancements use so no
+	// source family is privileged. Target may be an ability id or "tag:<name>".
+	// See ability_params.go and docs/design/ability_perk_interaction.md §3.4.
+	// AbilityFields are this perk's PRECISE contributions: one field on one
+	// action of one ability ({target, action, field}). This is the addressing a
+	// perk wants — extended_setup extends a trap's ZONE duration but not the burn
+	// status inside it, and only an action-level address can tell those apart.
+	// See ability_field_mods.go.
+	AbilityFields []AbilityFieldModifier `json:"abilityFields,omitempty"`
 	// StatModifiers: typed, validated unit-stat changes this perk applies —
 	// data-driven replacement for the freeform Config-map convention where a
 	// perk's runtime handler had to know the exact key string to read (a

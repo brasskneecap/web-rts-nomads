@@ -132,6 +132,7 @@
       </template>
     </SectionCard>
 
+
     <!-- Entry is READ-ONLY here on purpose: the program's `entry` (type/
          relations/range) has no builder op to edit it directly (the
          composable only exposes updateForm/updateTrigger/updateAction, all

@@ -1,5 +1,5 @@
 <template>
-  <EditorShell class="item-editor" theme="forge">
+  <EditorShell class="item-editor">
     <template #sidebar>
       <EditorSidebar
         title="Items"
@@ -134,6 +134,17 @@
                   <input id="ie-mod-block" v-model.number="form.mods.blockPct" type="number" min="0" max="99" />
                 </EditorField>
               </div>
+            </SectionCard>
+
+            <!-- Ability Stats: broad, kind-targeted modifiers this item grants
+                 its holder. Equipment only — a consumable is used and gone, so
+                 it has no holder whose abilities it could scale. -->
+            <SectionCard v-if="form.kind === 'equipment'" title="Ability Stats" :index="sectionIndex('abilityStats')">
+              <AbilityStatsEditor
+                v-model="form.abilityStats"
+                :defs="abilityStatDefs"
+                empty-text="No ability stats — this item does not change the holder's abilities."
+              />
             </SectionCard>
 
             <!-- Elemental -->
@@ -315,11 +326,14 @@
 </template>
 
 <script setup lang="ts">
+import { ask } from '@/components/ui/useConfirmDialog'
+import { confirmDelete } from '@/components/editor/confirmDelete'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import GameScrollArea from '@/components/ui/GameScrollArea.vue'
 import EditorShell from '@/components/editor/EditorShell.vue'
+import AbilityStatsEditor, { type AbilityStatDef } from './AbilityStatsEditor.vue'
 import EditorSidebar from '@/components/editor/EditorSidebar.vue'
 import type { SidebarGroup } from '@/components/editor/EditorSidebar.vue'
 import EditorHeader from '@/components/editor/EditorHeader.vue'
@@ -487,11 +501,28 @@ const visibleSections = computed(() => {
   return [
     'identity',
     'preview',
-    ...(equipment ? ['stats', 'elemental', 'procs'] : ['consumable']),
+    ...(equipment ? ['stats', 'abilityStats', 'elemental', 'procs'] : ['consumable']),
     'cost',
     'crafting',
   ]
 })
+// Ability-stat rows are SERVER-DERIVED (every action x kind pair that exists),
+// so they are fetched rather than mirrored here — see AbilityStatsEditor. A
+// failed fetch leaves the list empty, which offers nothing rather than
+// offering a wrong set; already-authored ids still render.
+const abilityStatDefs = ref<AbilityStatDef[]>([])
+async function loadAbilityStatDefs() {
+  try {
+    const res = await fetch('/catalog/ability-stats')
+    if (!res.ok) return
+    const body = (await res.json()) as { stats?: AbilityStatDef[] }
+    abilityStatDefs.value = body.stats ?? []
+  } catch {
+    // Offline / server down: leave empty (see the comment above).
+  }
+}
+void loadAbilityStatDefs()
+
 function sectionIndex(key: string): number {
   return visibleSections.value.indexOf(key) + 1
 }
@@ -693,9 +724,16 @@ async function removeOrReset(id: string) {
   const def = items.value.find((d) => d.id === id)
   if (!def) return
   const custom = def.custom === true
-  const ok = window.confirm(custom
-    ? `Delete "${def.displayName}" permanently?`
-    : `Undo the last save on "${def.displayName}"? It goes back to how it was before you last saved (or to the catalog default if there is nothing left to undo).`)
+  const ok = custom
+    ? await confirmDelete('item', def.displayName)
+    : await ask({
+        title: `Undo the last save on "${def.displayName}"?`,
+        lines: [
+          'It goes back to how it was before you last saved (or to the catalog default if there is nothing left to undo).',
+        ],
+        confirmLabel: 'Undo',
+        danger: false,
+      })
   if (!ok) return
 
   saveError.value = ''

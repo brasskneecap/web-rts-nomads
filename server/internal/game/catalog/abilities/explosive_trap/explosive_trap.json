@@ -4,9 +4,8 @@
   "type": "spell",
   "canTargetEnemies": true,
   "castRange": 220,
-  "castTime": 0,
-  "manaCost": 0,
   "cooldown": 10,
+  "damageType": "fire",
   "tags": [
     "trap"
   ],
@@ -31,15 +30,57 @@
         "type": "on_cast_complete",
         "actions": [
           {
-            "id": "place",
-            "type": "place_trap",
+            "id": "arm",
+            "type": "create_zone",
             "config": {
-              "trapType": "explosive_trap",
-              "durationSeconds": 20,
-              "placeIntervalSeconds": 10,
-              "explosionRadius": 100,
-              "triggerRadius": 50,
-              "burstDamage": 75
+              "name": "Explosive Trap",
+              "position": {
+                "key": "initial_target"
+              },
+              "radius": 100,
+              "duration": 20,
+              "tickInterval": 1,
+              "sprite": "explosive_trap",
+              "triggers": [
+                {
+                  "id": "stepped_on",
+                  "type": "on_zone_enter",
+                  "actions": [
+                    {
+                      "id": "blast_targets",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "origin": "zone_center",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radiusRef": "zone_radius"
+                      },
+                      "outputs": {
+                        "targets": "caught_in_blast"
+                      }
+                    },
+                    {
+                      "id": "blast",
+                      "type": "deal_damage",
+                      "input": {
+                        "targets": {
+                          "key": "caught_in_blast"
+                        }
+                      },
+                      "config": {
+                        "amount": 75,
+                        "type": "fire"
+                      }
+                    },
+                    {
+                      "id": "spent",
+                      "type": "consume_zone"
+                    }
+                  ]
+                }
+              ]
             }
           }
         ]

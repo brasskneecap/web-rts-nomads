@@ -11,7 +11,7 @@ var allActionTypes = []ActionType{
 	ActionSelectTargets, ActionStoreTargets, ActionFilterTargets, ActionDealDamage,
 	ActionRestoreHealth, ActionApplyStatus, ActionApplyStatusDuration, ActionChangeStat, ActionApplyMark, ActionApplyColorOverlay,
 	ActionRemoveStatus, ActionCreateZone,
-	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionPlaceTrap, ActionMoveUnit, ActionApplyForce,
+	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionPlaceTrap, ActionConsumeZone, ActionMoveUnit, ActionApplyForce,
 	ActionModifyResource, ActionTriggerEvent, ActionPlayPresentation, ActionPlaySound,
 	ActionChangeRenderLayer, ActionCameraShake, ActionWait, ActionConditional,
 	ActionRepeat, ActionSetContext, ActionLoop, ActionCustom,
@@ -72,6 +72,12 @@ type validationWalker struct {
 	issues    []ValidationIssue
 	seenIDs   map[string]bool
 	numAction int
+	// params are the owning ability's declared parameters (AbilityDef.Params).
+	// Used to (a) substitute "$name" config references with concrete numbers so
+	// a param-referencing config still decodes for structural validation, and
+	// (b) REJECT a reference to an undeclared parameter at load — the contract
+	// that keeps a typo'd "$dsp" from silently becoming 0 at runtime. Nil when
+	// the walked actions have no owning ability (perk riders).
 }
 
 // validateAbilityProgram runs structural (Phase 2) validation over prog and
@@ -123,6 +129,21 @@ func validateAbilityProgram(prog *AbilityProgram) []ValidationIssue {
 // apply_status_duration" placement rule.
 func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string, channeledBeamAllowed bool, insideStatusDuration bool, loopVars map[string]bool) {
 	w.checkDuplicateID(trig.ID, path)
+
+	// A trigger type the runtime never dispatches would silently NEVER FIRE —
+	// the whole authored branch is dead and nothing says so. That is the same
+	// class of failure as a typo'd parameter reference (D5), so it is rejected
+	// at load rather than shipped. Caught a real one: a zone's tick trigger
+	// authored as "on_zone_tick" (the four *_tick types were unified into
+	// "on_tick"; only on_zone_enter/on_zone_exit keep the zone prefix).
+	if !isKnownTriggerType(trig.Type) {
+		w.issues = append(w.issues, ValidationIssue{
+			Path:     path,
+			Code:     "unknown_trigger_type",
+			Message:  fmt.Sprintf("unknown trigger type %q — it would never fire; valid types: %v", trig.Type, allTriggerTypes),
+			Severity: "error",
+		})
+	}
 
 	// NOTE: an on_tick trigger carries NO tick-interval of its own. The tick
 	// CADENCE is owned entirely by the enclosing ticking container's config

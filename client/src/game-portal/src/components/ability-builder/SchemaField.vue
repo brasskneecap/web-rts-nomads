@@ -9,28 +9,57 @@
   </label>
 
   <EditorField v-else :label="field.label" :hint="hint" :for-id="fieldId">
-    <!-- number: inside a loop (variableCapable), a Number/Variable mode
-         selector swaps a literal number input for a dropdown of the loop's
-         variables (blank when the loop has none). Outside a loop it's a plain
-         number input, unchanged. -->
-    <div v-if="field.control === 'number' && variableCapable" class="sf-numvar" data-test="numvar">
+    <!-- number/duration/percentage share ONE value-mode selector: Number (a
+         literal) and — inside a loop only (variableCapable) — Variable (a loop
+         var letter). Shown only when there is something to switch TO, so a
+         plain field outside a loop stays the unwrapped input below, unchanged.
+
+         There used to be a third mode, Parameter, binding the field to an
+         ability-wide "$name". Sources now address a field DIRECTLY by
+         {ability, action, field}, so the indirection — and the blank controls
+         it caused, since the config held a string where a number was expected —
+         is gone. -->
+    <div v-if="isNumericControl && showValueMode" class="sf-numvar" data-test="numvar">
       <select class="sf-numvar__mode" :value="mode" :aria-label="`${field.label} value kind`" data-test="numvar-mode" @change="onModeChange">
         <option value="number">Number</option>
-        <option value="variable">Variable</option>
+        <option v-if="variableCapable" value="variable">Variable</option>
       </select>
-      <input
-        v-if="mode === 'number'"
-        :id="fieldId"
-        type="number"
-        :value="localText"
-        data-test="numvar-number"
-        @input="onLocalInput"
-        @change="commitNumber"
-      />
-      <select v-else class="sf-numvar__pick" :value="variablePick" :aria-label="`${field.label} variable`" data-test="numvar-variable" @change="onVariablePick">
-        <option value="">—</option>
-        <option v-for="v in (loopVars ?? [])" :key="v" :value="v">{{ v }}</option>
-      </select>
+
+      <!-- The mode-dependent content is wrapped in a div KEYED on `mode` —
+           forcing Vue to fully unmount/remount this region on every mode
+           switch instead of trying to patch across branches whose root node
+           counts differ (1 node for a plain number, 2 for duration's suffixed
+           pair) — that partial-patch
+           path previously corrupted the DOM (a stale block anchor) when
+           switching between modes in a mounted instance. Trivial cost:
+           this subtree is small and mode changes are rare, deliberate author
+           actions, not a hot path. -->
+      <div :key="mode" class="sf-numvar__body">
+        <!-- Number sub-mode: numberVariant folds `mode === 'number'` together
+             with the control-specific rendering into one discriminant. -->
+        <template v-if="numberVariant === 'duration'">
+          <input :id="fieldId" type="number" step="0.1" :value="localText" data-test="numvar-number" @input="onLocalInput" @change="commitNumber" />
+          <span class="sf-suffix">s</span>
+        </template>
+        <input
+          v-else-if="numberVariant === 'percentage'"
+          :id="fieldId"
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+          :value="localText"
+          data-test="numvar-number"
+          @input="onLocalInput"
+          @change="commitNumber"
+        />
+        <input v-else-if="numberVariant === 'plain'" :id="fieldId" type="number" :value="localText" data-test="numvar-number" @input="onLocalInput" @change="commitNumber" />
+
+        <select v-else-if="mode === 'variable'" class="sf-numvar__pick" :value="variablePick" :aria-label="`${field.label} variable`" data-test="numvar-variable" @change="onVariablePick">
+          <option value="">—</option>
+          <option v-for="v in (loopVars ?? [])" :key="v" :value="v">{{ v }}</option>
+        </select>
+      </div>
     </div>
     <input
       v-else-if="field.control === 'number'"
@@ -237,7 +266,9 @@ const props = defineProps<{
   savedNames?: string[]
 }>()
 
-const emit = defineEmits<{ 'update:modelValue': [value: unknown] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: unknown]
+}>()
 
 let uidCounter = 0
 const uid = uidCounter++
@@ -298,34 +329,67 @@ function commitNumber() {
   emit('update:modelValue', Number.isFinite(n) ? n : 0)
 }
 
-// ── number field's literal-or-variable selector (loop bodies only) ──────────
-// A value is a variable reference when it's a single lowercase letter string
-// (matching the a..z loop-variable grammar). `mode` is a local toggle seeded
-// from the value and re-seeded whenever the value changes externally, but the
-// user can flip it to author a variable before one is picked.
-const isVariableValue = computed(() => typeof props.modelValue === 'string' && /^[a-z]$/.test(props.modelValue))
-const mode = ref<'number' | 'variable'>(isVariableValue.value ? 'variable' : 'number')
-watch(isVariableValue, (isVar) => {
-  mode.value = isVar ? 'variable' : 'number'
+// ── number/duration/percentage's value-mode selector (Number/Variable) ────
+// isNumericControl: the three control types whose authored value can be a
+// literal or (number only, in a loop) a variable letter — every OTHER control
+// never carries either, so this gates the whole value-mode block off for them.
+const isNumericControl = computed(
+  () => props.field.control === 'number' || props.field.control === 'duration' || props.field.control === 'percentage',
+)
+
+// showValueMode: only offer the mode selector when there is something to
+// switch TO — i.e. inside a loop, where a field may name a loop variable.
+const showValueMode = computed(() => props.variableCapable === true)
+
+// numberVariant folds "is the value-mode selector in Number mode" together
+// with which control-specific literal input to render — a single flat
+// discriminant the template dispatches on with one v-if/else-if chain
+// (rather than a nested `<template v-if="mode==='number'">` wrapping a
+// SECOND control-specific v-if chain), null when mode isn't 'number' at all.
+const numberVariant = computed<'duration' | 'percentage' | 'plain' | null>(() => {
+  if (mode.value !== 'number') return null
+  if (props.field.control === 'duration') return 'duration'
+  if (props.field.control === 'percentage') return 'percentage'
+  return 'plain'
 })
 
+// A value is a variable reference when it's a single lowercase letter string
+// (matching the a..z loop-variable grammar).
+function modeFromValue(v: unknown): 'number' | 'variable' {
+  if (typeof v === 'string' && /^[a-z]$/.test(v)) return 'variable'
+  return 'number'
+}
+
+// `mode` is a local toggle seeded from the value and re-seeded whenever the
+// value changes externally, but the user can flip it to author a variable
+// before one is picked.
+const mode = ref<'number' | 'variable'>(modeFromValue(props.modelValue))
+watch(
+  () => props.modelValue,
+  (v) => {
+    mode.value = modeFromValue(v)
+  },
+)
+
+const isVariableValue = computed(() => modeFromValue(props.modelValue) === 'variable')
 const variablePick = computed(() => (isVariableValue.value ? (props.modelValue as string) : ''))
 
 function onModeChange(e: Event) {
-  const next = (e.target as HTMLSelectElement).value
+  const next = (e.target as HTMLSelectElement).value as 'number' | 'variable'
   if (next === 'variable') {
     mode.value = 'variable' // leave the value until a variable is picked (dropdown blank)
-  } else {
-    mode.value = 'number'
-    const n = Number(localText.value)
-    emit('update:modelValue', Number.isFinite(n) ? n : 0) // commit a real number
+    return
   }
+  mode.value = 'number'
+  const n = Number(localText.value)
+  emit('update:modelValue', Number.isFinite(n) ? n : 0)
 }
 
 function onVariablePick(e: Event) {
   const v = (e.target as HTMLSelectElement).value
   if (v) emit('update:modelValue', v) // the "—" placeholder emits nothing
 }
+
 
 function commitBoolean(e: Event) {
   emit('update:modelValue', (e.target as HTMLInputElement).checked)
@@ -463,6 +527,7 @@ function commitContextRef(e: Event) {
 .sf-numvar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   width: 100%;
   min-width: 0;
@@ -477,6 +542,21 @@ function commitContextRef(e: Event) {
   flex: 0 0 auto;
   width: auto;
   max-width: 7em;
+}
+
+/* .sf-numvar__body wraps whichever sub-mode is currently showing (see the
+   template's doc comment on why it's keyed on `mode`) — it needs to BE a
+   flex row itself so its own children (a number input, or the variable
+   select+chip+input trio) lay out the same way they would as direct
+   children of .sf-numvar, and flex:1 1 auto so it (not the fixed-width mode
+   select) absorbs the row's remaining width. */
+.sf-numvar__body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .sf-numvar input,
@@ -527,6 +607,9 @@ function commitContextRef(e: Event) {
   font-style: italic;
   color: var(--ed-text-dim);
 }
+
+
+
 
 /* Inline "(unavailable)"-style note after a multiselect option's label,
    matching TargetQueryEditor's .tqe-opt-note treatment. */

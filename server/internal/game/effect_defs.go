@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"math"
 	"sort"
 )
 
@@ -242,6 +243,55 @@ func (s *GameState) playEffectOnUnitForDurationLocked(unit *Unit, effectID strin
 		s.activeEffects[n-1].Anchor = def.Anchor.OrCenter()
 	}
 	return true
+}
+
+// refreshEffectOnUnitForDurationLocked is playEffectOnUnitForDurationLocked
+// made IDEMPOTENT per (unit, effect): if the unit already carries a live
+// instance of this effect, its window is reset (start now, run for `duration`)
+// instead of a second copy being queued.
+//
+// WHY this exists: a status applied with stacking "refresh" collapses onto the
+// already-live AbilityStatus (spawnAbilityStatusLocked), so re-application does
+// not produce a second status — but its On Apply trigger still RUNS on every
+// application. For change_stat/apply_mark that is harmless: they write to the
+// fresh, orphaned status object nothing ever reads (see RuntimeAbilityContext.
+// CurrentStatus's refresh/stack-cap note). play_presentation is the one On Apply
+// action whose write lands on GAME STATE rather than on the status, so the
+// orphan trick doesn't cover it — a zone that re-applies a refreshing burn every
+// tick queued a fresh 8-second flame every tick, ~11 overlapping copies over a
+// 10-second fire_pit. Resetting the existing instance instead keeps exactly one
+// visual alive for exactly as long as the status it is bound to, which is what
+// "bind to status duration" claims.
+//
+// Matching on Name + AnchorUnitID (not on the status) is deliberate: two
+// different statuses binding the same asset to the same unit should still show
+// ONE flame, not two identical ones drawn on top of each other.
+//
+// Caller holds s.mu.
+func (s *GameState) refreshEffectOnUnitForDurationLocked(unit *Unit, effectID string, duration, sizeScale float64) bool {
+	if unit == nil {
+		return false
+	}
+	def, ok := getEffectDef(effectID)
+	if !ok {
+		return false
+	}
+	if duration <= 0 {
+		duration = 1.0
+	}
+	for i := range s.activeEffects {
+		e := &s.activeEffects[i]
+		if e.Name != def.ID || e.AnchorUnitID != unit.ID {
+			continue
+		}
+		if s.Tick-e.StartTick >= e.DurationTicks {
+			continue // already expired; tickEffectsLocked just hasn't pruned it yet
+		}
+		e.StartTick = s.Tick
+		e.DurationTicks = int(math.Round(duration * gameTicksPerSecond))
+		return true
+	}
+	return s.playEffectOnUnitForDurationLocked(unit, effectID, duration, sizeScale)
 }
 
 // burningOverlayAnchorLocked returns the client-render anchor for a unit's

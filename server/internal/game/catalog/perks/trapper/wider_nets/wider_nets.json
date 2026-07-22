@@ -1,11 +1,40 @@
 {
   "id": "wider_nets",
   "displayName": "Wider Nets",
-  "description": "Your traps cover 50% more ground — larger zones, bigger explosions, wider triggers.",
+  "description": "Your traps cover 50% more ground \u2014 larger zones, bigger explosions, wider triggers.",
   "tooltipTemplate": "All trap radii increased by {radiusMultiplier+%}.",
   "icon": "perk-wider-nets",
   "config": {
     "radiusMultiplier": 1.5
   },
-  "wired": false
+  "abilityFields": [
+    {
+      "target": "fire_pit",
+      "action": "pit",
+      "field": "radius",
+      "op": "multiply",
+      "value": 1.5
+    },
+    {
+      "target": "caltrops",
+      "action": "field",
+      "field": "radius",
+      "op": "multiply",
+      "value": 1.5
+    },
+    {
+      "target": "explosive_trap",
+      "action": "arm",
+      "field": "radius",
+      "op": "multiply",
+      "value": 1.5
+    },
+    {
+      "target": "marker_trap",
+      "action": "zone",
+      "field": "radius",
+      "op": "multiply",
+      "value": 1.5
+    }
+  ]
 }

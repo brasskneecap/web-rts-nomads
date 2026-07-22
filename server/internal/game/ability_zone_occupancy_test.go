@@ -568,6 +568,22 @@ func TestCatalog_NoAbilityUsesZoneEnterExitTriggers(t *testing.T) {
 	for _, def := range ListAbilityDefs() {
 		def := def
 		t.Run(def.ID, func(t *testing.T) {
+			// AUTHORED (schemaVersion 2) programs are exempt: on_zone_enter is
+			// editor-only, and an ability authored IN the editor is entitled to
+			// use it — explosive_trap and marker_trap both legitimately do
+			// ("step on it → boom"). The rule this test exists to enforce is
+			// that the legacy COMPILER never emits one.
+			//
+			// This exemption is new because the guard used to be blind rather
+			// than satisfied: before the traps' ability PARAMETERS were inlined,
+			// their create_zone config held the string "$radius" in a float64
+			// field, so the config failed to decode and the trigger walk could
+			// not descend into config.triggers — it never saw the on_zone_enter
+			// that had been there all along. Real numbers decode, so the walker
+			// now reaches the nested triggers it was always meant to check.
+			if def.SchemaVersion >= 2 && def.Program != nil {
+				t.Skip("authored program — on_zone_enter is editor-authorable")
+			}
 			prog := catalogProgram(def)
 			for _, tt := range collectAllTriggerTypesForProductionGuard(prog) {
 				if tt == TriggerOnZoneEnter || tt == TriggerOnZoneExit {

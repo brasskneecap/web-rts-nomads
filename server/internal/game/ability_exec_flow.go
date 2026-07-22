@@ -28,7 +28,7 @@ const maxRepeatCount = 64
 // currently need GameState).
 func (s *GameState) evaluateConditionsLocked(ctx *RuntimeAbilityContext, conds []AbilityConditionDef) bool {
 	for _, c := range conds {
-		if !evaluateOneConditionLocked(ctx, c) {
+		if !s.evaluateOneConditionLocked(ctx, c) {
 			return false
 		}
 	}
@@ -42,8 +42,24 @@ func (s *GameState) evaluateConditionsLocked(ctx *RuntimeAbilityContext, conds [
 //   - Op == "has": true if ctx.Named[Left.Key] exists and is non-empty.
 //   - Op == "not": true if it does NOT exist / is empty.
 //   - Anything else: false (documented conservative-fail).
-func evaluateOneConditionLocked(ctx *RuntimeAbilityContext, c AbilityConditionDef) bool {
+func (s *GameState) evaluateOneConditionLocked(ctx *RuntimeAbilityContext, c AbilityConditionDef) bool {
 	switch c.Op {
+	case condOpHasPerk, condOpNotPerk:
+		// "Does the CASTER own this perk?" — the readable, first-class way an
+		// ability branches on a perk. The ability names the perk directly, so
+		// the whole behavior is visible in the ability's own program with no
+		// indirection through a second file. See
+		// docs/design/ability_perk_interaction.md.
+		var perkID string
+		if err := json.Unmarshal(c.Right, &perkID); err != nil || perkID == "" {
+			return false
+		}
+		caster := s.getUnitByIDLocked(ctx.CasterID)
+		owned := caster != nil && containsString(caster.PerkIDs, perkID)
+		if c.Op == condOpNotPerk {
+			return !owned
+		}
+		return owned
 	case "eq", "ne", "lt", "lte", "gt", "gte":
 		// Left operand is either the built-in "selected_count" or a Named
 		// ctxScalar (a loop/hop counter set by set_context). An unknown key that
@@ -157,6 +173,15 @@ func (waitConfig) actionConfig() {}
 type conditionalConfig struct {
 	Conditions []AbilityConditionDef `json:"conditions,omitempty"`
 	Then       []AbilityActionDef    `json:"then,omitempty"`
+	// Else runs when the conditions do NOT hold. Having a real else (rather
+	// than a second, inverted sibling conditional) means the two branches are
+	// ONE node that cannot drift out of sync — invert the condition and both
+	// sides follow. It is also how a reader expects a branch to look:
+	//
+	//   Conditional — has perk Lasting Flames
+	//     then: apply a lingering burn
+	//     else: deal damage directly
+	Else []AbilityActionDef `json:"else,omitempty"`
 }
 
 func (conditionalConfig) actionConfig() {}
@@ -357,8 +382,18 @@ func init() {
 		Schema: ActionFieldSchema{Fields: []SchemaField{}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(conditionalConfig)
-			if s.evaluateConditionsLocked(ctx, c.Conditions) {
-				ctx.trace("conditional_taken", ctx.currentActionPath, map[string]any{"count": len(c.Then)})
+			// A preview run may FORCE this conditional's outcome (keyed by the
+			// action's authored id — see GameState.previewConditionalOverrides).
+			// The preview harness's caster owns no perks, so without this the
+			// THEN side of every has_perk branch is unreachable in the editor.
+			// The override is traced with a distinct `forced` payload so the
+			// event log never claims a condition was evaluated when it wasn't.
+			taken, forced := s.previewConditionalOverrides[ctx.currentActionID]
+			if !forced {
+				taken = s.evaluateConditionsLocked(ctx, c.Conditions)
+			}
+			if taken {
+				ctx.trace("conditional_taken", ctx.currentActionPath, map[string]any{"count": len(c.Then), "forced": forced})
 				for i := range c.Then {
 					if ctx.opsExhausted() {
 						break
@@ -366,7 +401,13 @@ func init() {
 					s.executeActionLocked(ctx, &c.Then[i], "conditional.then")
 				}
 			} else {
-				ctx.trace("condition_failed", ctx.currentActionPath, nil)
+				ctx.trace("condition_failed", ctx.currentActionPath, map[string]any{"elseCount": len(c.Else), "forced": forced})
+				for i := range c.Else {
+					if ctx.opsExhausted() {
+						break
+					}
+					s.executeActionLocked(ctx, &c.Else[i], "conditional.else")
+				}
 			}
 			return targets
 		},

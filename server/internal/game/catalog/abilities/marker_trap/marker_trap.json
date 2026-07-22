@@ -4,8 +4,6 @@
   "type": "spell",
   "canTargetEnemies": true,
   "castRange": 220,
-  "castTime": 0,
-  "manaCost": 0,
   "cooldown": 7,
   "tags": [
     "trap"
@@ -31,15 +29,64 @@
         "type": "on_cast_complete",
         "actions": [
           {
-            "id": "place",
-            "type": "place_trap",
+            "id": "zone",
+            "type": "create_zone",
             "config": {
-              "trapType": "marker_trap",
-              "durationSeconds": 12,
-              "placeIntervalSeconds": 7,
+              "name": "Marker Zone",
+              "position": {
+                "key": "initial_target"
+              },
               "radius": 115,
-              "markMultiplier": 0.2,
-              "markDuration": 4
+              "duration": 12,
+              "tickInterval": 1,
+              "sprite": "marker_trap",
+              "triggers": [
+                {
+                  "id": "entered",
+                  "type": "on_zone_enter",
+                  "actions": [
+                    {
+                      "id": "mark",
+                      "type": "apply_status_duration",
+                      "input": {
+                        "targets": {
+                          "key": "current_event"
+                        }
+                      },
+                      "config": {
+                        "name": "Marked",
+                        "duration": 4,
+                        "stacking": "refresh",
+                        "triggers": [
+                          {
+                            "id": "marked",
+                            "type": "on_action_complete",
+                            "actions": [
+                              {
+                                "id": "vulnerable",
+                                "type": "change_stat",
+                                "config": {
+                                  "stat": "damageTaken",
+                                  "op": "add",
+                                  "value": 0.2
+                                }
+                              },
+                              {
+                                "id": "mark_icon",
+                                "type": "apply_mark",
+                                "config": {
+                                  "icon": "debuff-marked",
+                                  "iconKind": "debuff"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           }
         ]

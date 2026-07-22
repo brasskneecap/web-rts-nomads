@@ -21,17 +21,22 @@ function makeBuilderStub(overrides: {
   schema?: ActionSchemaBundle | null
   selected?: NodeRef
   issues?: ValidationIssue[]
+  params?: Record<string, number>
 } = {}) {
   const program = shallowRef<AbilityProgram>(overrides.program ?? emptyProgram())
   const schema = shallowRef<ActionSchemaBundle | null>(overrides.schema ?? makeSchema())
   const selected = shallowRef<NodeRef>(overrides.selected ?? { kind: 'ability' })
   const issues = ref<ValidationIssue[]>(overrides.issues ?? [])
+  // params: read by summarizeAction via any nested FlowActionCard's `summary`
+  // computed (evaluated eagerly since the template renders it).
+  const params = shallowRef<Record<string, number>>(overrides.params ?? {})
 
   return {
     program,
     schema,
     selected,
     issues,
+    params,
     select: vi.fn(),
     removeTrigger: vi.fn(),
     addAction: vi.fn(),
@@ -314,7 +319,7 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
     expect(durationAction.children ?? []).toHaveLength(0)
   })
 
-  it('offers the three Apply Duration moments (On Apply / On Duration Tick / On Complete) and adds the chosen one to config.triggers', async () => {
+  it('offers the three Apply Status Duration moments (On Apply / On Duration Tick / On Complete) and adds the chosen one to config.triggers', async () => {
     const builder = useAbilityBuilder()
     builder.program.value = {
       entry: { type: 'unit', range: 240 },
@@ -333,7 +338,7 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
 
     // The picker shows all three moments, labelled the way the container reads
     // (On Apply is on_action_complete relabelled only in THIS container).
-    const select = wrapper.find('.flow-trigger__nested-add select')
+    const select = wrapper.find('.flow-action__nested-add select')
     expect(select.exists()).toBe(true)
     expect(select.findAll('option').map((o) => o.text())).toEqual(['On Apply', 'On Duration Tick', 'On Expire'])
 
@@ -351,7 +356,7 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
     const zoneProgram = zoneTriggerProgram(burn)
     const zoneBuilder = makeBuilderStub({ program: zoneProgram })
     const zoneWrapper = mountCard(zoneProgram.triggers[0], zoneBuilder)
-    expect(zoneWrapper.find('.flow-trigger__nested-add select').exists()).toBe(true)
+    expect(zoneWrapper.find('.flow-action__nested-add select').exists()).toBe(true)
 
     const plainProgram: AbilityProgram = {
       entry: { type: 'no_target', range: 0 },
@@ -359,7 +364,7 @@ describe('FlowTriggerCard — nested triggers (recursive rendering)', () => {
     }
     const plainBuilder = makeBuilderStub({ program: plainProgram })
     const plainWrapper = mountCard(plainProgram.triggers[0], plainBuilder)
-    expect(plainWrapper.find('.flow-trigger__nested-add select').exists()).toBe(false)
+    expect(plainWrapper.find('.flow-action__nested-add select').exists()).toBe(false)
     expect(plainWrapper.find('[data-test="flow-trigger-add-nested-trigger"]').exists()).toBe(true)
   })
 })

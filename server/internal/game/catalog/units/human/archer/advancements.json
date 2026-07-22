@@ -116,6 +116,62 @@
         {
           "kind": "unitTrapRadiusMul",
           "percent": 100
+        },
+        {
+          "kind": "unitAbilityFieldMul",
+          "target": "fire_pit",
+          "action": "direct_dmg",
+          "field": "amount",
+          "percent": 100
+        },
+        {
+          "kind": "unitAbilityFieldMul",
+          "target": "fire_pit",
+          "action": "pit",
+          "field": "radius",
+          "percent": 100
+        },
+        {
+          "kind": "unitAbilityFieldMul",
+          "target": "caltrops",
+          "action": "spikes",
+          "field": "amount",
+          "percent": 100
+        },
+        {
+          "kind": "unitAbilityFieldMul",
+          "target": "caltrops",
+          "action": "field",
+          "field": "radius",
+          "percent": 100
+        },
+        {
+          "kind": "unitAbilityFieldMul",
+          "target": "explosive_trap",
+          "action": "blast",
+          "field": "amount",
+          "percent": 100
+        },
+        {
+          "kind": "unitAbilityFieldMul",
+          "target": "explosive_trap",
+          "action": "arm",
+          "field": "radius",
+          "percent": 100
+        },
+        {
+          "kind": "unitAbilityFieldMul",
+          "target": "marker_trap",
+          "action": "vulnerable",
+          "field": "value",
+          "percent": 100
+        },
+        {
+          "kind": "unitAbilityFieldMul",
+          "target": "marker_trap",
+          "action": "zone",
+          "field": "radius",
+          "percent": 100
         }
       ]
     }

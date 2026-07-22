@@ -119,7 +119,11 @@ func init() {
 				}
 				u := s.getUnitByIDLocked(ctx.CurrentStatus.TargetUnitID)
 				if u != nil {
-					s.playEffectOnUnitForDurationLocked(u, c.Asset, ctx.CurrentStatus.Remaining, c.Scale)
+					// Refresh-not-restack: a "refresh"-stacking status re-runs its On
+					// Apply every time the zone re-applies it, so queueing here
+					// unconditionally stacked one flame per tick. See
+					// refreshEffectOnUnitForDurationLocked.
+					s.refreshEffectOnUnitForDurationLocked(u, c.Asset, ctx.CurrentStatus.Remaining, c.Scale)
 					ctx.trace("presentation_played", ctx.currentActionPath, map[string]any{
 						"asset":    c.Asset,
 						"unit":     u.ID,

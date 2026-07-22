@@ -390,6 +390,87 @@ func unitTrapAbilityIDLocked(unit *Unit) string {
 	return ""
 }
 
+// effectiveTrapStatsFromParamsLocked builds the effective-trap view for a
+// MIGRATED trap — one authored as a composable zone whose stats are ability
+// parameters. Returns ok=false for a trap still on the legacy place_trap path,
+// so the caller falls through to the old resolution during the migration.
+//
+// Parameter names are the shared trap vocabulary the migrated trap abilities
+// author: dps / radius / duration / slowMultiplier / markMultiplier /
+// markDuration / burstDamage / triggerRadius. A trap simply omits the ones it
+// has no concept of, and the corresponding field stays zero exactly as it did
+// under the legacy switch.
+//
+// Caller holds s.mu.
+func (s *GameState) effectiveTrapStatsFromParamsLocked(unit *Unit, trapID string) (EffectiveTrapStats, bool) {
+	// Where each trap authors the numbers the tooltip reports, as {action, field}
+	// addresses into its program. This replaces the ability-PARAMETER block the
+	// traps used to declare: the program is what actually runs, so reading it
+	// directly removes the second source of truth rather than moving it.
+	type site struct{ action, field string }
+	sites, known := map[string]map[string]site{
+		"fire_pit": {
+			"radius": {"pit", "radius"}, "duration": {"pit", "duration"},
+			"dps": {"direct_dmg", "amount"},
+		},
+		"caltrops": {
+			"radius": {"field", "radius"}, "duration": {"field", "duration"},
+			"dps": {"spikes", "amount"}, "slowMultiplier": {"slow_move", "value"},
+		},
+		"explosive_trap": {
+			"radius": {"arm", "radius"}, "duration": {"arm", "duration"},
+			"burstDamage": {"blast", "amount"},
+		},
+		"marker_trap": {
+			"radius": {"zone", "radius"}, "duration": {"zone", "duration"},
+			"markMultiplier": {"vulnerable", "value"}, "markDuration": {"mark", "duration"},
+		},
+	}[trapID]
+	if !known {
+		return EffectiveTrapStats{}, false
+	}
+	read := func(key string) float64 {
+		st, ok := sites[key]
+		if !ok {
+			return 0
+		}
+		v, ok := s.EffectiveAbilityFieldLocked(unit, trapID, st.action, st.field)
+		if !ok {
+			return 0
+		}
+		return v
+	}
+	// Placement cadence is the ability's cooldown, folded with the same perk
+	// cooldown modifier the cast path applies (rapid_deployment).
+	interval := def_EffectiveCooldown(trapID)
+	if mods := s.abilityScalarModifiersForCasterLocked(unit, trapID); mods.CooldownMult > 0 {
+		interval *= mods.CooldownMult
+	}
+	return EffectiveTrapStats{
+		PerkID:          trapID,
+		DurationSeconds: read("duration"),
+		PlaceInterval:   interval,
+		// explosive_trap now has ONE radius doing both jobs (trigger + blast), so
+		// TriggerRadius mirrors Radius rather than being a second authored number.
+		Radius:          read("radius"),
+		TriggerRadius:   read("radius"),
+		DamagePerSecond: read("dps"),
+		BurstDamage:     int(read("burstDamage")),
+		SlowMultiplier:  read("slowMultiplier"),
+		MarkMultiplier:  read("markMultiplier"),
+		MarkDuration:    read("markDuration"),
+	}, true
+}
+
+// def_EffectiveCooldown is the ability's authored cooldown, or 0 when the
+// ability is unknown.
+func def_EffectiveCooldown(abilityID string) float64 {
+	if d, ok := getAbilityDef(abilityID); ok {
+		return d.EffectiveCooldown()
+	}
+	return 0
+}
+
 // DebugEffectiveTrapStats computes the effective planted-trap stats for the
 // unit's currently owned trap ABILITY (if any). Returns zero-value and false if
 // the unit knows no trap ability.
@@ -407,6 +488,15 @@ func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, boo
 	trapID := unitTrapAbilityIDLocked(unit)
 	if trapID == "" {
 		return EffectiveTrapStats{}, false
+	}
+	// MIGRATED traps (authored as composable visible zones) carry their stats as
+	// ability PARAMETERS, not as a place_trap config. Build the snapshot from
+	// the resolved parameters instead — which is strictly better than the legacy
+	// path, because the resolution chokepoint has already folded in every perk,
+	// item and advancement contribution, so the tooltip cannot drift from what
+	// the ability actually does.
+	if stats, ok := s.effectiveTrapStatsFromParamsLocked(unit, trapID); ok {
+		return stats, true
 	}
 	tc, ok := trapConfigFromAbilityLocked(trapID, unit.Rank)
 	if !ok {

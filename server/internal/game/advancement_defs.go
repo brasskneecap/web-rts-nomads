@@ -66,6 +66,21 @@ type UnitAdvancementEffect struct {
 	// unitExtraPerkSlot fields:
 	// Tier is the perk tier the second slot draws from: "bronze" | "silver" | "gold".
 	Tier string `json:"tier,omitempty"`
+	// unitAbilityParamAdd / unitAbilityParamMul fields:
+	// Target names the ability this modifies — an ability id, or "tag:<name>"
+	// to hit every ability carrying that tag (e.g. "tag:trap"). Param names the
+	// parameter on that ability (AbilityDef.Params). Amount/Percent carry the
+	// operand: unitAbilityParamAdd uses Value, unitAbilityParamMul uses Percent
+	// (10 → x1.10). See ability_params.go for the resolution chokepoint these
+	// feed, which treats an advancement exactly like a perk or an item.
+	Target string  `json:"target,omitempty"`
+	Param  string  `json:"param,omitempty"`
+	// Action / Field address ONE field of ONE action in the target ability's
+	// program — the replacement for Param now that abilities hold literal
+	// numbers instead of named parameters (see ability_field_mods.go).
+	Action string  `json:"action,omitempty"`
+	Field  string  `json:"field,omitempty"`
+	Value  float64 `json:"value,omitempty"`
 	// Rank is reserved for future "two silvers / two golds" expansion; the MVP
 	// handler validates Rank == 1 (only single extra slot is supported today).
 	Rank int `json:"rank,omitempty"`
@@ -253,14 +268,48 @@ var advancementEffectRegistry = map[string]advancementEffectHandler{
 			def.TrapRadiusBonus += effect.Percent / 100
 		},
 	},
-	// unitExtraStartingUnit grants the player additional copies of the node's own
-	// unit type at match start (e.g. a worker advancement node that grants +1
-	// starting worker). Like unitExtraPerkSlot, the applyAtMatchStart(def, effect)
-	// hook cannot touch the Player, so it's a no-op on the def; a sibling pass in
-	// applyAdvancementsToEffectiveDefsLocked adds Amount to
-	// Player.ExtraStartingUnits[node.UnitType] — the same field the
-	// extraStartingUnit profile upgrade fills, which the spawn-point grant path
-	// consumes. Amount must be > 0.
+	// unitAbilityFieldAdd / unitAbilityFieldMul add a contribution to one
+	// FIELD of one ACTION of every ability this unit casts that Target matches. This is the generic replacement for bespoke
+	// per-subsystem advancement effects like unitTrapEffectMul: instead of a
+	// hand-written field + a hand-written fold site per subsystem, an
+	// advancement contributes through the same source-agnostic chokepoint perks
+	// and items use (ability_params.go). Adding a node that tunes a NEW
+	// ability's numbers now needs zero Go.
+	//
+	// The contribution is appended to the effective UnitDef's AbilityFields,
+	// which spawnUnitFromDefLocked copies onto the Unit.
+	"unitAbilityFieldAdd": {
+		validate: func(src string, effect UnitAdvancementEffect) {
+			if effect.Target == "" || effect.Action == "" || effect.Field == "" {
+				panic(src + `: effect "unitAbilityFieldAdd" requires target, action and field`)
+			}
+			if effect.Value == 0 {
+				panic(src + `: effect "unitAbilityFieldAdd" requires non-zero value`)
+			}
+		},
+		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
+			def.AbilityFields = append(def.AbilityFields, AbilityFieldModifier{
+				Target: effect.Target, Action: effect.Action, Field: effect.Field,
+				Op: statOpAdd, Value: effect.Value,
+			})
+		},
+	},
+	"unitAbilityFieldMul": {
+		validate: func(src string, effect UnitAdvancementEffect) {
+			if effect.Target == "" || effect.Action == "" || effect.Field == "" {
+				panic(src + `: effect "unitAbilityFieldMul" requires target, action and field`)
+			}
+			if effect.Percent == 0 {
+				panic(src + `: effect "unitAbilityFieldMul" requires non-zero percent`)
+			}
+		},
+		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
+			def.AbilityFields = append(def.AbilityFields, AbilityFieldModifier{
+				Target: effect.Target, Action: effect.Action, Field: effect.Field,
+				Op: statOpMultiply, Value: 1 + effect.Percent/100,
+			})
+		},
+	},
 	"unitExtraStartingUnit": {
 		validate: func(src string, effect UnitAdvancementEffect) {
 			if effect.Amount <= 0 {

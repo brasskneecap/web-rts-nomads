@@ -61,6 +61,7 @@ type SchemaField struct {
 	Key               string          `json:"key"`
 	Label             string          `json:"label"`
 	Control           string          `json:"control"` // number|text|boolean|enum|multiselect|asset|sentinel_number|duration|percentage|target_query|context_ref|animation_marker
+	Kind              string          `json:"kind,omitempty"` // see abilityStatKind* (ability_stat_kinds.go)
 	Options           []string        `json:"options,omitempty"`
 	Section           string          `json:"section,omitempty"` // Basic|Targeting|Timing|Properties|Presentation|Conditions|Advanced|Notes
 	TargetQueryFields []string        `json:"targetQueryFields,omitempty"`
@@ -362,6 +363,26 @@ type dealDamageConfig struct {
 	// Amount is used exactly as before (100% unchanged path).
 	AmountRef  string  `json:"amountRef,omitempty"`
 	AmountMult float64 `json:"amountMult,omitempty"`
+	// ADRatio / APRatio scale this action's damage with the CASTER's attack
+	// damage and ability power:
+	//
+	//	amount = (Amount + attackDamage x ADRatio + abilityPower x APRatio)
+	//	         x spellModifiers x abilityDamage
+	//
+	// Both default to 0, so every action authored before these existed is
+	// unchanged. Additive terms rather than a mode enum: there is no wrong mode
+	// to pick, and a hybrid (a trap that scales partly off the Trapper's bow) is
+	// expressible instead of forbidden.
+	//
+	// AUTHORING A DoT: the ratio is PER APPLICATION of this action. A burn that
+	// ticks 8 times applies its ratio 8 times, so author 1/8th of the total you
+	// intend. This is the whole reason ratios exist rather than a flat ability-
+	// damage bonus (see statAbilityPower) — but it does mean an author thinking
+	// in totals will overshoot by the tick count.
+	//
+	// Ignored on the AmountRef path, which is already a final folded number.
+	ADRatio float64 `json:"adRatio,omitempty"`
+	APRatio float64 `json:"apRatio,omitempty"`
 }
 
 func (dealDamageConfig) actionConfig() {}
@@ -421,10 +442,12 @@ func init() {
 			return out
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "amount", Label: "Amount", Control: "number", Section: "Properties"},
+			{Key: "amount", Label: "Amount", Control: "number", Kind: abilityStatKindDamage, Section: "Properties"},
 			{Key: "type", Label: "Damage Type", Control: "enum", Section: "Properties"},
 			{Key: "amountRef", Label: "Amount From (context)", Control: "text", Section: "Properties"},
 			{Key: "amountMult", Label: "Amount ×", Control: "number", Section: "Properties"},
+			{Key: "adRatio", Label: "Attack Damage Ratio", Control: "number", Section: "Properties"},
+			{Key: "apRatio", Label: "Ability Power Ratio", Control: "number", Section: "Properties"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(dealDamageConfig)
@@ -452,9 +475,15 @@ func init() {
 					amount = int(math.Round(v.Scalar * mult))
 				}
 			} else {
-				amount = c.Amount
+				// Scaling terms first: the caster's attack damage and ability
+				// power contribute at this action's authored ratios, and the
+				// result is what the spell-modifier / abilityDamage fold then
+				// scales. Both ratios are 0 for every pre-existing action, so
+				// base stays exactly c.Amount there.
+				base := float64(c.Amount) + s.abilityScalingTermsLocked(caster, c.ADRatio, c.APRatio)
+				amount = int(math.Round(base))
 				if caster != nil && ctx.abilityDef != nil {
-					amount = s.effectiveAbilityDamageLocked(caster, *ctx.abilityDef, c.Amount)
+					amount = s.effectiveAbilityDamageLocked(caster, *ctx.abilityDef, amount)
 				}
 				// Honour a caller-supplied reduced/boosted-effectiveness cast (e.g.
 				// unstable_magic's free proc — see EffectiveSpell.DamageEffectivenessMultiplier
@@ -513,7 +542,7 @@ func init() {
 			return nil
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "amount", Label: "Amount", Control: "number", Section: "Properties"},
+			{Key: "amount", Label: "Amount", Control: "number", Kind: abilityStatKindHeal, Section: "Properties"},
 			{Key: "school", Label: "School", Control: "enum", Section: "Properties"},
 			{Key: "amountRef", Label: "Amount From (context)", Control: "text", Section: "Properties"},
 			{Key: "amountMult", Label: "Amount ×", Control: "number", Section: "Properties"},

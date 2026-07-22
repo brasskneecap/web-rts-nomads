@@ -184,6 +184,20 @@ type ItemDef struct {
 	// from the small defaultMarketplaceStarterInventory fallback.
 	RequiredBuilding string                `json:"requiredBuilding,omitempty"`
 	Modifiers        *ItemModifiers        `json:"modifiers,omitempty"`
+	// AbilityParams are this item's contributions to target abilities' declared
+	// PARAMETERS (AbilityDef.Params) — identical shape to PerkDef.AbilityParams,
+	// because ability parameters are deliberately source-agnostic: an item tunes
+	// an ability's numbers exactly the way a perk does. Target may be an ability
+	// id or "tag:<name>". See ability_params.go.
+	// AbilityStats are this item's BROAD, kind-targeted ability contributions —
+	// "+15% radius to your abilities". This is the addressing mode an item NEEDS:
+	// unlike a perk, an item cannot name an ability, because it does not know who
+	// equipped it or what they cast. Same id vocabulary as UnitDef.AbilityStats.
+	AbilityStats map[string]AbilityStatMod `json:"abilityStats,omitempty"`
+	// AbilityFields are this item's PRECISE, per-action contributions, for an item
+	// that names a specific ability ("+30% Fire Pit radius") rather than buffing
+	// every ability broadly. See ability_field_mods.go.
+	AbilityFields []AbilityFieldModifier `json:"abilityFields,omitempty"`
 	Effects          []string              `json:"effects,omitempty"` // future: "lifesteal", "splash", etc.
 	Consumable       *ConsumableEffect     `json:"consumable,omitempty"`
 	MaxStacks        int                   `json:"maxStacks,omitempty"` // consumables only; 0 treated as 1
@@ -324,6 +338,12 @@ func getItemDef(id string) (*ItemDef, bool) {
 // rejected here (unlike combat code that resolves it to physical) because a
 // typed elemental bonus with no explicit element is a content authoring error.
 func validateItemDef(def *ItemDef) error {
+	if err := validateAbilityFieldModifiers(fmt.Sprintf("item %q", def.ID), def.AbilityFields); err != nil {
+		return err
+	}
+	if err := validateAbilityStats(fmt.Sprintf("item %q", def.ID), def.AbilityStats); err != nil {
+		return err
+	}
 	if m := def.Modifiers; m != nil {
 		if m.DodgeChance < 0 || m.DodgeChance >= 1 {
 			return fmt.Errorf("item %q modifiers.dodgeChance %v out of range [0,1)", def.ID, m.DodgeChance)

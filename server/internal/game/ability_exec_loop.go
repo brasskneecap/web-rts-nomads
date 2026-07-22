@@ -293,7 +293,8 @@ func init() {
 		// vars + body are edited via the loop's own wrapper UI, not flat fields;
 		// only iterations is a plain inspector control.
 		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "iterations", Label: "Iterations", Control: "number", Section: "Properties"},
+			{Key: "iterations", Label: "Iterations", Control: "number", Kind: abilityStatKindCount, Section: "Properties"},
+			{Key: "stepFirst", Label: "Step On First Iteration", Control: "boolean", Section: "Advanced"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(loopConfig)
@@ -350,11 +351,15 @@ func (ctx *RuntimeAbilityContext) hasLoopVarsInScope() bool {
 	return false
 }
 
-// resolveConfigVars replaces bare loop-variable references in an action's raw
-// config with their current numeric values. A JSON string that is a single
-// lowercase letter bound as a loop variable becomes that number; every other
-// value is untouched. Returns the input unchanged when no loop variables are in
-// scope (the zero-cost common path) or the config isn't decodable.
+// resolveConfigVars replaces loop-variable and ability-PARAMETER references in
+// an action's raw config with their current numeric values. A JSON string that
+// is a single lowercase letter bound as a loop variable becomes that number; a
+// string of the form "$name" naming one of the cast's resolved parameters
+// becomes that parameter's effective value. Every other value is untouched.
+//
+// Returns the input unchanged when neither loop variables nor parameters are in
+// scope (the zero-cost common path) or the config isn't decodable — so an
+// ability that declares no params pays a single length check per action.
 func (ctx *RuntimeAbilityContext) resolveConfigVars(config json.RawMessage) json.RawMessage {
 	if len(config) == 0 || !ctx.hasLoopVarsInScope() {
 		return config
@@ -371,8 +376,8 @@ func (ctx *RuntimeAbilityContext) resolveConfigVars(config json.RawMessage) json
 }
 
 // substituteLoopVars walks a decoded JSON value and replaces any string that is
-// an in-scope loop variable with its scalar value, recursing through objects and
-// arrays.
+// an in-scope loop variable with its numeric value, recursing through objects
+// and arrays.
 func (ctx *RuntimeAbilityContext) substituteLoopVars(v any) any {
 	switch t := v.(type) {
 	case string:

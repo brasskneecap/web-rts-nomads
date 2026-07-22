@@ -1,12 +1,7 @@
 {
   "id": "lasting_flames",
   "displayName": "Lasting Flames",
-  "description": "Fire Pit: applies its damage as a burn debuff. Duration refreshes while enemies stand in the pit, and the burn continues for 4 seconds after they leave.",
-  "tooltipTemplate": "Fire Pit: damage is applied as a burn debuff that continues for {burnDurationSeconds:1}s after leaving the zone.",
+  "description": "Fire Pit: applies its damage as a burn debuff. The burn keeps ticking after enemies leave the pit.",
   "icon": "perk-lasting-flames",
-  "requiresAbility": "fire_pit",
-  "config": {
-    "burnDurationSeconds": 8
-  },
-  "wired": false
+  "requiresAbility": "fire_pit"
 }

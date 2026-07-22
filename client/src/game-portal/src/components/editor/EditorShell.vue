@@ -38,8 +38,8 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 // Form chrome for every control rendered inside .ed-shell. Imported here (not
 // in each field component) so a single import covers the whole editor.
 import './editor-controls.css'
-// Opt-in editor skins (e.g. `theme="forge"`). Scoped under .ed-theme-<name>,
-// so importing it is inert until a shell actually sets the theme prop.
+// Editor skins, scoped under .ed-theme-<name>. `forge` is the DEFAULT (see the
+// theme prop below); the older wood look is reachable with theme="".
 import './editor-theme.css'
 
 withDefaults(defineProps<{
@@ -48,12 +48,20 @@ withDefaults(defineProps<{
    *  rather than a companion (the ability builder). Default false keeps the
    *  five existing EditorShell consumers byte-identical. */
   wideRail?: boolean
-  /** Opt-in visual skin, applied as `.ed-theme-<theme>` on the shell (see
-   *  editor-theme.css). Omit for the default wood look. Set the same value on
-   *  the item/unit editors' shells to bring them along. */
+  /** Visual skin, applied as `.ed-theme-<theme>` on the shell (see
+   *  editor-theme.css).
+   *
+   *  Defaults to `forge` — the warmer, brass-accented look. It began as an
+   *  opt-in while it was proven out on the item / unit / ability editors, but
+   *  the older wood look it replaced is dated, and leaving it as the default
+   *  meant a NEW editor silently shipped looking like the old ones (which is
+   *  exactly what happened to the list and table editors).
+   *
+   *  Pass `theme=""` for no skin at all — the original wood look. */
   theme?: string
 }>(), {
   wideRail: false,
+  theme: 'forge',
 })
 </script>
 

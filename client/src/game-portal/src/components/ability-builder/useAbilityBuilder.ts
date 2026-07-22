@@ -61,6 +61,9 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+
+
+
 export function useAbilityBuilder() {
   // ── Loaded data ────────────────────────────────────────────────────────
   // shallowRef: these are always replaced wholesale from a fetch response,
@@ -177,16 +180,26 @@ export function useAbilityBuilder() {
     applyProgramMutation((p) => tree.removeTrigger(p, path))
   }
 
-  // addAction appends actionType to the trigger at triggerPath's actions
-  // (last position — see programTree.addAction) and returns the new action's
-  // id so callers (e.g. AddActionDialog) can immediately focus it. It also
-  // selects the new action itself, so the inspector rail follows the
-  // freshly-added action without requiring the caller to do so.
-  function addAction(triggerPath: NodePath, actionType: ActionType): string {
-    applyProgramMutation((p) => tree.addAction(p, triggerPath, actionType))
-    const resolved = tree.resolveNode(program.value, triggerPath)
-    const newId = resolved?.kind === 'trigger' ? resolved.node.actions.at(-1)?.id : undefined
-    if (newId) select({ kind: 'action', path: [...triggerPath, { kind: 'action', id: newId }] })
+  // addAction appends actionType to the CONTAINER at containerPath — a
+  // trigger's actions, a loop's config.body, or (naming which side via
+  // `branch`) a conditional's config.then/config.else — and returns the new
+  // action's id so callers (e.g. AddActionDialog) can immediately focus it.
+  // It also selects the new action itself, so the inspector rail follows the
+  // freshly-added action without requiring the caller to do so. `branch` is
+  // only meaningful when containerPath resolves to a conditional action; see
+  // programTree.addAction.
+  function addAction(containerPath: NodePath, actionType: ActionType, branch?: 'then' | 'else'): string {
+    applyProgramMutation((p) => tree.addAction(p, containerPath, actionType, branch))
+    const resolved = tree.resolveNode(program.value, containerPath)
+    let newId: string | undefined
+    if (resolved?.kind === 'trigger') {
+      newId = resolved.node.actions.at(-1)?.id
+    } else if (resolved?.kind === 'action') {
+      // A loop only ever has one nested list ('body'); a conditional has two,
+      // so the caller must have named which one via `branch`.
+      newId = tree.nestedActionListOf(resolved.node, branch ?? 'body').at(-1)?.id
+    }
+    if (newId) select({ kind: 'action', path: [...containerPath, { kind: 'action', id: newId }] })
     return newId ?? ''
   }
 
@@ -500,6 +513,7 @@ export function useAbilityBuilder() {
     updateProgram,
     updateForm,
     select,
+    // params
     // validation
     revalidate,
     scheduleValidate,

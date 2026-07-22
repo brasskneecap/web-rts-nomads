@@ -52,10 +52,22 @@ func (a AbilityDef) GeneratedDescription() string { return describeAbility(a) }
 // sources for the same ability.
 func describeAbility(a AbilityDef) string {
 	if a.SchemaVersion >= 2 && a.Program != nil {
+		// Prose is generated WITHOUT a caster, so it describes what the ability
+		// does on its own — the authored numbers, before any perk/item/rank fold.
+		// That works directly now: an action's config holds literal numbers. It
+		// used to require a pre-pass resolving "$name" references, without which
+		// every parameterized field reached the prose builders as an unparsed
+		// string and the tooltip degraded to blanks.
 		return describeAbilityProgram(a)
 	}
 	return describeLegacyAbility(a)
 }
+
+// NOTE: describeAbility used to pre-resolve "$name" parameter references to
+// their declared bases before generating prose, because an action's config held
+// the STRING "$dps" rather than a number. Actions now hold literal numbers
+// (ability_field_mods.go), so the substitution pass is gone and prose reads the
+// config directly.
 
 // describeLegacyAbility is the flat-field generator: every legacy
 // (schemaVersion 0/1) ability's tooltip prose is built here, unchanged from
@@ -113,7 +125,144 @@ func describeAbilityProgram(a AbilityDef) string {
 	if desc := describeTrapAbility(a); desc != "" {
 		return desc
 	}
+	if desc := describeVisibleZoneAbility(a); desc != "" {
+		return desc
+	}
 	return describeLegacyAbility(abilityMechanicsShadow(a))
+}
+
+// describeVisibleZoneAbility describes an ability whose effect is a persistent
+// VISIBLE zone — a create_zone that names a sprite (the shape the Trapper's
+// traps are authored in). The generic shadow-recovery path cannot describe
+// these: a zone's damage lives inside its nested on_zone_tick trigger, and
+// under this design that damage is typically behind a capability branch, so
+// there is no flat mechanic field to recover.
+//
+// Prose describes the DEFAULT behavior — the branch a caster with no
+// contributing source gets — then lists the ability's declared variants using
+// each capability's own `describe` text, per
+// docs/design/ability_perk_interaction.md §10 ("an ability should describe its
+// default branch and note its variants").
+//
+// Returns "" for any program with no visible create_zone, so every other
+// ability keeps its existing description path untouched.
+func describeVisibleZoneAbility(a AbilityDef) string {
+	cfg, ok := findVisibleZoneConfig(a.Program)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Places %s", withIndefiniteArticle(zoneDisplayNoun(a, cfg)))
+	if cfg.Radius > 0 {
+		fmt.Fprintf(&b, " (%s radius)", trimFloat(cfg.Radius))
+	}
+	if amount, dmgType, interval, found := firstZoneTickDamage(cfg); found {
+		word := damageTypeWord(dmgType)
+		if interval == 1 {
+			fmt.Fprintf(&b, " that deals %s%s damage per second", trimFloat(amount), word)
+		} else if interval > 0 {
+			fmt.Fprintf(&b, " that deals %s%s damage every %ss", trimFloat(amount), word, trimFloat(interval))
+		} else {
+			fmt.Fprintf(&b, " that deals %s%s damage", trimFloat(amount), word)
+		}
+	}
+	if cfg.Duration > 0 {
+		fmt.Fprintf(&b, ". Lasts %ss", trimFloat(cfg.Duration))
+	}
+	b.WriteString(".")
+
+	// Variant branches (a conditional on has_perk) are deliberately NOT listed
+	// here: the branch names its perk inline in the program, and the PERK's own
+	// description is where "what Lasting Flames does to your fire pit" belongs.
+	// Describing it from both sides would drift.
+	return b.String()
+}
+
+// zoneDisplayNoun is the noun the prose calls the zone: its authored zone name
+// when present, else the ability's display name, lowercased so it reads inside
+// a sentence.
+func zoneDisplayNoun(a AbilityDef, cfg createZoneConfig) string {
+	if n := strings.TrimSpace(cfg.Name); n != "" {
+		return strings.ToLower(n)
+	}
+	if a.DisplayName != "" {
+		return strings.ToLower(a.DisplayName)
+	}
+	return humanizeID(a.ID)
+}
+
+// findVisibleZoneConfig walks a program for the first create_zone action that
+// opted into visibility, recursing through nested action children.
+func findVisibleZoneConfig(prog *AbilityProgram) (createZoneConfig, bool) {
+	if prog == nil {
+		return createZoneConfig{}, false
+	}
+	var walk func(triggers []AbilityTriggerDef) (createZoneConfig, bool)
+	walk = func(triggers []AbilityTriggerDef) (createZoneConfig, bool) {
+		for _, trg := range triggers {
+			for _, action := range trg.Actions {
+				if action.Type == ActionCreateZone {
+					var c createZoneConfig
+					decodeActionConfig(action.Config, &c)
+					if c.Sprite != "" {
+						return c, true
+					}
+				}
+				if c, ok := walk(action.Children); ok {
+					return c, true
+				}
+			}
+		}
+		return createZoneConfig{}, false
+	}
+	return walk(prog.Triggers)
+}
+
+// firstZoneTickDamage finds the damage a zone deals on tick, looking through
+// conditional branches so a capability-gated default branch still describes.
+// The FIRST deal_damage encountered wins, which is why an ability should author
+// its default branch first — the same convention the rest of the describe code
+// uses for "primary" effects.
+func firstZoneTickDamage(cfg createZoneConfig) (amount float64, dmgType string, interval float64, found bool) {
+	var scan func(actions []AbilityActionDef) (float64, string, bool)
+	scan = func(actions []AbilityActionDef) (float64, string, bool) {
+		for _, act := range actions {
+			switch act.Type {
+			case ActionDealDamage:
+				var dc dealDamageConfig
+				decodeActionConfig(act.Config, &dc)
+				if dc.Amount > 0 {
+					return float64(dc.Amount), string(dc.Type), true
+				}
+			case ActionConditional:
+				var cc conditionalConfig
+				decodeActionConfig(act.Config, &cc)
+				if amt, t, ok := scan(cc.Then); ok {
+					return amt, t, ok
+				}
+			}
+		}
+		return 0, "", false
+	}
+	for _, trg := range cfg.Triggers {
+		if trg.Type != TriggerOnTick {
+			continue
+		}
+		if amt, t, ok := scan(trg.Actions); ok {
+			return amt, t, cfg.TickInterval, true
+		}
+	}
+	return 0, "", 0, false
+}
+
+// damageTypeWord renders a damage type as a leading-space-prefixed adjective
+// ("fire" -> " fire"), or "" when unset, so callers can splice it into prose
+// without worrying about double spaces.
+func damageTypeWord(t string) string {
+	if t == "" || t == string(DamagePhysical) {
+		return ""
+	}
+	return " " + t
 }
 
 // describeTrapAbility recognizes a program whose gameplay effect is a

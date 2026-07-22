@@ -183,7 +183,7 @@ func init() {
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "unitType", Label: "Unit Type", Control: "text", Section: "Properties"},
-			{Key: "count", Label: "Count", Control: "number", Section: "Properties"},
+			{Key: "count", Label: "Count", Control: "number", Kind: abilityStatKindCount, Section: "Properties"},
 		}},
 		// Execute fans the summon out via the existing spawnSummonedUnitLocked
 		// seam (raise_skeleton's row-fanout behavior) — no reimplementation.
@@ -232,7 +232,7 @@ func init() {
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "strength", Label: "Strength", Control: "number", Section: "Properties"},
-			{Key: "duration", Label: "Duration", Control: "duration", Section: "Timing"},
+			{Key: "duration", Label: "Duration", Control: "duration", Kind: abilityStatKindDuration, Section: "Timing"},
 			{Key: "origin", Label: "Origin", Control: "enum", Options: applyForceOriginOptions, Section: "Targeting"},
 			{Key: "mode", Label: "Mode", Control: "enum", Options: []string{applyForceModePull, applyForceModePush}, Section: "Properties"},
 		}},

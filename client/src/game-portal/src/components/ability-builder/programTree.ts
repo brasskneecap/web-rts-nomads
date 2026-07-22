@@ -13,6 +13,10 @@ import type {
   PresentationInstanceDef,
   TriggerType,
 } from '@/game/abilities/program/abilityProgram'
+// summarizeAction gives collectConditionals its human branch summary. The
+// dependency is one-way — summarizeAction imports nothing from this module —
+// so there is no cycle here.
+import { summarizeAction } from './summarizeAction'
 
 // --- Depth-aware path model -------------------------------------------
 //
@@ -86,9 +90,12 @@ function walkAction(a: AbilityActionDef, ids: string[]): void {
   if (a.children) {
     for (const child of a.children) walkTrigger(child, ids)
   }
-  // A loop action's config.body is a nested ACTION list — scan it so a newly
-  // minted id can never collide with one living inside a loop body.
-  for (const body of loopBodyOf(a)) walkAction(body, ids)
+  // A loop action's config.body / a conditional's config.then + config.else
+  // are nested ACTION lists — scan them so a newly minted id can never
+  // collide with one living inside any of them.
+  for (const { actions } of nestedActionListsOf(a)) {
+    for (const nested of actions) walkAction(nested, ids)
+  }
   // config.triggers (create_zone's nested-trigger slot) is addressable now
   // that resolveNode/updateNodeAt reach into it — a new id minted without
   // scanning this slot could collide with an id already living inside it,
@@ -115,6 +122,47 @@ function collectAllIds(prog: AbilityProgram): string[] {
   return ids
 }
 
+// ConditionalRef is one `conditional` action found anywhere in a program: its
+// authored id (the stable key the preview harness overrides it by — see Go's
+// PreviewRequest.ConditionalOverrides) and a human summary of what it branches
+// on ("has perk: Lasting Flames").
+export interface ConditionalRef {
+  id: string
+  summary: string
+}
+
+// collectConditionals returns every `conditional` action in the program, in
+// document order, so the preview panel can offer one force-the-branch toggle
+// per conditional.
+//
+// Order is deliberately NOT sorted: the toggles should read top-to-bottom in
+// the same order the flow view lists the branches, and document order is
+// exactly that. Ids are unique program-wide (nextUniqueId/collectAllIds), so
+// no de-duplication is needed or wanted — two conditionals branching on the
+// same perk are still two independently-overridable nodes.
+export function collectConditionals(prog: AbilityProgram): ConditionalRef[] {
+  const out: ConditionalRef[] = []
+  function addAction(a: AbilityActionDef): void {
+    if (a.type === 'conditional') {
+      out.push({ id: a.id, summary: summarizeAction(a, null) })
+    }
+    if (a.children) for (const child of a.children) addTrigger(child)
+    for (const { actions } of nestedActionListsOf(a)) for (const nested of actions) addAction(nested)
+    for (const nested of configTriggersOf(a)) addTrigger(nested)
+  }
+  function addTrigger(t: AbilityTriggerDef): void {
+    for (const a of t.actions) addAction(a)
+  }
+  for (const t of prog.triggers) addTrigger(t)
+  if (prog.namedTriggers) for (const t of Object.values(prog.namedTriggers)) addTrigger(t)
+  if (prog.presentations) {
+    for (const p of prog.presentations) {
+      if (p.triggers) for (const t of p.triggers) addTrigger(t)
+    }
+  }
+  return out
+}
+
 // collectSavedContextNames returns every named-context key an ability SAVES to
 // — the destination names in any action's `outputs` map, plus every
 // `store_targets` action's `config.as`. These are exactly the keys a later
@@ -136,7 +184,7 @@ export function collectSavedContextNames(prog: AbilityProgram): string[] {
       if (typeof as === 'string' && as) names.add(as)
     }
     if (a.children) for (const child of a.children) addTrigger(child)
-    for (const body of loopBodyOf(a)) addAction(body)
+    for (const { actions } of nestedActionListsOf(a)) for (const nested of actions) addAction(nested)
     for (const nested of configTriggersOf(a)) addTrigger(nested)
   }
   function addTrigger(t: AbilityTriggerDef): void {
@@ -172,7 +220,7 @@ export function collectReadContextNames(prog: AbilityProgram): string[] {
       }
     }
     if (a.children) for (const child of a.children) addTrigger(child)
-    for (const body of loopBodyOf(a)) addAction(body)
+    for (const { actions } of nestedActionListsOf(a)) for (const nested of actions) addAction(nested)
     for (const nested of configTriggersOf(a)) addTrigger(nested)
   }
   function addTrigger(t: AbilityTriggerDef): void {
@@ -263,14 +311,92 @@ function configTriggersOf(action: AbilityActionDef): AbilityTriggerDef[] {
   return Array.isArray(raw) ? (raw as AbilityTriggerDef[]) : []
 }
 
-// loopBodyOf reads a `loop` action's config.body — the nested ACTION list it
-// runs each iteration — defensively (opaque config, never destructured). This
-// is the one place an action owns a list of ACTIONS (not triggers), so the
-// path model can reach into it: an `action` segment following a loop action
-// resolves against this list (see walkPath / rebuildActionList).
-export function loopBodyOf(action: AbilityActionDef): AbilityActionDef[] {
-  const raw = action.config?.body
+// NestedActionListKey names a config sub-key that holds a nested ACTION list
+// (as opposed to configTriggersOf's nested TRIGGER lists, above). A bare
+// string, not a closed union: an unrecognized future key would still round-
+// trip through nestedActionListsOf's Array.isArray check the same way a known
+// one does, matching ActionType's own forward-compat escape hatch.
+export type NestedActionListKey = string
+
+export interface NestedActionList {
+  key: NestedActionListKey
+  actions: AbilityActionDef[]
+}
+
+// NESTED_ACTION_LIST_KEYS are the config sub-keys, across every action type,
+// known to hold a nested ACTION list:
+//   loop        -> config.body           (runs every iteration)
+//   conditional -> config.then/config.else (THEN/ELSE branches — see
+//                  conditionalConfig in ability_exec_flow.go)
+// Reading is deliberately action-type-agnostic (mirrors configTriggersOf) —
+// nestedActionListsOf just checks whether each key holds an array, regardless
+// of the owning action's type.
+const NESTED_ACTION_LIST_KEYS: readonly NestedActionListKey[] = ['body', 'then', 'else']
+
+// nestedActionListOf reads a single nested-action-list config key
+// defensively: `config` is an OPAQUE bag (decoded per-action-type by a later
+// task's registry — see AbilityActionDef.config's doc comment), so this never
+// destructures or re-marshals it, and only trusts the key once Array.isArray
+// confirms the shape.
+export function nestedActionListOf(action: AbilityActionDef, key: NestedActionListKey): AbilityActionDef[] {
+  const raw = action.config?.[key]
   return Array.isArray(raw) ? (raw as AbilityActionDef[]) : []
+}
+
+// nestedActionListsOf returns every nested ACTION list an action actually
+// owns — `[{key:'body', ...}]` for a loop, `[{key:'then', ...}, {key:'else',
+// ...}]` for a conditional (an entry is included whenever the config key is
+// present as an array, even an empty one, so a conditional authored with an
+// explicit empty `"else": []` still owns an else slot; a conditional with no
+// `else` key at all owns none). This is the ONE place an action can own a
+// list of ACTIONS (not triggers), generalizing the loop-only precedent so the
+// path model, id-collection, and every mutation op below reach into a
+// conditional's branches exactly the way they already reach into a loop's
+// body — see walkPath / rebuildActionList / reidAction.
+export function nestedActionListsOf(action: AbilityActionDef): NestedActionList[] {
+  const out: NestedActionList[] = []
+  for (const key of NESTED_ACTION_LIST_KEYS) {
+    const raw = action.config?.[key]
+    if (Array.isArray(raw)) out.push({ key, actions: raw as AbilityActionDef[] })
+  }
+  return out
+}
+
+// keyOfNestedAction reports which nested action list (by key) currently
+// contains `id`, so a mutation can rebuild the right one without the caller
+// having to know in advance whether it's editing a loop body or a
+// conditional branch. Mirrors slotOfNestedTrigger's role for the two
+// nested-TRIGGER slots. Returns undefined if `id` isn't found in any of
+// `action`'s nested action lists.
+function keyOfNestedAction(action: AbilityActionDef, id: string): NestedActionListKey | undefined {
+  return nestedActionListsOf(action).find((l) => l.actions.some((a) => a.id === id))?.key
+}
+
+// findInNestedActionLists searches every nested action list `action` owns
+// (in nestedActionListsOf's order) for `id`, returning which key it lives in,
+// its index WITHIN that list (for indexFrag), and the node itself. Used by
+// walkPath so an `action` segment following another action resolves
+// correctly whichever list (loop body or conditional branch) it's actually
+// sitting in.
+function findInNestedActionLists(
+  action: AbilityActionDef,
+  id: string,
+): { key: NestedActionListKey; idx: number; node: AbilityActionDef } | undefined {
+  for (const { key, actions } of nestedActionListsOf(action)) {
+    const idx = actions.findIndex((a) => a.id === id)
+    if (idx !== -1) return { key, idx, node: actions[idx] }
+  }
+  return undefined
+}
+
+// loopBodyOf reads a `loop` action's config.body — the nested ACTION list it
+// runs each iteration — defensively (opaque config, never destructured). Kept
+// as its own export (rather than requiring every call site to filter
+// nestedActionListsOf itself) because a loop only ever has ONE nested list
+// and most existing callers just want "the body," not the general
+// multi-list shape.
+export function loopBodyOf(action: AbilityActionDef): AbilityActionDef[] {
+  return nestedActionListOf(action, 'body')
 }
 
 // loopScopeFor reports whether the node at `path` sits inside a loop, and which
@@ -397,16 +523,16 @@ function walkPath(prog: AbilityProgram, path: NodePath): WalkStep[] | undefined 
     }
 
     // prev.kind === 'action': the next step is either a nested TRIGGER (its
-    // children / config.triggers slots) or, for a loop action, a nested ACTION
-    // in its config.body.
+    // children / config.triggers slots) or a nested ACTION living in one of
+    // its nested action lists (a loop's config.body, or a conditional's
+    // config.then/config.else).
     if (seg.kind === 'action') {
-      const body = loopBodyOf(prev.node)
-      const idx = body.findIndex((a) => a.id === seg.id)
-      if (idx === -1) return undefined
+      const found = findInNestedActionLists(prev.node, seg.id)
+      if (!found) return undefined
       steps.push({
         kind: 'action',
-        node: body[idx],
-        indexFrag: `${prev.indexFrag}.body[${idx}]`,
+        node: found.node,
+        indexFrag: `${prev.indexFrag}.${found.key}[${found.idx}]`,
       })
       continue
     }
@@ -498,11 +624,14 @@ function findIdInAction(a: AbilityActionDef, id: string, path: NodePath): NodePa
     const found = findIdInTrigger(nested, id, [...path, { kind: 'trigger', id: nested.id }])
     if (found) return found
   }
-  // A loop action owns a nested ACTION list (config.body) — recurse into it so
-  // a body action (or anything nested under it) is addressable.
-  for (const body of loopBodyOf(a)) {
-    const found = findIdInAction(body, id, [...path, { kind: 'action', id: body.id }])
-    if (found) return found
+  // An action can own nested ACTION lists (a loop's config.body, a
+  // conditional's config.then/config.else) — recurse into all of them so a
+  // branch/body action (or anything nested under it) is addressable.
+  for (const { actions } of nestedActionListsOf(a)) {
+    for (const nested of actions) {
+      const found = findIdInAction(nested, id, [...path, { kind: 'action', id: nested.id }])
+      if (found) return found
+    }
   }
   return undefined
 }
@@ -648,14 +777,20 @@ function rebuildActionList(
   }
   const action = actions[idx]
 
-  // A loop action's nested ACTION list (config.body): descend when the next
-  // step is an `action` segment. Spread the opaque config, replacing only
-  // `body`, so unknown keys round-trip untouched (same discipline as the
+  // One of the action's nested ACTION lists (a loop's config.body, or a
+  // conditional's config.then/config.else): descend when the next step is an
+  // `action` segment. keyOfNestedAction finds WHICH list rest[0].id actually
+  // lives in — the caller doesn't need to know in advance whether it's
+  // editing a loop body or a conditional branch. Spread the opaque config,
+  // replacing only that one key, so unknown keys (and the OTHER branch, for
+  // a conditional) round-trip untouched (same discipline as the
   // config.triggers branch below).
   if (rest[0].kind === 'action') {
-    const body = rebuildActionList(loopBodyOf(action), rest[0].id, rest.slice(1), fn)
-    if (!body) return undefined
-    updated[idx] = { ...action, config: { ...action.config, body } }
+    const key = keyOfNestedAction(action, rest[0].id)
+    if (!key) return undefined
+    const rebuilt = rebuildActionList(nestedActionListOf(action, key), rest[0].id, rest.slice(1), fn)
+    if (!rebuilt) return undefined
+    updated[idx] = { ...action, config: { ...action.config, [key]: rebuilt } }
     return updated
   }
 
@@ -732,9 +867,12 @@ function reidAction(a: AbilityActionDef, mint: (prefix: string) => string): Abil
   if (cfgTriggers.length > 0) {
     a.config = { ...a.config, triggers: cfgTriggers.map((t) => reidTrigger(t, mint)) }
   }
-  const body = loopBodyOf(a)
-  if (body.length > 0) {
-    a.config = { ...a.config, body: body.map((b) => reidAction(b, mint)) }
+  // Every nested ACTION list this action owns (a loop's config.body, a
+  // conditional's config.then/config.else) needs its own subtree re-id'd too
+  // — read fresh off `a.config` each iteration so an earlier key's rewrite in
+  // this same loop is preserved rather than clobbered by the next one.
+  for (const { key, actions } of nestedActionListsOf(a)) {
+    a.config = { ...a.config, [key]: actions.map((b) => reidAction(b, mint)) }
   }
   return a
 }
@@ -874,21 +1012,30 @@ export function removeTrigger(prog: AbilityProgram, path: NodePath): AbilityProg
 
 // updateActionListAt rebuilds the ACTION LIST owned by whatever container
 // parentPath resolves to — a trigger's `actions` (root/presentation/nested
-// trigger), or a `loop` action's `config.body`. This is the single seam the
-// list-mutating ops (add/remove/move/duplicate) funnel through so they work
-// identically whether an action sits directly under a trigger or inside a loop.
+// trigger), or one of an action's own nested action lists (a loop's
+// `config.body`, a conditional's `config.then`/`config.else`). This is the
+// single seam the list-mutating ops (remove/move/duplicate) funnel through so
+// they work identically whether an action sits directly under a trigger, in a
+// loop body, or in a conditional branch.
+//
+// `targetId` — the id of the action actually being removed/moved/duplicated —
+// is what lets this pick the RIGHT nested list when the parent is an action
+// with more than one (a conditional owns both `then` and `else`; a bare
+// parentPath alone can't say which one targetId lives in, so this asks
+// keyOfNestedAction instead of assuming).
 function updateActionListAt(
   prog: AbilityProgram,
   parentPath: NodePath,
+  targetId: string,
   fn: (actions: AbilityActionDef[]) => AbilityActionDef[],
 ): AbilityProgram {
   const parentSeg = parentPath[parentPath.length - 1]
   if (parentSeg?.kind === 'action') {
-    // Loop body: rebuild config.body, preserving every other opaque config key.
-    return updateNodeAt(prog, parentPath, (a: AbilityActionDef): AbilityActionDef => ({
-      ...a,
-      config: { ...a.config, body: fn(loopBodyOf(a)) },
-    }))
+    return updateNodeAt(prog, parentPath, (a: AbilityActionDef): AbilityActionDef => {
+      const key = keyOfNestedAction(a, targetId)
+      if (!key) return a // targetId isn't in any nested list here — no-op, mirrors every other unresolvable case
+      return { ...a, config: { ...a.config, [key]: fn(nestedActionListOf(a, key)) } }
+    })
   }
   return updateNodeAt(prog, parentPath, (t: AbilityTriggerDef): AbilityTriggerDef => ({
     ...t,
@@ -896,9 +1043,20 @@ function updateActionListAt(
   }))
 }
 
-// addAction appends a new action to a CONTAINER: a trigger (its `actions`) or a
-// loop action (its `config.body`). containerPath must resolve to one of those.
-export function addAction(prog: AbilityProgram, containerPath: NodePath, actionType: ActionType): AbilityProgram {
+// addAction appends a brand-new action to a CONTAINER: a trigger (its
+// `actions`), a loop action (its `config.body`), or — via `branch` — one
+// specific side of a conditional action (`config.then`/`config.else`).
+// containerPath must resolve to one of those. Unlike updateActionListAt's
+// ops, there is no existing target id to search for here (the action being
+// added doesn't exist yet), so a conditional's branch must be named
+// explicitly by the caller; `branch` is ignored for a trigger or loop
+// container.
+export function addAction(
+  prog: AbilityProgram,
+  containerPath: NodePath,
+  actionType: ActionType,
+  branch?: 'then' | 'else',
+): AbilityProgram {
   const resolved = resolveNode(prog, containerPath)
   if (!resolved) return prog
   const id = nextUniqueId(prog, 'a')
@@ -916,6 +1074,12 @@ export function addAction(prog: AbilityProgram, containerPath: NodePath, actionT
       config: { ...a.config, body: [...loopBodyOf(a), newAction] },
     }))
   }
+  if (resolved.kind === 'action' && resolved.node.type === 'conditional' && branch) {
+    return updateNodeAt(prog, containerPath, (a: AbilityActionDef): AbilityActionDef => ({
+      ...a,
+      config: { ...a.config, [branch]: [...nestedActionListOf(a, branch), newAction] },
+    }))
+  }
   return prog
 }
 
@@ -925,7 +1089,7 @@ export function removeAction(prog: AbilityProgram, path: NodePath): AbilityProgr
 
   const targetId = path[path.length - 1].id
   const parentPath = path.slice(0, -1)
-  return updateActionListAt(prog, parentPath, (actions) => actions.filter((a) => a.id !== targetId))
+  return updateActionListAt(prog, parentPath, targetId, (actions) => actions.filter((a) => a.id !== targetId))
 }
 
 export function moveAction(prog: AbilityProgram, path: NodePath, dir: 'up' | 'down'): AbilityProgram {
@@ -934,7 +1098,7 @@ export function moveAction(prog: AbilityProgram, path: NodePath, dir: 'up' | 'do
 
   const targetId = path[path.length - 1].id
   const parentPath = path.slice(0, -1)
-  return updateActionListAt(prog, parentPath, (actions) => {
+  return updateActionListAt(prog, parentPath, targetId, (actions) => {
     const idx = actions.findIndex((a) => a.id === targetId)
     if (idx === -1) return actions
     const swapIdx = dir === 'up' ? idx - 1 : idx + 1
@@ -954,7 +1118,7 @@ export function duplicateAction(prog: AbilityProgram, path: NodePath): AbilityPr
   const targetId = path[path.length - 1].id
   const parentPath = path.slice(0, -1)
   const copy = cloneActionWithFreshIds(resolved.node, prog)
-  return updateActionListAt(prog, parentPath, (actions) => {
+  return updateActionListAt(prog, parentPath, targetId, (actions) => {
     const idx = actions.findIndex((a) => a.id === targetId)
     if (idx === -1) return actions
     const next = actions.slice()

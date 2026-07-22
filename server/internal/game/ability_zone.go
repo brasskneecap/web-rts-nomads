@@ -85,8 +85,13 @@ type AbilityZone struct {
 	Radius        float64
 	Remaining     float64
 	TickInterval  float64
-	tickTimer     float64             // counts down to the next on_zone_tick fire (runtime-only)
-	Triggers      []AbilityTriggerDef // compiled on_zone_tick / on_zone_enter / on_zone_exit trigger(s)
+	tickTimer     float64 // counts down to the next on_zone_tick fire (runtime-only)
+	// Sprite / SpriteScale make this zone VISIBLE — see createZoneConfig.Sprite.
+	// Empty Sprite (the default) keeps the zone server-only, so nothing about an
+	// existing zone's behavior or wire footprint changes.
+	Sprite      string
+	SpriteScale float64
+	Triggers    []AbilityTriggerDef // compiled on_zone_tick / on_zone_enter / on_zone_exit trigger(s)
 	// occupantIDs is the sorted-ascending, deduped set of unit IDs that were
 	// inside Radius as of the end of the previous tickAbilityZonesLocked call
 	// (nil before the zone's first tick). Stored as an ID slice — never
@@ -98,10 +103,53 @@ type AbilityZone struct {
 	// outputs come out ascending-ID-sorted for free. Runtime-only, not
 	// serialized (mirrors tickTimer).
 	occupantIDs []int
+	// consumed marks a zone that ended itself mid-execution via the
+	// consume_zone action (the one-shot zone shape: fire once, vanish). Checked
+	// alongside the expiry test so a consumed zone is culled THIS tick and
+	// still gets its paired on_zone_exit sweep. Runtime-only.
+	consumed bool
 }
 
 func abilityZoneIDString(id int) string {
 	return "zone-" + strconv.Itoa(id)
+}
+
+// visibleZoneSnapshotsLocked returns wire snapshots for every zone that opted
+// into visibility (AbilityZone.Sprite non-empty). Zones without a Sprite —
+// which is every zone shipped before this existed — return nothing, so the
+// wire is unchanged for them.
+//
+// Visible zones ride the SAME snapshot array (and therefore the same client
+// renderer) as traps. That is deliberate: a trap IS a visible zone, and the
+// four legacy traps are being re-authored onto create_zone. Sharing the array
+// now means the client render path is already the zone render path, so the
+// trap migration removes a producer rather than needing a second renderer.
+// Once s.Traps is gone the field is just "persistent ground entities" and can
+// be renamed. See docs/design/ability_perk_interaction.md §8.
+//
+// Callers that filter by fog-of-war (snapshotForPlayerLocked) apply the same
+// owner/visibility test to these that they apply to traps — every field that
+// test needs (OwnerID/X/Y) is present on the returned snapshots.
+//
+// Caller holds s.mu.
+func (s *GameState) visibleZoneSnapshotsLocked() []protocol.TrapSnapshot {
+	var out []protocol.TrapSnapshot
+	for _, z := range s.AbilityZones {
+		if z == nil || z.Sprite == "" {
+			continue
+		}
+		out = append(out, protocol.TrapSnapshot{
+			ID:               z.ID,
+			OwnerID:          z.OwnerPlayerID,
+			X:                z.Center.X,
+			Y:                z.Center.Y,
+			Radius:           z.Radius,
+			ScaleMultiplier:  z.SpriteScale,
+			Type:             z.Sprite,
+			RemainingSeconds: z.Remaining,
+		})
+	}
+	return out
 }
 
 // spawnAbilityZoneLocked assigns z's id, arms its tick cadence, and appends it
@@ -214,12 +262,16 @@ func (s *GameState) tickAbilityZonesLocked(dt float64) {
 		}
 
 		z.Remaining -= dt
-		if z.Remaining > zoneTickEpsilon {
+		// A zone that consumed itself (consume_zone) is culled this tick no
+		// matter how much life it had left — that is the whole point of the
+		// one-shot shape. It still runs the exit sweep below, so an
+		// enter-paired effect is never left dangling.
+		if !z.consumed && z.Remaining > zoneTickEpsilon {
 			kept = append(kept, z)
 			continue
 		}
 
-		// Expiring this tick: fire on_zone_exit for every unit still inside
+		// Expiring (or consumed) this tick: fire on_zone_exit for every unit still inside
 		// so an enter-paired effect always gets its matching exit (see file
 		// doc). z.occupantIDs is already ascending-ID-sorted.
 		for _, id := range z.occupantIDs {
@@ -283,6 +335,19 @@ func diffSortedUnitIDs(prev, cur []int) (entered, exited []int) {
 	return entered, exited
 }
 
+// zoneNamedBindings is the context binding set every zone-driven execution
+// starts from. It exposes the zone's OWN live geometry to its nested actions so
+// they never have to restate it: a select_targets inside an on_zone_tick can
+// say radiusRef: "zone_radius" instead of hard-coding a number that would
+// silently disagree with the zone once a perk or item widened it.
+//
+// Caller holds s.mu.
+func zoneNamedBindings(z *AbilityZone) map[string]ContextValue {
+	return map[string]ContextValue{
+		"zone_radius": {Kind: ctxScalar, Scalar: z.Radius},
+	}
+}
+
 // fireAbilityZoneTickLocked builds the per-tick RuntimeAbilityContext and runs
 // the zone's compiled on_zone_tick trigger(s) through the shared executor.
 // Caller holds s.mu.
@@ -293,7 +358,9 @@ func (s *GameState) fireAbilityZoneTickLocked(z *AbilityZone) {
 		OwnerUnitID:   z.CasterID,
 		ZoneCenter:    z.Center,
 		EventPosition: z.Center,
-		Named:         map[string]ContextValue{},
+		CurrentZoneID: z.ID,
+		currentZone:   z,
+		Named:         zoneNamedBindings(z),
 		Trace:         s.previewTrace,
 		now:           s.previewClock,
 	}
@@ -325,7 +392,9 @@ func (s *GameState) fireAbilityZoneOccupancyEventLocked(z *AbilityZone, unitID i
 		ZoneCenter:         z.Center,
 		EventPosition:      pos,
 		CurrentEventUnitID: unitID,
-		Named:              map[string]ContextValue{},
+		CurrentZoneID:      z.ID,
+		currentZone:        z,
+		Named:              zoneNamedBindings(z),
 		Trace:              s.previewTrace,
 		now:                s.previewClock,
 	}
@@ -349,8 +418,27 @@ type createZoneConfig struct {
 	// playEffectAtPointForDurationLocked). For a compiled meteor this carries
 	// the legacy def.EffectScale so the crater matches the legacy GroundHazard
 	// path's sizing.
-	PresentationScale float64             `json:"scale,omitempty"`
-	Triggers          []AbilityTriggerDef `json:"triggers"`
+	PresentationScale float64 `json:"scale,omitempty"`
+	// Sprite opts this zone into being VISIBLE. AbilityZones are server-only by
+	// default (see this file's doc comment) — their only player-visible output
+	// is the damage/healing they cause plus a transient Presentation effect. A
+	// zone that names a Sprite is instead serialized every tick as a persistent
+	// ground entity the client renders for the zone's whole life, the same way
+	// a trap is drawn.
+	//
+	// The value is an object sprite-set id (client
+	// assets/objects/<id>/sprites.json), e.g. "fire_pit". Empty = invisible,
+	// which stays the default so every existing zone (meteor's burn crater) is
+	// byte-for-byte unchanged.
+	//
+	// This is deliberately generic, NOT a trap feature: any ability wanting a
+	// persistent visible area (a healing circle, a hazard, a ward) opts in the
+	// same way. See docs/design/ability_perk_interaction.md §8.
+	Sprite string `json:"sprite,omitempty"`
+	// SpriteScale is an extra render-scale factor on top of the sprite set's
+	// own base scale. 0/absent = 1x. Only meaningful alongside Sprite.
+	SpriteScale float64             `json:"spriteScale,omitempty"`
+	Triggers    []AbilityTriggerDef `json:"triggers"`
 }
 
 func (createZoneConfig) actionConfig() {}
@@ -385,6 +473,16 @@ func (s *GameState) resolveContextPositionLocked(ctx *RuntimeAbilityContext, ref
 		return ctx.ZoneCenter
 	case "eventPosition", "current_event_position":
 		return ctx.EventPosition
+	case "initialTarget", "initial_target", "initial_target_position":
+		// The unit this cast was aimed at. Lets a zone be centered on its
+		// target rather than the caster — how a thrown/placed area lands on the
+		// enemy it was aimed at. Falls back when the target is gone by the time
+		// the zone spawns (died mid-cast), which keeps the zone at the caller's
+		// sensible default rather than at the world origin.
+		if u := s.getUnitByIDLocked(ctx.InitialTarget); u != nil {
+			return protocol.Vec2{X: u.X, Y: u.Y}
+		}
+		return fallback
 	}
 	if ctx.Named != nil {
 		if v, ok := ctx.Named[ref.Key]; ok && v.Kind == ctxPosition {
@@ -394,7 +492,42 @@ func (s *GameState) resolveContextPositionLocked(ctx *RuntimeAbilityContext, ref
 	return fallback
 }
 
+// consumeZoneConfig is the (empty) config for consume_zone. The action needs no
+// tuning: it always ends the zone the current execution is running inside.
+type consumeZoneConfig struct{}
+
+func (consumeZoneConfig) actionConfig() {}
+
 func init() {
+	registerAction(ActionDescriptor{
+		Type: ActionConsumeZone,
+		Decode: func(b json.RawMessage) (ActionConfig, error) {
+			return consumeZoneConfig{}, nil
+		},
+		// Nothing to validate — the action has no config. Must still be
+		// non-nil: the program validator calls Validate unconditionally.
+		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue { return nil },
+		Schema:   ActionFieldSchema{},
+		// Execute ends the enclosing zone immediately — the ONE-SHOT zone shape.
+		// A pressure-plate trap authors "on enter: deal damage, then consume
+		// myself" instead of needing a distinct one-shot zone kind, and any
+		// ability wanting a spend-once ward gets the same behavior for free.
+		//
+		// Marking rather than removing here is deliberate: the zone must survive
+		// to the end of tickAbilityZonesLocked so its paired on_zone_exit sweep
+		// still fires for everyone inside. Targets pass through unchanged — a
+		// zone ending is not a target-set output.
+		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
+			if ctx.currentZone == nil {
+				ctx.trace("zone_consume_skipped", ctx.currentActionPath, map[string]any{"reason": "not inside a zone"})
+				return targets
+			}
+			ctx.currentZone.consumed = true
+			ctx.trace("zone_consumed", ctx.currentActionPath, map[string]any{"zone": ctx.CurrentZoneID})
+			return targets
+		},
+	})
+
 	registerAction(ActionDescriptor{
 		Type: ActionCreateZone,
 		Decode: func(b json.RawMessage) (ActionConfig, error) {
@@ -422,12 +555,17 @@ func init() {
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "name", Label: "Name", Control: "text", Section: "Basic"},
 			{Key: "position", Label: "Position", Control: "context_ref", Section: "Targeting"},
-			{Key: "radius", Label: "Radius", Control: "number", Section: "Targeting"},
-			{Key: "duration", Label: "Duration", Control: "duration", Section: "Timing"},
+			{Key: "radius", Label: "Radius", Control: "number", Kind: abilityStatKindRadius, Section: "Targeting"},
+			{Key: "duration", Label: "Duration", Control: "duration", Kind: abilityStatKindDuration, Section: "Timing"},
 			{Key: "tickInterval", Label: "Tick Interval", Control: "duration", Section: "Timing"},
 			{Key: "owner", Label: "Owner", Control: "context_ref", Section: "Advanced"},
 			{Key: "presentation", Label: "Presentation", Control: "asset", Section: "Presentation"},
 			{Key: "scale", Label: "Presentation Scale", Control: "number", Section: "Presentation"},
+			// Opt-in visibility: naming a sprite turns this zone from a
+			// server-only effect area into a persistent ground entity the
+			// client draws for the zone's whole life.
+			{Key: "sprite", Label: "Visible Sprite", Control: "text", Section: "Presentation"},
+			{Key: "spriteScale", Label: "Sprite Scale", Control: "number", Section: "Presentation"},
 			// Config's on_zone_tick/on_zone_enter/on_zone_exit triggers are NOT
 			// re-declared here (a "triggers" nested_triggers field used to sit
 			// here) — see apply_status's identical note (ability_exec_actions.go):
@@ -455,6 +593,8 @@ func init() {
 				Radius:        c.Radius,
 				Remaining:     c.Duration,
 				TickInterval:  c.TickInterval,
+				Sprite:        c.Sprite,
+				SpriteScale:   c.SpriteScale,
 				Triggers:      c.Triggers,
 			}
 			s.spawnAbilityZoneLocked(z)

@@ -17,6 +17,7 @@ function mountField(
     catalogs?: AbilityBuilderCatalogs
     loopVars?: string[]
     variableCapable?: boolean
+    params?: Record<string, number>
   } = {},
 ) {
   return mount(SchemaField, {
@@ -27,6 +28,7 @@ function mountField(
       catalogs: opts.catalogs ?? emptyCatalogs(),
       loopVars: opts.loopVars,
       variableCapable: opts.variableCapable,
+      params: opts.params,
     },
   })
 }
@@ -240,3 +242,4 @@ describe('SchemaField number field: literal-or-variable (loop bodies)', () => {
     expect(pick.findAll('option').map((o) => (o.element as HTMLOptionElement).value)).toEqual([''])
   })
 })
+

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AbilityActionDef, AbilityProgram, AbilityTriggerDef } from '@/game/abilities/program/abilityProgram'
 import {
+  collectConditionals,
   addAction,
   addTrigger,
   collectReadContextNames,
@@ -1161,3 +1162,227 @@ describe('loopScopeFor', () => {
     expect(scope.inLoop).toBe(false)
   })
 })
+
+// ── conditional branches: actions nested in config.then / config.else ──────
+//
+// A conditional owns TWO nested action lists (unlike a loop's single
+// config.body), so these prove the generalization actually disambiguates
+// between them by SEARCHING for the id rather than assuming a slot from the
+// path shape alone — a `then` action and an `else` action share the exact
+// same NodePath shape (their parent's path + one more `{kind:'action', id}`
+// segment).
+function conditionalProgram(): AbilityProgram {
+  return {
+    entry: { type: 'unit', range: 300 },
+    triggers: [
+      {
+        id: 'tick',
+        type: 'on_tick',
+        actions: [
+          {
+            id: 'deliver',
+            type: 'conditional',
+            config: {
+              conditions: [{ op: 'has_perk', right: 'lasting_flames' }],
+              then: [
+                { id: 'burn', type: 'apply_status_duration', config: { name: 'Burning' } },
+              ],
+              else: [
+                { id: 'direct_dmg', type: 'deal_damage', config: { amount: 16, type: 'fire' } },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  }
+}
+
+function conditionalPath(): NodePath {
+  return [{ kind: 'trigger', id: 'tick' }, { kind: 'action', id: 'deliver' }]
+}
+
+function branchActionPath(actionId: string): NodePath {
+  return [...conditionalPath(), { kind: 'action', id: actionId }]
+}
+
+describe('conditional branch traversal', () => {
+  it('resolveNode reaches an action inside config.then and one inside config.else', () => {
+    const thenNode = resolveNode(conditionalProgram(), branchActionPath('burn'))
+    expect(thenNode?.kind).toBe('action')
+    expect(thenNode?.kind === 'action' && thenNode.node.type).toBe('apply_status_duration')
+
+    const elseNode = resolveNode(conditionalProgram(), branchActionPath('direct_dmg'))
+    expect(elseNode?.kind).toBe('action')
+    expect(elseNode?.kind === 'action' && elseNode.node.type).toBe('deal_damage')
+  })
+
+  it('indexPathFor derives the validator-style grammar `...then[k]` / `...else[k]`', () => {
+    expect(indexPathFor(conditionalProgram(), branchActionPath('burn'))).toBe('triggers[0].actions[0].then[0]')
+    expect(indexPathFor(conditionalProgram(), branchActionPath('direct_dmg'))).toBe(
+      'triggers[0].actions[0].else[0]',
+    )
+  })
+
+  it('findNodePathById locates an action in either branch', () => {
+    expect(findNodePathById(conditionalProgram(), 'burn')).toEqual(branchActionPath('burn'))
+    expect(findNodePathById(conditionalProgram(), 'direct_dmg')).toEqual(branchActionPath('direct_dmg'))
+  })
+})
+
+describe('conditional branch mutation ops', () => {
+  it('addAction with branch "then" appends to config.then only', () => {
+    const next = addAction(conditionalProgram(), conditionalPath(), 'play_sound', 'then')
+    const cond = resolveNode(next, conditionalPath())
+    const then = (cond?.kind === 'action' && cond.node.config?.then) as AbilityActionDef[]
+    const els = (cond?.kind === 'action' && cond.node.config?.else) as AbilityActionDef[]
+    expect(then.map((a) => a.type)).toEqual(['apply_status_duration', 'play_sound'])
+    expect(els).toHaveLength(1) // else untouched
+  })
+
+  it('addAction with branch "else" appends to config.else only', () => {
+    const next = addAction(conditionalProgram(), conditionalPath(), 'play_sound', 'else')
+    const cond = resolveNode(next, conditionalPath())
+    const then = (cond?.kind === 'action' && cond.node.config?.then) as AbilityActionDef[]
+    const els = (cond?.kind === 'action' && cond.node.config?.else) as AbilityActionDef[]
+    expect(els.map((a) => a.type)).toEqual(['deal_damage', 'play_sound'])
+    expect(then).toHaveLength(1) // then untouched
+  })
+
+  it('removeAction drops a then action without touching else', () => {
+    const next = removeAction(conditionalProgram(), branchActionPath('burn'))
+    expect(resolveNode(next, branchActionPath('burn'))).toBeUndefined()
+    expect(resolveNode(next, branchActionPath('direct_dmg'))?.kind).toBe('action')
+  })
+
+  it('removeAction drops an else action without touching then', () => {
+    const next = removeAction(conditionalProgram(), branchActionPath('direct_dmg'))
+    expect(resolveNode(next, branchActionPath('direct_dmg'))).toBeUndefined()
+    expect(resolveNode(next, branchActionPath('burn'))?.kind).toBe('action')
+  })
+
+  it('updateAction patches a then action in place', () => {
+    const next = updateAction(conditionalProgram(), branchActionPath('burn'), {
+      config: { name: 'Burning', duration: 8 },
+    })
+    const node = resolveNode(next, branchActionPath('burn'))
+    expect(node?.kind === 'action' && node.node.config?.duration).toBe(8)
+  })
+
+  it('setActionDisabled toggles an else action', () => {
+    const next = setActionDisabled(conditionalProgram(), branchActionPath('direct_dmg'), true)
+    const node = resolveNode(next, branchActionPath('direct_dmg'))
+    expect(node?.kind === 'action' && node.node.disabled).toBe(true)
+  })
+
+  it('moveAction reorders within a single branch (then, with a second step added first)', () => {
+    const withExtra = addAction(conditionalProgram(), conditionalPath(), 'wait', 'then')
+    const moved = moveAction(withExtra, branchActionPath('burn'), 'down')
+    const cond = resolveNode(moved, conditionalPath())
+    const then = (cond?.kind === 'action' && cond.node.config?.then) as AbilityActionDef[]
+    expect(then.map((a) => a.id)).toEqual(['a1', 'burn'])
+  })
+
+  it('duplicateAction re-ids a copy and inserts it right after the original, in the same branch', () => {
+    const next = duplicateAction(conditionalProgram(), branchActionPath('direct_dmg'))
+    const cond = resolveNode(next, conditionalPath())
+    const els = (cond?.kind === 'action' && cond.node.config?.else) as AbilityActionDef[]
+    expect(els).toHaveLength(2)
+    expect(els[1].type).toBe('deal_damage')
+    expect(els[1].id).not.toBe('direct_dmg')
+  })
+
+  it('duplicating the conditional ACTION ITSELF re-ids every action in BOTH branches (not just then)', () => {
+    const next = duplicateAction(conditionalProgram(), conditionalPath())
+    const trigger = findTrigger(next, 'tick')!
+    expect(trigger.actions).toHaveLength(2)
+    const copy = trigger.actions[1]
+    const then = copy.config?.then as AbilityActionDef[]
+    const els = copy.config?.else as AbilityActionDef[]
+    // Fresh ids on both branches' actions — none collide with the original's.
+    expect(then[0].id).not.toBe('burn')
+    expect(els[0].id).not.toBe('direct_dmg')
+    // ...and the copy's own branch action ids don't collide with each other either.
+    expect(then[0].id).not.toBe(els[0].id)
+  })
+
+  it('the original program is never mutated by a branch op', () => {
+    const p = conditionalProgram()
+    removeAction(p, branchActionPath('burn'))
+    const cond = resolveNode(p, conditionalPath())
+    const then = (cond?.kind === 'action' && cond.node.config?.then) as AbilityActionDef[]
+    expect(then.map((a) => a.id)).toEqual(['burn'])
+  })
+})
+
+describe('collectConditionals', () => {
+  it('returns nothing for a program with no conditionals', () => {
+    expect(collectConditionals(emptyProgram())).toEqual([])
+  })
+
+  // Depth is the whole point: fire_pit's conditional lives three levels down
+  // (cast trigger -> create_zone -> on_tick -> conditional), so a collector
+  // that only scanned root actions would offer no toggle for the one branch
+  // the author actually needs to force.
+  it('finds conditionals nested inside a zone trigger, and summarizes the branch', () => {
+    const prog: AbilityProgram = {
+      entry: { type: 'ground_point', range: 220 },
+      triggers: [
+        {
+          id: 'cast',
+          type: 'on_cast_complete',
+          actions: [
+            {
+              id: 'pit',
+              type: 'create_zone',
+              config: {
+                triggers: [
+                  {
+                    id: 'tick',
+                    type: 'on_tick',
+                    actions: [
+                      {
+                        id: 'deliver',
+                        type: 'conditional',
+                        config: { conditions: [{ op: 'has_perk', right: 'lasting_flames' }] },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    }
+    const found = collectConditionals(prog)
+    expect(found).toHaveLength(1)
+    expect(found[0].id).toBe('deliver')
+    expect(found[0].summary).toContain('has perk')
+  })
+
+  it('finds a conditional nested inside another conditional\'s branch, in document order', () => {
+    const prog: AbilityProgram = {
+      entry: { type: 'no_target', range: 0 },
+      triggers: [
+        {
+          id: 'cast',
+          type: 'on_cast_complete',
+          actions: [
+            {
+              id: 'outer',
+              type: 'conditional',
+              config: {
+                conditions: [],
+                then: [{ id: 'inner_then', type: 'conditional', config: { conditions: [] } }],
+                else: [{ id: 'inner_else', type: 'conditional', config: { conditions: [] } }],
+              },
+            },
+          ],
+        },
+      ],
+    }
+    expect(collectConditionals(prog).map((c) => c.id)).toEqual(['outer', 'inner_then', 'inner_else'])
+  })
+})
+

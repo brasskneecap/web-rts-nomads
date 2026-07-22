@@ -51,6 +51,19 @@ type RuntimeAbilityContext struct {
 	// this origin today.
 	ProjectilePosition protocol.Vec2
 	OwnerUnitID        int // owner of the current zone/status/projectile, if any
+	// CurrentZoneID is the id of the AbilityZone whose trigger is running, bound
+	// by the zone fire sites (ability_zone.go). Empty outside a zone-driven
+	// execution. Used for tracing and as the "am I inside a zone" test.
+	CurrentZoneID string
+	// currentZone is that same zone as a WITHIN-TICK working value, so
+	// consume_zone can mark it without looking it up. A lookup is not possible:
+	// tickAbilityZonesLocked detaches s.AbilityZones (sets it nil) while it
+	// iterates a local copy, so the zone is unreachable from GameState for the
+	// duration of its own trigger. Bound and read entirely inside one
+	// synchronous tick and never persisted — the same within-tick allowance
+	// AI_RULES grants for *Unit working values, and the identical idiom
+	// CurrentStatus already uses.
+	currentZone *AbilityZone
 	// CurrentStatus is the AbilityStatus an enclosing apply_status_duration
 	// action just spawned (or refreshed — see spawnAbilityStatusLocked's
 	// reference-semantics note below), exposed to that action's own
@@ -151,6 +164,14 @@ type RuntimeAbilityContext struct {
 	// trigger_event each see their own path and the parent's is restored on
 	// return.
 	currentActionPath string
+	// currentActionID is the AUTHORED id of the action currently executing
+	// ("deliver", "burn", ...), saved/restored alongside currentActionPath.
+	// Unlike currentActionPath — which is a positional flow path that shifts
+	// whenever an action is reordered — an id is stable identity, so it is the
+	// right key for anything the EDITOR names a specific node by. Today that is
+	// exactly one thing: previewConditionalOverrides (see state.go), which the
+	// conditional action reads to force a branch during a preview run.
+	currentActionID string
 	// currentActionHasAttachInput records whether the action currently
 	// executing declared Input["attach"] (a unit-set context ref). Set by
 	// executeActionLocked alongside currentActionPath (save/restore around
@@ -313,10 +334,29 @@ func (s *GameState) executeActionLocked(ctx *RuntimeAbilityContext, a *AbilityAc
 		ctx.trace("action_skipped", apath, map[string]any{"type": string(a.Type)})
 		return
 	}
-	// Resolve loop-variable references (a..z) in the raw config to their current
-	// iteration values before decode — a no-op with zero cost when no loop is
-	// active (see resolveConfigVars, ability_exec_loop.go).
-	cfg, err := desc.Decode(ctx.resolveConfigVars(a.Config))
+	// Resolve loop-variable (a..z) and ability-parameter ("$name") references in
+	// the raw config to their current values before decode — a no-op with zero
+	// cost when neither is in scope (see resolveConfigVars, ability_exec_loop.go).
+	// Fold the caster's BROAD ability stats ("+2s duration", "+15% radius") into
+	// this action's kinded config fields. Runs after the substitution above so it
+	// operates on concrete numbers, and before decode so every action type gets it
+	// without touching its Execute — see ability_stats.go for why this seam, and
+	// not a per-action read site, is the right one.
+	// PRECISE modifiers fold first ({ability, action, field} — perks that know the
+	// program), then the BROAD ability stats fold on that result ({kind} — units
+	// and items, which cannot name an ability). Order matters and is deliberate:
+	// a unit's "+15% radius" amplifies a perk's contribution rather than the other
+	// way round. See ability_field_mods.go's FOLD ORDER note.
+	caster := s.getUnitByIDLocked(ctx.CasterID)
+	rawConfig := ctx.resolveConfigVars(a.Config)
+	// RANK selects the BASE before anything folds on top, so a perk's x1.5 means
+	// the same thing at every rank (see AbilityRankOverride).
+	if def, ok := getAbilityDef(ctx.AbilityID); ok && caster != nil {
+		rawConfig = applyAbilityRankOverridesToConfig(def, caster.Rank, a.ID, rawConfig)
+	}
+	rawConfig = s.applyAbilityFieldModsToConfigLocked(caster, ctx.AbilityID, a.ID, rawConfig)
+	rawConfig = s.applyAbilityStatsToConfigLocked(caster, a.Type, rawConfig)
+	cfg, err := desc.Decode(rawConfig)
 	if err != nil {
 		ctx.trace("validation_error", apath, map[string]any{"error": err.Error()})
 		return
@@ -333,11 +373,14 @@ func (s *GameState) executeActionLocked(ctx *RuntimeAbilityContext, a *AbilityAc
 	// time.
 	prevActionPath := ctx.currentActionPath
 	ctx.currentActionPath = apath
+	prevActionID := ctx.currentActionID
+	ctx.currentActionID = a.ID
 	_, hasAttachInput := a.Input["attach"]
 	prevHasAttachInput := ctx.currentActionHasAttachInput
 	ctx.currentActionHasAttachInput = hasAttachInput
 	defer func() {
 		ctx.currentActionPath = prevActionPath
+		ctx.currentActionID = prevActionID
 		ctx.currentActionHasAttachInput = prevHasAttachInput
 	}()
 	out := desc.Execute(s, ctx, cfg, targets)
@@ -354,7 +397,14 @@ func (s *GameState) executeActionLocked(ctx *RuntimeAbilityContext, a *AbilityAc
 // (previous_action_targets).
 func (s *GameState) resolveActionTargetsLocked(ctx *RuntimeAbilityContext, a *AbilityActionDef) []int {
 	if a.Target != nil {
-		return s.resolveTargetQueryLocked(ctx, *a.Target)
+		// A target query's radius IS the area of effect for most AoE abilities
+		// (fireball's 100, meteor's 230, shatter's 110 — none of which is a
+		// create_zone radius), so radius modifiers have to reach it or the whole
+		// stat would only affect trap zones. Folded on a COPY: the action def is
+		// shared, immutable catalog data.
+		q := *a.Target
+		q.Radius = s.foldTargetQueryRadiusLocked(ctx, a, q)
+		return s.resolveTargetQueryLocked(ctx, q)
 	}
 	if ref, ok := a.Input["targets"]; ok {
 		return ctx.resolveTargetRef(ref)

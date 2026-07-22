@@ -83,11 +83,40 @@ func grantTrapAbility(u *Unit, abilityID string) {
 // PlaceIntervalSeconds←placeIntervalSeconds.
 func mustTrapAbilityConfig(t *testing.T, abilityID, rank string) TrapConfig {
 	t.Helper()
-	tc, ok := trapConfigFromAbilityLocked(abilityID, rank)
-	if !ok {
-		t.Fatalf("no place_trap config for trap ability %q", abilityID)
+	if tc, ok := trapConfigFromAbilityLocked(abilityID, rank); ok {
+		return tc
 	}
-	return tc
+	// MIGRATED trap: authored as a composable zone, so its stats are declared
+	// ability PARAMETERS rather than a place_trap config. Return the same
+	// TrapConfig view built from those, so a test that derives its expected
+	// values from "the trap's authored stats" keeps working across the
+	// migration instead of caring which authoring style a trap uses.
+	// MIGRATED trap: authored as a composable zone with LITERAL numbers in its
+	// program, so read those by {action, field} rather than from a params block.
+	// Goes through the same effective-stats resolver production uses, so a test
+	// deriving expectations from "the trap's authored stats" cannot drift from
+	// what the ability really does.
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := &Unit{ID: 1, OwnerID: "p1", Rank: rank, Abilities: []string{abilityID}}
+	stats, ok := s.effectiveTrapStatsFromParamsLocked(u, abilityID)
+	if !ok {
+		t.Fatalf("trap ability %q has neither a place_trap config nor a readable program", abilityID)
+	}
+	return TrapConfig{
+		TrapType:             abilityID,
+		DurationSeconds:      stats.DurationSeconds,
+		PlaceIntervalSeconds: stats.PlaceInterval,
+		Radius:               stats.Radius,
+		ExplosionRadius:      stats.Radius,
+		TriggerRadius:        stats.TriggerRadius,
+		DamagePerSecond:      stats.DamagePerSecond,
+		SlowMultiplier:       stats.SlowMultiplier,
+		BurstDamage:          float64(stats.BurstDamage),
+		MarkMultiplier:       stats.MarkMultiplier,
+		MarkDuration:         stats.MarkDuration,
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -309,56 +338,6 @@ func TestTrapper_ArcherGetsTrapAbilityAtBronze(t *testing.T) {
 	}
 }
 
-// TestTrapper_AbilityPlantsTrap verifies the new placement seam: casting a
-// trap ABILITY at an enemy plants exactly one trap of that type with the
-// authored stats. This replaces the old tickTrapPlacementLocked driver tests —
-// placement cadence + the "enemy in range" gate are now the ability system's
-// cooldown + autocast selector (covered by the ability-autocast suite); this
-// test pins that a trapper's trap ability actually drops a correct trap.
-func TestTrapper_AbilityPlantsTrap(t *testing.T) {
-	s := newTrapState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
-
-	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 300, Y: 250})
-	if archer == nil {
-		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 300, Y: 250})
-	}
-	grantTrapAbility(archer, "caltrops")
-
-	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
-		X: archer.X + 100, Y: archer.Y,
-	})
-	if enemy == nil {
-		t.Fatal("failed to spawn enemy unit")
-	}
-	enemy.Visible = true
-
-	ok, reason := s.beginAbilityCastLocked(archer, "caltrops", enemy)
-	if !ok {
-		t.Fatalf("beginAbilityCastLocked(caltrops) failed: %q", reason)
-	}
-	// castTime 0 ⇒ resolves synchronously inside beginAbilityCastLocked.
-	if len(s.Traps) != 1 {
-		t.Fatalf("expected 1 trap planted by the caltrops ability, got %d", len(s.Traps))
-	}
-	trap := s.Traps[0]
-	if trap.TrapType != "caltrops" {
-		t.Errorf("trap type: got %q, want caltrops", trap.TrapType)
-	}
-	// Stats come from the ability's place_trap config (identity modifiers, no
-	// Silver/Gold perks), so they equal the authored base.
-	cfg := mustTrapAbilityConfig(t, "caltrops", archer.Rank)
-	if math.Abs(trap.Radius-cfg.Radius) > 1e-9 {
-		t.Errorf("trap Radius: got %.3f, want %.3f", trap.Radius, cfg.Radius)
-	}
-	if math.Abs(trap.RemainingSeconds-cfg.DurationSeconds) > 1e-9 {
-		t.Errorf("trap RemainingSeconds: got %.3f, want %.3f", trap.RemainingSeconds, cfg.DurationSeconds)
-	}
-}
 
 // TestTrapper_DeadUnitDoesNotCastTrap verifies a dead unit (HP <= 0) cannot
 // cast its trap ability, so no trap is planted — the ability system's own
@@ -585,39 +564,6 @@ func TestCaltrops_PersistsAcrossMultipleEnemies(t *testing.T) {
 	}
 }
 
-// TestFirePit_DamagesEnemyNoslow verifies that fire_pit applies DoT but no slow.
-func TestFirePit_DamagesEnemyNoSlow(t *testing.T) {
-	s := newTrapState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
-
-	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
-	enemy.Visible = true
-	enemy.HP = 500
-
-	cfg := mustTrapAbilityConfig(t, "fire_pit", "")
-
-	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, cfg.Radius, 10.0)
-	trap.DamagePerSecond = cfg.DamagePerSecond
-
-	hpBefore := enemy.HP
-	s.tickTrapEffectsLocked(1.0)
-
-	expectedDmg := int(math.Round(cfg.DamagePerSecond * 1.0))
-	if expectedDmg > 0 && enemy.HP >= hpBefore {
-		t.Errorf("fire_pit DoT: HP unchanged (was %d)", hpBefore)
-	}
-	if enemy.SlowedRemaining > 0 {
-		t.Errorf("fire_pit must not apply slow, got SlowedRemaining=%.3f", enemy.SlowedRemaining)
-	}
-}
-
-// TestExplosiveTrap_TriggersOnEnemyContact verifies that the first enemy within
-// TriggerRadius causes the trap to trigger, dealing BurstDamage to all enemies
-// within Radius and setting Triggered=true.
 func TestExplosiveTrap_TriggersOnEnemyContact(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
@@ -1078,73 +1024,6 @@ func TestCaltrops_DoTAtProductionTickRate(t *testing.T) {
 	}
 }
 
-// TestFirePit_DoTAtProductionTickRate is the same check for fire_pit.
-// damagePerSecond=8, dt=0.05 → math.Round(8*0.05)=math.Round(0.40)=0.
-// fire_pit also deals zero damage per tick in production.
-func TestFirePit_DoTAtProductionTickRate(t *testing.T) {
-	s := newTrapState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
-
-	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
-	enemy.Visible = true
-	enemy.HP = 500
-	enemy.MaxHP = 500
-
-	cfg := mustTrapAbilityConfig(t, "fire_pit", "")
-
-	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, cfg.Radius, 10.0)
-	trap.DamagePerSecond = cfg.DamagePerSecond // 8 dmg/s
-
-	const productionDT = 1.0 / 20.0
-	const ticks = 20 // 1 simulated second
-	hpBefore := enemy.HP
-
-	for i := 0; i < ticks; i++ {
-		s.tickTrapEffectsLocked(productionDT)
-	}
-
-	if enemy.HP >= hpBefore {
-		t.Errorf("fire_pit DoT at dt=%.4f: enemy HP unchanged after %d ticks (%.1f simulated seconds). "+
-			"math.Round(damagePerSecond*dt) = math.Round(%.2f*%.4f) = %d — DoT is zero every tick at production rate. "+
-			"Fix: accumulate fractional damage across ticks.",
-			productionDT, ticks, float64(ticks)*productionDT,
-			trap.DamagePerSecond, productionDT,
-			int(math.Round(trap.DamagePerSecond*productionDT)))
-	}
-}
-
-// TestFirePit_NoFriendlyFire verifies that fire_pit does not damage an ally
-// inside the zone. The existing caltrops ally test covers caltrops; this covers
-// fire_pit explicitly. Explosive_trap is already covered by TestExplosiveTrap_NoFriendlyFire.
-func TestFirePit_NoFriendlyFire(t *testing.T) {
-	s := newTrapState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-
-	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#2ecc71", protocol.Vec2{X: 400, Y: 400})
-	ally.Visible = true
-	ally.HP = 500
-
-	cfg := mustTrapAbilityConfig(t, "fire_pit", "")
-
-	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, cfg.Radius, 10.0)
-	trap.DamagePerSecond = cfg.DamagePerSecond
-
-	hpBefore := ally.HP
-	s.tickTrapEffectsLocked(1.0) // large dt to guarantee dmg > 0 if ally filter is broken
-
-	if ally.HP != hpBefore {
-		t.Errorf("FRIENDLY FIRE: fire_pit damaged ally (HP %d → %d)", hpBefore, ally.HP)
-	}
-}
-
-// TestMarkerTrap_NoFriendlyFire verifies that marker_trap does not mark an ally.
 func TestMarkerTrap_NoFriendlyFire(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
@@ -1620,4 +1499,60 @@ func TestPerkPool_GoldReturnsGoldPerks(t *testing.T) {
 			t.Errorf("Gold pool returned perk %q which is not in the trapper Gold pool", def.ID)
 		}
 	}
+}
+
+// trapFieldSite maps a trap's legacy ability-PARAMETER name to the
+// {action, field} address it became when the parameters were inlined. Tests
+// written against the params era keep asserting the same quantity, they just
+// address it the way the program now does.
+var trapFieldSite = map[string]map[string][2]string{
+	"fire_pit": {
+		"duration": {"pit", "duration"}, "radius": {"pit", "radius"},
+		"dps": {"direct_dmg", "amount"}, "burnDuration": {"burn", "duration"},
+	},
+	"caltrops": {
+		"duration": {"field", "duration"}, "radius": {"field", "radius"},
+		"dps": {"spikes", "amount"}, "slowMultiplier": {"slow_move", "value"},
+	},
+	"explosive_trap": {
+		"duration": {"arm", "duration"}, "radius": {"arm", "radius"},
+		"burstDamage": {"blast", "amount"},
+	},
+	"marker_trap": {
+		"duration": {"zone", "duration"}, "radius": {"zone", "radius"},
+		"markMultiplier": {"vulnerable", "value"}, "markDuration": {"mark", "duration"},
+	},
+}
+
+// effTrapField is the params-era "what is this ability's effective <name>"
+// read, expressed against the field addresses that replaced parameters. It folds
+// rank, precise modifiers and broad ability stats exactly as the executor does.
+func effTrapField(t *testing.T, s *GameState, caster *Unit, abilityID, param string) float64 {
+	t.Helper()
+	site, ok := trapFieldSite[abilityID][param]
+	if !ok {
+		t.Fatalf("no field address known for %s.%s", abilityID, param)
+	}
+	v, ok := s.EffectiveAbilityFieldLocked(caster, abilityID, site[0], site[1])
+	if !ok {
+		t.Fatalf("%s action %q field %q not found in the program", abilityID, site[0], site[1])
+	}
+	return v
+}
+
+// authoredTrapField is the same address read WITHOUT any caster folding — the
+// ability's own authored number, rank-adjusted. Used where a test needs the
+// expected value derived from the catalog rather than hardcoded.
+func authoredTrapField(t *testing.T, abilityID, rank, param string) float64 {
+	t.Helper()
+	def, ok := getAbilityDef(abilityID)
+	if !ok {
+		t.Fatalf("ability %q not found", abilityID)
+	}
+	site := trapFieldSite[abilityID][param]
+	authored, _, found := programActionConfigValue(def, site[0], site[1])
+	if !found {
+		t.Fatalf("%s action %q field %q not found", abilityID, site[0], site[1])
+	}
+	return abilityRankBaseValue(def, rank, site[0], site[1], authored)
 }

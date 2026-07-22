@@ -1,5 +1,5 @@
 <template>
-  <EditorShell class="campaign-editor" theme="forge">
+  <EditorShell class="campaign-editor">
     <template #sidebar>
       <EditorSidebar
         title="Campaigns"
@@ -114,6 +114,8 @@
 </template>
 
 <script setup lang="ts">
+import { ask } from '@/components/ui/useConfirmDialog'
+import { confirmDelete } from '@/components/editor/confirmDelete'
 import { computed, ref, watch } from 'vue'
 import EditorShell from '@/components/editor/EditorShell.vue'
 import EditorSidebar, { type SidebarGroup } from '@/components/editor/EditorSidebar.vue'
@@ -326,14 +328,19 @@ function onIdInput(value: string): void {
   if (form.value?.isNew) form.value.id = value
 }
 
-function addSelectedMap(): void {
+async function addSelectedMap(): Promise<void> {
   if (!addMapId.value || !form.value) return
   const mapId = addMapId.value
   addMapId.value = ''
   if (isInThisCampaign(mapId)) return
   const inOther = maps.value.find((m) => m.id === mapId)?.campaignId
   if (inOther && inOther !== form.value.id) {
-    if (!window.confirm(`"${mapName(mapId)}" is currently in campaign "${inOther}". Move it to this campaign?`)) {
+    if (!(await ask({
+      title: `Move "${mapName(mapId)}" to this campaign?`,
+      lines: [`It is currently in campaign "${inOther}".`],
+      confirmLabel: 'Move',
+      danger: false,
+    }))) {
       return
     }
   }
@@ -441,7 +448,7 @@ async function removeCampaign(): Promise<void> {
     saveError.value = 'Remove all levels (maps) from this campaign before deleting it.'
     return
   }
-  if (!window.confirm(`Delete campaign "${f.displayName}"? This cannot be undone.`)) return
+  if (!(await confirmDelete('campaign', f.displayName))) return
   saving.value = true
   saveError.value = ''
   try {

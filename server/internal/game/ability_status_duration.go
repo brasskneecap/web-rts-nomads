@@ -146,7 +146,7 @@ func init() {
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "name", Label: "Name", Control: "text", Section: "Advanced"},
-			{Key: "duration", Label: "Duration", Control: "duration", Section: "Timing"},
+			{Key: "duration", Label: "Duration", Control: "duration", Kind: abilityStatKindDuration, Section: "Timing"},
 			{Key: "tickInterval", Label: "Tick Interval", Control: "duration", Section: "Timing"},
 			{Key: "stacking", Label: "Stacking", Control: "enum", Options: []string{"refresh", "stack"}, Section: "Advanced"},
 			{Key: "maxStacks", Label: "Max Stacks", Control: "number", Section: "Advanced"},

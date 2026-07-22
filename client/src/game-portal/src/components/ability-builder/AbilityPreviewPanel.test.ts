@@ -87,6 +87,9 @@ function makeBuilderStub() {
     // ability node (no lane highlighted), matching the real builder's default.
     selected: ref({ kind: 'ability' as const }),
     select: vi.fn(),
+    // params: read by the panel's `conditionals` computed (collectConditionals),
+    // evaluated eagerly since it's passed straight through as a prop.
+    params: shallowRef<Record<string, number>>({}),
   }
 }
 

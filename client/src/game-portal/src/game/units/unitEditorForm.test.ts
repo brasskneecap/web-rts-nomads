@@ -121,4 +121,21 @@ describe('healthRegenRate blank-vs-zero', () => {
     const def = saveRequestFromForm(formFromDef({ type: 'troll', faction: 'human', healthRegenRate: 2.5 }))
     expect(def.healthRegenRate).toBe(2.5)
   })
+
+  // abilityStats is MODELED, not carried in `remainder` — the editor's Ability
+  // Stats section edits it directly, so it has to survive a round-trip as a
+  // first-class field.
+  it('round-trips abilityStats as a modeled field and drops an empty map', () => {
+    const def = { type: 'trapper', abilityStats: { duration: { flat: 2 }, radius: { pct: 0.15 } } } as never
+    const form = formFromDef(def)
+    expect(form.abilityStats).toEqual({ duration: { flat: 2 }, radius: { pct: 0.15 } })
+    expect('abilityStats' in form.remainder).toBe(false)
+
+    const out = saveRequestFromForm(form)
+    expect(out.abilityStats).toEqual({ duration: { flat: 2 }, radius: { pct: 0.15 } })
+
+    // Absent and empty mean the same thing server-side, so a bare {} is noise.
+    const empty = saveRequestFromForm({ ...form, abilityStats: {} })
+    expect('abilityStats' in empty).toBe(false)
+  })
 })

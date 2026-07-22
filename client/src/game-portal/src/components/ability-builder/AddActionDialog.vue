@@ -78,9 +78,14 @@ import type { NodePath } from './programTree'
 
 const props = defineProps<{
   open: boolean
-  /** The trigger this dialog adds actions to, by NodePath — always provided
-      by the caller (never read from builder.selected). */
+  /** The trigger (or loop / conditional action) this dialog adds actions to,
+      by NodePath — always provided by the caller (never read from
+      builder.selected). */
   triggerPath: NodePath
+  /** Which side of a conditional action to add into. Required when
+      triggerPath resolves to a conditional; ignored otherwise (a trigger or
+      loop container only ever has one list to add to). */
+  branch?: 'then' | 'else'
 }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -180,8 +185,16 @@ const entries = computed<PaletteEntry[]>(() => {
 // in the tree (FlowActionCard shows the same marker there).
 function onPick(type: string) {
   // addAction selects the new action itself (see useAbilityBuilder), so the
-  // bottom inspector focuses it immediately once this dialog closes.
-  builder.addAction(props.triggerPath, type)
+  // bottom inspector focuses it immediately once this dialog closes. `branch`
+  // is only passed through when this dialog is actually scoped to one (a
+  // conditional's THEN/ELSE) — omitted (not even an explicit `undefined` arg)
+  // for the ordinary trigger/loop case, so every other caller's addAction
+  // call shape is completely unchanged.
+  if (props.branch) {
+    builder.addAction(props.triggerPath, type, props.branch)
+  } else {
+    builder.addAction(props.triggerPath, type)
+  }
   emit('close')
 }
 

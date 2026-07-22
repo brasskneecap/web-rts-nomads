@@ -1,5 +1,5 @@
 <template>
-  <EditorShell class="unit-editor" theme="forge">
+  <EditorShell class="unit-editor">
     <!-- ── Sidebar: units grouped by faction + faction management ────────── -->
     <template #sidebar>
       <div class="unit-sidebar">
@@ -414,6 +414,16 @@
                   </div>
                 </RepeatableList>
               </EditorField>
+              <EditorField
+                label="Ability Stats"
+                hint="(applies to EVERY ability this unit casts — pick a broad kind like Duration, or scope it to one action like Zone Duration)"
+              >
+                <AbilityStatsEditor
+                  v-model="abilityStatsModel"
+                  :defs="abilityStatDefs"
+                  empty-text="No ability stats — this unit's abilities use their authored values."
+                />
+              </EditorField>
             </SectionCard>
 
             <!-- Abilities -->
@@ -791,6 +801,8 @@ import type { AuthoredAbilityDef } from '@/game/abilities/abilityEditorForm'
 import { fetchAuthoredPerkDefs } from '@/game/perks/perkEditorApi'
 import type { AuthoredPerkDef } from '@/game/perks/perkEditorForm'
 import { baseAuthorableStatDefs } from '@/game/stats/statRegistry'
+import { confirmDelete } from '@/components/editor/confirmDelete'
+import AbilityStatsEditor, { type AbilityStatDef } from './AbilityStatsEditor.vue'
 import { pickChannelAbility } from '@/game/units/channelPreview'
 import {
   ingestExportFolder, packedSheetToObjectUrls, blobToBase64,
@@ -1422,6 +1434,9 @@ async function createFaction() {
 // The server refuses to delete a faction that still owns units, and its message
 // names them. Surface it verbatim — it tells the author exactly what to fix.
 async function removeFaction(id: string) {
+  // A faction delete is refused server-side while it still owns units, so this
+  // prompt names that instead of implying the units go with it.
+  if (!(await confirmDelete('faction', id, 'Any units still assigned to it will block the delete.'))) return
   factionError.value = ''
   busy.value = true
   try {
@@ -1466,6 +1481,34 @@ function removeBaseStatRow(idx: number) { baseStatRows.value.splice(idx, 1) }
 watch(resourceCostRows, (rows) => { form.value.resourceCost = mapFromRows(rows) }, { deep: true })
 watch(pathChancesRows, (rows) => { form.value.pathChances = mapFromRows(rows) }, { deep: true })
 watch(baseStatRows, (rows) => { form.value.baseStats = mapFromRows(rows) }, { deep: true })
+
+// Ability Stats: the rows are SERVER-DERIVED (every action x kind pair that
+// exists), so they are fetched rather than mirrored here — a local list would
+// rot the moment an action gained or lost a kinded field. A failed fetch leaves
+// the list empty, which degrades to "no stats offered" rather than to a wrong
+// set; any already-authored value still renders (AbilityStatsEditor keeps
+// unknown ids as options).
+const abilityStatDefs = ref<AbilityStatDef[]>([])
+
+async function loadAbilityStatDefs() {
+  try {
+    const res = await fetch('/catalog/ability-stats')
+    if (!res.ok) return
+    const body = (await res.json()) as { stats?: AbilityStatDef[] }
+    abilityStatDefs.value = body.stats ?? []
+  } catch {
+    // Offline / server down: leave the list empty (see the comment above).
+  }
+}
+void loadAbilityStatDefs()
+
+// v-model bridge: the editor component owns row state and emits the whole map.
+const abilityStatsModel = computed({
+  get: () => form.value.abilityStats ?? {},
+  set: (v) => {
+    form.value.abilityStats = v
+  },
+})
 
 // Base Stat options: only base-authorable stats (critChance, critMultiplier,
 // lifesteal) — the server rejects any other key. An already-set key is kept as
@@ -1927,6 +1970,9 @@ async function save() {
 
 async function removeUnit() {
   if (!selectedType.value) return
+  // A unit type is a hand-authored catalog file — stat block, abilities and its
+  // promotion paths. Deleting it unprompted was how an adept got lost.
+  if (!(await confirmDelete('unit type', selectedType.value, 'Its promotion paths are deleted with it.'))) return
   saveError.value = ''
   busy.value = true
   try {
@@ -1981,6 +2027,7 @@ async function savePath() {
 
 async function removePath() {
   if (!selectedPath.value) return
+  if (!(await confirmDelete('promotion path', selectedPath.value))) return
   saveError.value = ''
   busy.value = true
   try {

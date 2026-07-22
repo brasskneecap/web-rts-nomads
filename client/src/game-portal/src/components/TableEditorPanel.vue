@@ -137,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import { confirmDelete } from '@/components/editor/confirmDelete'
 import { computed, onMounted, ref, watch } from 'vue'
 import EditorShell from '@/components/editor/EditorShell.vue'
 import EditorSidebar from '@/components/editor/EditorSidebar.vue'
@@ -381,6 +382,7 @@ async function save() {
 async function remove() {
   if (!form.value || form.value.isNew) return
   const id = form.value.id
+  if (!(await confirmDelete('table', id, undefined, 'If it ships with the game it will reset to its built-in default; a custom one is removed.'))) return
   resetStatus()
   try {
     await deleteEditorTable(id)

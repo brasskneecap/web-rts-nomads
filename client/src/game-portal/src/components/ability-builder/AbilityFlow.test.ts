@@ -52,17 +52,22 @@ function makeBuilderStub(overrides: {
   schema?: ActionSchemaBundle | null
   selected?: NodeRef
   issues?: ValidationIssue[]
+  params?: Record<string, number>
 } = {}) {
   const program = shallowRef<AbilityProgram>(overrides.program ?? emptyProgram())
   const schema = shallowRef<ActionSchemaBundle | null>(overrides.schema ?? null)
   const selected = shallowRef<NodeRef>(overrides.selected ?? { kind: 'ability' })
   const issues = ref<ValidationIssue[]>(overrides.issues ?? [])
+  // params: read by summarizeAction via a nested FlowActionCard's `summary`
+  // computed (evaluated eagerly since the template renders it).
+  const params = shallowRef<Record<string, number>>(overrides.params ?? {})
 
   return {
     program,
     schema,
     selected,
     issues,
+    params,
     select: vi.fn((r: NodeRef) => { selected.value = r }),
     addTrigger: vi.fn(),
     removeTrigger: vi.fn(),

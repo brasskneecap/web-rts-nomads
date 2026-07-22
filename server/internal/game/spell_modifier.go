@@ -310,5 +310,14 @@ func (s *GameState) effectiveSpellLocked(caster *Unit, def AbilityDef) Effective
 // independent of the legacy def's own DamageAmount field. Caller holds s.mu.
 func (s *GameState) effectiveAbilityDamageLocked(caster *Unit, def AbilityDef, base int) int {
 	mods := s.collectSpellModifiersLocked(caster, def)
-	return int(math.Round(applySpellModField(mods, def, SpellModFieldDamage, float64(base))))
+	scaled := applySpellModField(mods, def, SpellModFieldDamage, float64(base))
+	// Fold the caster's unit-level ability-damage stat on top. This is the ONE
+	// read point for "this unit's abilities hit harder", so a rank, item,
+	// advancement, perk, status or zone aura all reach every ability's damage
+	// through the stat chokepoint with no per-ability authoring
+	// (docs/design/ability_perk_interaction.md D3). Identity (1.0) for any unit
+	// that authors no base and owns no contributing source, so this is a no-op
+	// for every existing ability.
+	scaled *= s.effectiveStatLocked(caster, unitBaseStat(caster, statAbilityDamage), statAbilityDamage)
+	return int(math.Round(scaled))
 }

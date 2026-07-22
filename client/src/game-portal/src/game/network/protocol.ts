@@ -1360,7 +1360,17 @@ export type TrapSnapshot = {
    *  Populated for perks that visually inflate a trap (e.g. overload_protocol
    *  on explosive_trap → 2×). Absent = 1× (no change). */
   scaleMultiplier?: number
-  type: 'caltrops' | 'fire_pit' | 'explosive_trap' | 'marker_trap'
+  /** Object sprite-set id used to render this ground entity (client
+   *  assets/objects/<id>/sprites.json). The four legacy trap types
+   *  ('caltrops' | 'fire_pit' | 'explosive_trap' | 'marker_trap') additionally
+   *  have hand-drawn procedural fallbacks in CanvasRenderer; any other id
+   *  renders from its sprite set, or falls back to a generic zone disc.
+   *
+   *  Deliberately NOT a closed union: this array now also carries VISIBLE
+   *  ABILITY ZONES (a create_zone action that names a `sprite` — see
+   *  AbilityZone.Sprite server-side), whose id is whatever the ability author
+   *  chose. See docs/design/ability_perk_interaction.md §8. */
+  type: string
   remainingSeconds: number
   /**
    * True for exactly one snapshot tick when the trap detonates. Set for both

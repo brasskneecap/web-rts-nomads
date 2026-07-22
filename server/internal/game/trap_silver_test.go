@@ -624,7 +624,11 @@ func TestExplosiveChain_AftershockFiresSecondBlast(t *testing.T) {
 	// Now place a second enemy within blast radius but NOT trigger radius.
 	// This enemy should only be hit by the aftershock.
 	aftershockEnemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
-		X: trap.X + trap.TriggerRadius + 5, // outside trigger, inside explosion
+		// Inside the blast. explosive_trap now has ONE radius doing both jobs, so
+		// the old "outside trigger, inside explosion" ring no longer exists — what
+		// the aftershock uniquely provides is a SECOND blast that catches someone
+		// who arrived after the first one, which is what this places.
+		X: trap.X + trap.Radius*0.5,
 		Y: trap.Y,
 	})
 	aftershockEnemy.Visible = true
@@ -684,7 +688,7 @@ func TestExplosiveChain_AftershockFiresEvenIfTriggerZoneEmpty(t *testing.T) {
 
 	// Place a NEW enemy inside the blast radius but not the trigger radius.
 	newEnemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
-		X: trap.X + trap.TriggerRadius + 5,
+		X: trap.X + trap.Radius*0.5, // inside the blast (one radius does both jobs now)
 		Y: trap.Y,
 	})
 	newEnemy.Visible = true

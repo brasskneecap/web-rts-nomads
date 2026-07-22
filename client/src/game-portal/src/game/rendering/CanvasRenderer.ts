@@ -56,6 +56,7 @@ import {
 } from './unitSprites'
 import { getObjectSpriteSet } from './objectSprites'
 import { getEffectSprite } from './effectSprites'
+import { overlayFrameIndex, spriteRectOverlayRect, unitSpriteRect } from './effectPlacement'
 import { getBeamSprite } from './beamSprites'
 import { getResourceIconImage } from './resourceSprites'
 import { getActionIconImage } from './actionIconSprites'
@@ -1751,19 +1752,14 @@ export class CanvasRenderer {
   // Maps a trap type to the asset key under assets/objects/. Returns '' when
   // the type has no sprite set registered (falls through to procedural).
   // Extend the switch as more trap types gain sprite treatment.
+  // Sprite lookup is fully data-driven: ANY object sprite-set id renders, not
+  // just the four legacy trap types. This is what lets a visible ability zone
+  // (create_zone with a `sprite`) draw itself with no renderer change — the id
+  // the ability author chose is looked up directly. Returns '' when no sprite
+  // set is registered for the id, which sends the caller to the procedural
+  // fallback in renderTrapBody.
   private spriteKeyForTrapType(type: TrapSnapshot['type']): string {
-    switch (type) {
-      case 'explosive_trap':
-        return getObjectSpriteSet('explosive_trap') ? 'explosive_trap' : ''
-      case 'marker_trap':
-        return getObjectSpriteSet('marker_trap') ? 'marker_trap' : ''
-      case 'fire_pit':
-        return getObjectSpriteSet('fire_pit') ? 'fire_pit' : ''
-      case 'caltrops':
-        return getObjectSpriteSet('caltrops') ? 'caltrops' : ''
-      default:
-        return ''
-    }
+    return type && getObjectSpriteSet(type) ? type : ''
   }
 
   private hasTrapSprites(type: TrapSnapshot['type']): boolean {
@@ -1790,7 +1786,43 @@ export class CanvasRenderer {
       case 'marker_trap':
         this.drawTrapMarker(ctx, x, y, r, ownerColor)
         break
+      default:
+        // Any ground entity with neither a registered sprite set nor a
+        // hand-drawn procedural body — in practice a visible ability zone whose
+        // author has not supplied art yet. Draw a plain owner-colored disc so
+        // the zone is visible and debuggable instead of silently rendering
+        // nothing, which reads as "my ability is broken".
+        this.drawGenericZoneBody(ctx, x, y, r, ownerColor)
+        break
     }
+  }
+
+  // Generic fallback body for a visible zone with no art: soft owner-colored
+  // fill plus a dashed boundary so its radius is legible.
+  private drawGenericZoneBody(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    r: number,
+    ownerColor: string,
+  ) {
+    if (r <= 0) return
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fillStyle = ownerColor
+    ctx.globalAlpha = ctx.globalAlpha * 0.15
+    ctx.fill()
+    ctx.restore()
+
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.strokeStyle = ownerColor
+    ctx.lineWidth = 2
+    ctx.setLineDash([6, 4])
+    ctx.stroke()
+    ctx.restore()
   }
 
   // Selection highlight: bright white ring just outside the trap radius, at
@@ -3006,12 +3038,6 @@ export class CanvasRenderer {
     ctx.imageSmoothingEnabled = prevSmoothing
   }
 
-  // Burning overlay animation cadence: milliseconds per flame frame. The strip
-  // loops continuously (independent of any server progress) for the whole time
-  // the unit is on fire, so the flame reads as a living blaze rather than a
-  // one-shot puff.
-  private static readonly BURN_FRAME_MS = 90
-
   /**
    * Draw the animated "burning" flame over a unit at its sprite rect (dx,dy,w,h)
    * while it carries a fire DoT. Reuses the shared effect sprite sheet
@@ -3070,32 +3096,28 @@ export class CanvasRenderer {
     const { image, frameWidth, frameHeight, frames } = sprite
     if (!image || !image.complete || image.naturalWidth === 0 || frames <= 0) return
 
-    // Loop the strip on wall-clock time (not server progress) so the blaze
-    // animates continuously while the unit burns.
-    const frameIndex = Math.floor(this.renderTime / CanvasRenderer.BURN_FRAME_MS) % frames
+    // Loop the strip on the render clock (not server progress) so the blaze
+    // animates continuously while the unit burns. Shared with the
+    // EffectSnapshot path — see overlayFrameIndex.
+    const frameIndex = overlayFrameIndex(this.renderTime, frames)
     const sx = frameIndex * frameWidth
     const sy = 0
 
-    // Size the flame relative to the unit's rendered body height via the effect
-    // manifest's displayScale (assets/effects/burning/sprites.json) so artists
-    // tune the size without touching code. Kept square to preserve the sheet's
-    // aspect and centered horizontally on the unit.
-    const size = h * sprite.displayScale
-    const fx = dx + w / 2 - size / 2
-    // Vertical placement from the server-authored anchor.
-    let fy: number
-    switch (anchor) {
-      case 'head':
-        fy = dy
-        break
-      case 'center':
-        fy = dy + h / 2 - size / 2
-        break
-      case 'feet':
-      default:
-        fy = dy + h - size
-        break
-    }
+    // Size/placement come from the SHARED helper (effectPlacement.ts) rather
+    // than a local copy, so the EffectSnapshot path in drawEffects renders this
+    // same asset at the exact same size and height. Two hand-tuned copies is
+    // precisely how a composable burn ended up looking nothing like a perk one.
+    //
+    // NOTE the anchor default differs from spriteRectOverlayRect's: an unset
+    // anchor here has always meant "feet" (this overlay predates the authored
+    // EffectAnchor field), while the shared default is "center". Passing the
+    // fallback explicitly keeps the legacy default intact instead of silently
+    // relocating every existing burn.
+    const { x: fx, y: fy, size } = spriteRectOverlayRect({
+      rect: { x: dx, y: dy, width: w, height: h },
+      displayScale: sprite.displayScale ?? 1,
+      anchor: anchor ?? 'feet',
+    })
 
     const ctx = this.ctx
     const prevSmoothing = ctx.imageSmoothingEnabled
@@ -3157,16 +3179,16 @@ export class CanvasRenderer {
       // absent from this interpolated frame (e.g. it died mid-effect).
       let wx: number
       let wy: number
+      const anchorUnit = effect.anchorUnitId ? unitsById.get(effect.anchorUnitId) : undefined
       if (effect.anchorUnitId) {
-        const anchor = unitsById.get(effect.anchorUnitId)
-        wx = anchor?.x ?? effect.x
-        wy = anchor?.y ?? effect.y
+        wx = anchorUnit?.x ?? effect.x
+        wy = anchorUnit?.y ?? effect.y
         // Anchor placement relative to the unit's bounds. Empty/"center"
         // keeps the historical origin placement (so existing perk-queued
         // effects are pixel-unchanged); only "feet"/"head" shift vertically.
-        if (anchor && (effect.anchor === 'feet' || effect.anchor === 'head')) {
-          const b = getUnitBoundsFor({ path: anchor.path, unitType: anchor.unitType })
-          wy = anchor.y + (effect.anchor === 'head' ? b.top : b.bottom)
+        if (anchorUnit && (effect.anchor === 'feet' || effect.anchor === 'head')) {
+          const b = getUnitBoundsFor({ path: anchorUnit.path, unitType: anchorUnit.unitType })
+          wy = anchorUnit.y + (effect.anchor === 'head' ? b.top : b.bottom)
         }
       } else {
         wx = effect.x
@@ -3204,6 +3226,50 @@ export class CanvasRenderer {
       if (frameLayer !== pass) {
         continue
       }
+
+      // BODY-OVERLAY CONVENTION. A manifest that authors displayScale declares
+      // itself a body overlay (see EffectManifest.displayScale): when it is
+      // anchored to a unit we size and place it against that unit's rendered
+      // BODY BOX, identical to drawBurningOverlay, rather than drawing the raw
+      // sheet from the unit's origin.
+      //
+      // This exists because `burning` is drawn by both renderers. The overlay
+      // path draws it at 40% of body height, vertically centred on the body;
+      // this path drew the raw 48px sheet from the unit's ORIGIN — which sits
+      // at the feet (DEFAULT_UNIT_BOUNDS: top -26, bottom +2) — so the same
+      // fire came out several times too large and sitting on the ground.
+      // See effectPlacement.ts for the full two-conventions rationale.
+      const overlaySpriteSet =
+        anchorUnit && sprite.displayScale != null
+          ? getUnitSpriteSet(anchorUnit.path, anchorUnit.unitType)
+          : undefined
+      if (anchorUnit && sprite.displayScale != null && overlaySpriteSet) {
+        const rect = spriteRectOverlayRect({
+          rect: unitSpriteRect({
+            unitX: anchorUnit.x,
+            unitY: anchorUnit.y,
+            bounds: getUnitBoundsFor({ path: anchorUnit.path, unitType: anchorUnit.unitType }),
+            spriteSize: overlaySpriteSet.size,
+          }),
+          displayScale: sprite.displayScale,
+          sizeScale: effect.sizeScale,
+          anchor: effect.anchor,
+        })
+        // A body overlay cycles its strip on the render clock, NOT on
+        // effect.progress — the frameIndex computed above is the one-shot rule
+        // and would freeze an 8-second burn on a single frame. Same helper the
+        // perk-driven overlay uses, so both animate at one cadence.
+        const overlaySx = overlayFrameIndex(this.renderTime, frames) * frameWidth
+        const prevSmoothingOverlay = ctx.imageSmoothingEnabled
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(image, overlaySx, 0, frameWidth, frameHeight, rect.x, rect.y, rect.size, rect.size)
+        ctx.imageSmoothingEnabled = prevSmoothingOverlay
+        continue
+      }
+      // No sprite set resolved (placeholder unit, sheet not registered) — fall
+      // through to the origin-relative path rather than skipping the effect
+      // entirely, so the visual still appears somewhere sane.
+
 
       // Offset-origin fall: during pre-impact frames the sprite is drawn offset
       // toward its spawn point (upper-right sky) and slides to the anchor by

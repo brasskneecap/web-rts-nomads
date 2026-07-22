@@ -12,8 +12,10 @@ import (
 // migration.
 //
 // This test PINS the stats of a PLANTED trap for each of the 4 Bronze trap
-// perks (caltrops, fire_pit, explosive_trap, marker_trap), including
-// fire_pit's per-rank scaling (bronze/silver/gold). It is the behavior
+// traps still authored on the place_trap action (explosive_trap, marker_trap).
+// caltrops and fire_pit have MIGRATED to composable visible zones and are
+// characterized by TestCaltropsZone_* / TestFirePitZone_* instead; their rows
+// were removed from this table as each left this path. It is the behavior
 // invariant the whole migration must preserve: later phases refactor HOW
 // traps get placed, but the planted Trap's fields must not change.
 //
@@ -24,8 +26,11 @@ import (
 // catalog JSON — see server/internal/game/catalog/perks/trapper/<id>/<id>.json.
 //
 // Expected numbers below are transcribed directly from those JSON files:
-//   - caltrops:       damagePerSecond 6, durationSeconds 12, radius 60, slowMultiplier 0.35
-//   - explosive_trap:  burstDamage 75, durationSeconds 20, explosionRadius 100, triggerRadius 50
+//   - explosive_trap:  burstDamage 75, durationSeconds 20, radius 100
+//     (ONE radius since the params migration: the authored zone radius is both
+//     the trigger area and the blast area. It was explosionRadius 100 +
+//     triggerRadius 50; the explosion radius was kept as the survivor, so the
+//     trap now arms over the area it damages instead of over a smaller one.)
 //   - marker_trap:    durationSeconds 12, markDuration 4, markMultiplier 0.2, radius 115
 //   - fire_pit:       base {damagePerSecond 16, radius 55}, silver {28, 75}, gold {45, 95},
 //     durationSeconds 10 (flat across ranks — not in configByRank)
@@ -71,25 +76,13 @@ func TestTrapCharacterization(t *testing.T) {
 		want   wantTrap
 	}{
 		{
-			name:   "caltrops/bronze",
-			perkID: "caltrops",
-			rank:   unitRankBronze,
-			want: wantTrap{
-				trapType:         "caltrops",
-				radius:           60,
-				damagePerSecond:  6,
-				slowMultiplier:   0.35,
-				remainingSeconds: 12,
-			},
-		},
-		{
 			name:   "explosive_trap/bronze",
 			perkID: "explosive_trap",
 			rank:   unitRankBronze,
 			want: wantTrap{
 				trapType:         "explosive_trap",
 				radius:           100, // explosionRadius
-				triggerRadius:    50,
+				triggerRadius:    100,
 				burstDamage:      75,
 				remainingSeconds: 20,
 			},
@@ -104,39 +97,6 @@ func TestTrapCharacterization(t *testing.T) {
 				markMultiplier:   0.2,
 				markDuration:     4,
 				remainingSeconds: 12,
-			},
-		},
-		{
-			name:   "fire_pit/bronze",
-			perkID: "fire_pit",
-			rank:   unitRankBronze,
-			want: wantTrap{
-				trapType:         "fire_pit",
-				radius:           55,
-				damagePerSecond:  16,
-				remainingSeconds: 10,
-			},
-		},
-		{
-			name:   "fire_pit/silver",
-			perkID: "fire_pit",
-			rank:   unitRankSilver,
-			want: wantTrap{
-				trapType:         "fire_pit",
-				radius:           75,
-				damagePerSecond:  28,
-				remainingSeconds: 10,
-			},
-		},
-		{
-			name:   "fire_pit/gold",
-			perkID: "fire_pit",
-			rank:   unitRankGold,
-			want: wantTrap{
-				trapType:         "fire_pit",
-				radius:           95,
-				damagePerSecond:  45,
-				remainingSeconds: 10,
 			},
 		},
 	}

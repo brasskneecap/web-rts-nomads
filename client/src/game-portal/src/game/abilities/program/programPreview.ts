@@ -56,6 +56,17 @@ export interface PreviewRequest {
    */
   casterCharge: number
   durationSeconds: number
+  /**
+   * Forced outcomes for individual `conditional` actions, keyed by the
+   * conditional's authored action id: true takes THEN, false takes ELSE, and
+   * an id that isn't present evaluates normally.
+   *
+   * A TESTING affordance, not a simulation input — the synthetic preview
+   * caster owns no perks, items or advancements, so a has_perk branch would
+   * always resolve false and its THEN side could never be previewed. Ids that
+   * match no conditional are ignored server-side.
+   */
+  conditionalOverrides?: Record<string, boolean>
 }
 
 // PreviewFrame mirrors Go's game.PreviewFrame: one per-tick snapshot of the

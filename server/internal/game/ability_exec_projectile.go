@@ -232,6 +232,7 @@ func init() {
 			// Shown only when Spawn Origin is "Saved Position" — the ctx.Named key
 			// the bolt arcs from. Mirrors beam's identical field (shared selection).
 			{Key: "spawnOriginRef", Label: "Saved Value", Control: "context_ref", Section: "Properties", ShowWhen: spawnOriginNamedShowWhen()},
+			{Key: "projectileSpeed", Label: "Projectile Speed", Control: "number", Kind: abilityStatKindSpeed, Section: "Properties"},
 			{Key: "projectileScale", Label: "Projectile Scale", Control: "number", Section: "Presentation"},
 			// arcane_orb's ticking-vortex shim: tickInterval is the toggle (stays
 			// unconditionally visible) and is the only vortex

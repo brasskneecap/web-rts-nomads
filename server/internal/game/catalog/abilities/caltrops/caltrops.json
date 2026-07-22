@@ -4,8 +4,6 @@
   "type": "spell",
   "canTargetEnemies": true,
   "castRange": 220,
-  "castTime": 0,
-  "manaCost": 0,
   "cooldown": 6,
   "tags": [
     "trap"
@@ -31,15 +29,83 @@
         "type": "on_cast_complete",
         "actions": [
           {
-            "id": "place",
-            "type": "place_trap",
+            "id": "field",
+            "type": "create_zone",
             "config": {
-              "trapType": "caltrops",
-              "durationSeconds": 12,
-              "placeIntervalSeconds": 6,
+              "name": "Caltrops",
+              "position": {
+                "key": "initial_target"
+              },
               "radius": 60,
-              "damagePerSecond": 6,
-              "slowMultiplier": 0.35
+              "duration": 12,
+              "tickInterval": 1,
+              "sprite": "caltrops",
+              "triggers": [
+                {
+                  "id": "tick",
+                  "type": "on_tick",
+                  "actions": [
+                    {
+                      "id": "inzone",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "origin": "zone_center",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radiusRef": "zone_radius"
+                      },
+                      "outputs": {
+                        "targets": "caught"
+                      }
+                    },
+                    {
+                      "id": "spikes",
+                      "type": "deal_damage",
+                      "input": {
+                        "targets": {
+                          "key": "caught"
+                        }
+                      },
+                      "config": {
+                        "amount": 6
+                      }
+                    },
+                    {
+                      "id": "slow",
+                      "type": "apply_status_duration",
+                      "input": {
+                        "targets": {
+                          "key": "caught"
+                        }
+                      },
+                      "config": {
+                        "name": "Slowed",
+                        "duration": 1,
+                        "stacking": "refresh",
+                        "triggers": [
+                          {
+                            "id": "on_apply",
+                            "type": "on_action_complete",
+                            "actions": [
+                              {
+                                "id": "slow_move",
+                                "type": "change_stat",
+                                "config": {
+                                  "stat": "moveSpeed",
+                                  "op": "multiply",
+                                  "value": 0.35
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           }
         ]

@@ -136,9 +136,9 @@ func init() {
 			{Key: "channelType", Label: "Channel Type", Control: "text", Section: "Properties", ShowWhen: beamChanneledShowWhen()},
 			{Key: "tickIntervalSeconds", Label: "Tick Interval (s)", Control: "number", Section: "Timing", ShowWhen: beamChanneledShowWhen()},
 			{Key: "manaCostPerTick", Label: "Mana Cost Per Tick", Control: "number", Section: "Properties", ShowWhen: beamChanneledShowWhen()},
-			{Key: "damagePerTick", Label: "Damage Per Tick", Control: "number", Section: "Properties", ShowWhen: beamChanneledShowWhen()},
+			{Key: "damagePerTick", Label: "Damage Per Tick", Control: "number", Kind: abilityStatKindDamage, Section: "Properties", ShowWhen: beamChanneledShowWhen()},
 			{Key: "healingMultiplier", Label: "Healing Multiplier", Control: "number", Section: "Properties", ShowWhen: beamChanneledShowWhen()},
-			{Key: "allyHealRadius", Label: "Ally Heal Radius", Control: "number", Section: "Targeting", ShowWhen: beamChanneledShowWhen()},
+			{Key: "allyHealRadius", Label: "Ally Heal Radius", Control: "number", Kind: abilityStatKindRadius, Section: "Targeting", ShowWhen: beamChanneledShowWhen()},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(beamConfig)

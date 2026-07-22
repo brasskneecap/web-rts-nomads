@@ -139,6 +139,12 @@ export type ItemDef = {
   iconUploadedAt?: number
   /** Stat changes applied while held. Absent = no stat changes. */
   modifiers?: ItemModifiers
+  /** BROAD ability modifiers granted to the holder — "+15% radius" to every
+   *  ability they cast. Keyed by ability-stat id (a bare kind like "duration",
+   *  or an action-scoped "create_zone.duration"); see server ability_stats.go.
+   *  Unlike a perk, an item cannot name an ability — it does not know who
+   *  equipped it — so it targets a KIND instead. */
+  abilityStats?: Record<string, { flat?: number; pct?: number }>
   /** Named effect tags granted while held. Absent = no effects. */
   effects?: ItemEffect[]
   /** Flat elemental damage applied as a separate typed instance on each hit. */

@@ -315,10 +315,22 @@ func (s *GameState) applyTargetFiltersLocked(ctx *RuntimeAbilityContext, caster 
 	}
 
 	// Resolve the effective radius (handles the match-attack-range sentinel).
-	radiusActive := q.Radius != 0
-	effRadius := q.Radius
+	// A RadiusRef names a CONTEXT SCALAR — today always the enclosing zone's
+	// live "zone_radius" — and overrides the static value. That live value has
+	// ALREADY had radius modifiers folded into it (they were applied to the
+	// zone's own create_zone radius), which is why foldTargetQueryRadiusLocked
+	// deliberately skips a query that carries a ref: folding here too would
+	// apply the same "+15% radius" twice.
+	radius := q.Radius
+	if q.RadiusRef != "" {
+		if v, ok := ctx.Named[q.RadiusRef]; ok && v.Kind == ctxScalar {
+			radius = v.Scalar
+		}
+	}
+	radiusActive := radius != 0
+	effRadius := radius
 	if effRadius < 0 {
-		effRadius = CastRange(q.Radius).Resolve(caster)
+		effRadius = CastRange(radius).Resolve(caster)
 	}
 	radSq := effRadius * effRadius
 

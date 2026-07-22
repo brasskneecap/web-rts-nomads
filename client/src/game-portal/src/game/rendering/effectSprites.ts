@@ -19,9 +19,21 @@ interface EffectManifest {
   offsetY?: number
   // displayScale sizes a unit-anchored *overlay* effect (e.g. the burning
   // flame) relative to the unit's rendered body height: 1.0 = exactly the
-  // unit's height, 0.8 = 80% of it, 1.2 = spills past the silhouette. Only the
-  // burning overlay reads this today; one-shot effects driven by drawEffects
-  // ignore it (they use the server-supplied sizeScale). Defaults to 1.0.
+  // unit's height, 0.8 = 80% of it, 1.2 = spills past the silhouette.
+  //
+  // AUTHORING IT IS A MODE SWITCH, not just a size. A manifest that sets
+  // displayScale declares "I am a body overlay": when such an effect is
+  // anchored to a unit, drawEffects sizes and places it against that unit's
+  // rendered body box (exactly like drawBurningOverlay does) and IGNORES
+  // offsetX/offsetY, which belong to the other convention — raw sheet size
+  // positioned from the unit's ORIGIN (its feet). Absent means the historical
+  // one-shot behavior: raw frame size scaled by the server's sizeScale.
+  //
+  // Both conventions have to exist because `burning` is drawn by TWO renderers
+  // — the perk-driven overlay (drawBurningOverlay, from unit state) and the
+  // generic effect pipeline (drawEffects, from EffectSnapshot). They MUST
+  // agree, or the same fire reads at a different size and height depending on
+  // which system lit it.
   displayScale?: number
   /**
    * Optional per-frame render-layer split. Frames with index < (impactFrame-1)
@@ -63,7 +75,10 @@ export interface EffectSpriteSet {
   frames: number
   offsetX: number
   offsetY: number
-  displayScale: number
+  /** Undefined when the manifest doesn't author it — see the mode-switch note
+      on EffectManifest.displayScale. Consumers that just want a number use
+      `?? 1`; drawEffects uses its PRESENCE to pick a placement convention. */
+  displayScale?: number
   loaded: boolean
   impactFrame?: number
   originOffsetX?: number
@@ -107,7 +122,7 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
     frames: manifest.frames,
     offsetX: manifest.offsetX ?? 0,
     offsetY: manifest.offsetY ?? 0,
-    displayScale: manifest.displayScale ?? 1,
+    displayScale: manifest.displayScale,
     // `loaded` is checked lazily at draw time via imageReady(); the flag here
     // is a quick "did we even find a sheet URL?" sentinel.
     loaded: !!sheetUrl,

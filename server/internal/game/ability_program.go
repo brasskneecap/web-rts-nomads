@@ -157,6 +157,12 @@ const (
 	// without reimplementing trap placement/geometry. See
 	// placeTrapConfig (ability_exec_place_trap.go) for the config shape.
 	ActionPlaceTrap         ActionType = "place_trap"
+	// ActionConsumeZone ends the zone the current execution is running inside,
+	// immediately. It is the "one-shot zone" primitive: a zone that should fire
+	// once and vanish (a pressure-plate trap detonating, a ward being spent)
+	// authors its effect then consumes itself, rather than needing a special
+	// zone kind. No-op outside a zone-driven execution.
+	ActionConsumeZone       ActionType = "consume_zone"
 	ActionMoveUnit          ActionType = "move_unit"
 	ActionApplyForce        ActionType = "apply_force"
 	ActionModifyResource    ActionType = "modify_resource"
@@ -455,6 +461,21 @@ type AbilityConditionDef struct {
 	Right json.RawMessage `json:"right,omitempty"`
 }
 
+// Condition operators that test the CASTER's owned perks by name. These are
+// the first-class way an ability branches on a perk: the ability names the
+// perk directly in its own program, so its whole behavior is readable in one
+// place with no indirection through another file.
+//
+// The perk id goes in the condition's Right field:
+//
+//	{ "op": "has_perk", "right": "lasting_flames" }
+//
+// Left is unused for these operators.
+const (
+	condOpHasPerk = "has_perk"
+	condOpNotPerk = "not_perk"
+)
+
 // ConditionType identifies the kind of check an AbilityConditionDef
 // performs. Concrete values are introduced in a later task.
 type ConditionType string
@@ -528,6 +549,17 @@ type TargetQueryDef struct {
 	Relations            []TargetRelation `json:"relations,omitempty"`
 	Filters              []TargetFilter   `json:"filters,omitempty"`
 	Radius               float64          `json:"radius,omitempty"`
+	// RadiusRef names a runtime value to use as this query's radius INSTEAD of
+	// the static Radius above: a CONTEXT SCALAR (so a zone's live radius can widen
+	// the area a query covers) or a bound context scalar such as "zone_radius",
+	// which an enclosing zone binds to its own live radius.
+	//
+	// This exists because "$name" config substitution only walks an action's
+	// `config` — a target query is a typed struct, so it cannot carry a
+	// reference that way. Mirrors deal_damage's amountRef precedent. Ignored
+	// when the named value is not bound, so the static Radius stays the
+	// fallback.
+	RadiusRef            string           `json:"radiusRef,omitempty"`
 	MinCount             int              `json:"minCount,omitempty"`
 	MaxCount             int              `json:"maxCount,omitempty"`
 	Ordering             TargetOrdering   `json:"ordering,omitempty"`

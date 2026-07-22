@@ -3,6 +3,9 @@
   <RouterView />
   <MenuDominionPanel v-if="showDominionPanel" />
   <StartSplash v-if="!splashDismissed" @dismiss="onSplashDismiss" />
+  <!-- Mounted once for the whole app: the in-app replacement for
+       window.confirm. Renders nothing until something calls ask(). -->
+  <ConfirmDialogHost />
 </template>
 
 <script setup lang="ts">
@@ -11,6 +14,7 @@ import { useRoute } from 'vue-router'
 import MenuChrome from '@/components/menu/MenuChrome.vue'
 import MenuDominionPanel from '@/components/menu/MenuDominionPanel.vue'
 import StartSplash from '@/components/menu/StartSplash.vue'
+import ConfirmDialogHost from '@/components/ui/ConfirmDialogHost.vue'
 import { startMenuMusic, stopMenuMusic } from '@/composables/useMenuAudio'
 import { startMatchMusic, stopMatchMusic } from '@/composables/useMatchMusic'
 

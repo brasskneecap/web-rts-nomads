@@ -87,3 +87,26 @@ describe('EditorShell', () => {
     expect(wrapper.find('.ed-shell__grid--wide-rail').exists()).toBe(false)
   })
 })
+
+// The forge skin is the DEFAULT, not an opt-in. It started opt-in while it was
+// proven out on the item/unit/ability editors, and the cost of that was exactly
+// what you'd expect: the list and table editors shipped on the old wood look
+// simply because nobody remembered to pass the prop. A default the caller has to
+// remember is not a default.
+describe('EditorShell skin', () => {
+  it('applies the forge skin with no prop', () => {
+    const w = mount(EditorShell)
+    expect(w.find('.ed-shell').classes()).toContain('ed-theme-forge')
+  })
+
+  it('honours an explicit skin', () => {
+    const w = mount(EditorShell, { props: { theme: 'somethingelse' } })
+    expect(w.find('.ed-shell').classes()).toContain('ed-theme-somethingelse')
+  })
+
+  // theme="" is the deliberate opt-OUT back to the unskinned wood look.
+  it('applies no skin class for an empty theme', () => {
+    const w = mount(EditorShell, { props: { theme: '' } })
+    expect(w.find('.ed-shell').classes().some((c) => c.startsWith('ed-theme-'))).toBe(false)
+  })
+})

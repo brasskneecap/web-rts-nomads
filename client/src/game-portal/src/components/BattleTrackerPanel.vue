@@ -170,6 +170,7 @@
 </template>
 
 <script setup lang="ts">
+import { ask } from '@/components/ui/useConfirmDialog'
 import { computed, onMounted, ref, watch } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import type { BattleCombatEvent, BattleTrackerSnapshot } from '@/game/network/protocol'
@@ -266,8 +267,8 @@ function onSave() {
   persistSavedLogs()
 }
 
-function onDelete(id: string) {
-  if (!window.confirm('Delete this saved battle log?')) return
+async function onDelete(id: string) {
+  if (!(await ask({ title: 'Delete this saved battle log?', confirmLabel: 'Delete' }))) return
   savedLogs.value = savedLogs.value.filter((l) => l.id !== id)
   expandedIds.value.delete(id)
   persistSavedLogs()
