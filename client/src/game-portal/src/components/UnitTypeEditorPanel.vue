@@ -639,31 +639,18 @@
               </EditorField>
             </SectionCard>
 
-            <!-- Ranks -->
-            <SectionCard v-show="activePathTab === pathSectionTab('ranks')" title="Rank Stats" :index="pathSectionIndex('ranks')" variant="worldMenu" class="unit-editor__combat-ranks">
-              <!-- The rank grid is wide (a column per stat); let it scroll rather
-                   than squeeze/clip when the card is narrower than the table. -->
-              <div class="unit-editor__rank-scroll">
-                <PathRankGrid
-                  :base-stats="parentBaseStats"
-                  :ranks="pathForm.ranks || {}"
-                  @update:ranks="onPathRanksUpdate"
-                />
-              </div>
-            </SectionCard>
-
             <!-- Rank Slots: per-rank choice between a Perk slot (explicit
                  grants of standalone perk defs, union'd server-side with a
                  path's own perk pools) and an Ability slot (one ability
                  rolled from abilityPoolsByRank). A rank is one or the other,
                  never both. -->
-            <div v-show="activePathTab === pathSectionTab('perks')" class="unit-editor__rank-slot-stack">
-              <SectionCard
-                v-for="(rank, i) in PERK_RANK_ORDER"
-                :key="rank"
-                :title="rank.charAt(0).toUpperCase() + rank.slice(1)"
-                :index="i + 1"
-              >
+            <!-- v-for on a <template>, v-show on the element inside it: with both
+                 directives on ONE element the shown/hidden state did not track the
+                 active tab. Splitting them keeps each rank's block a plain
+                 conditionally-shown div. -->
+            <template v-for="rank in PERK_RANK_ORDER" :key="rank">
+            <div v-show="activePathTab === rank" class="unit-editor__rank-slot-stack">
+              <SectionCard title="Slot" :index="1">
                 <div class="unit-editor__slot-type" :data-test="`slot-type-${rank}`">
                   <label class="unit-editor__slot-type-option">
                     <input
@@ -735,7 +722,43 @@
                   </select>
                 </div>
               </SectionCard>
+
+              <!-- That rank's stat block. Absolute per rank, floored at the
+                   previous rank — see PathRankPanel. -->
+              <SectionCard title="Stats" :index="2">
+                <PathRankPanel
+                  :rank="rank"
+                  :previous-rank="previousRankOf(rank)"
+                  :previous-stats="accumulatedBelow(rank)"
+                  :base-stats="parentBaseStats"
+                  :stats="rankStatsFor(rank)"
+                  :unit-base-stats="parentUnitBaseStats"
+                  :previous-base-stats="accumulatedBaseStatsBelow(rank)"
+                  :stat-labels="statLabelsById"
+                  :addable-stat-ids="addableStatIds"
+                  @update:stats="onRankStatsUpdate(rank, $event)"
+                  @update:base-stats="onRankBaseStatsUpdate(rank, $event)"
+                />
+              </SectionCard>
+
+              <!-- Rank Ability Stats: the BROAD ability modifiers a unit on
+                   this path carries at this rank (server: PathDef.
+                   AbilityStatsByRank). Same grid the unit and item editors
+                   use, so the authored shape is identical everywhere. -->
+              <SectionCard title="Rank Ability Stats" :index="3">
+                <p v-if="previousRankOf(rank)" class="unit-hint">
+                  Totals, not additions — these replace {{ previousRankOf(rank) }}'s, so they
+                  must be at least as high.
+                </p>
+                <AbilityStatsEditor
+                  :model-value="rankAbilityStatsFor(rank)"
+                  :defs="abilityStatDefs"
+                  :empty-text="`No ability stats at ${rank} — abilities use their authored values.`"
+                  @update:model-value="onRankAbilityStatsUpdate(rank, $event)"
+                />
+              </SectionCard>
             </div>
+            </template>
 
             <SectionCard
               v-if="selectedPath === null"
@@ -784,13 +807,13 @@ import {
 import {
   fetchAuthoredUnitDefs, saveEditorUnit, deleteEditorUnit, EditorValidationError,
 } from '@/game/units/unitEditorApi'
-import { createBlankPathForm, pathFormFromDef, saveRequestFromPathForm, type PathEditorForm, type PathRankStats } from '@/game/units/pathEditorForm'
+import { createBlankPathForm, pathFormFromDef, saveRequestFromPathForm, type PathEditorForm } from '@/game/units/pathEditorForm'
 import {
   fetchPaths,
   savePath as savePathApi, deletePath as deletePathApi,
   type EditorPathEntry,
 } from '@/game/units/pathEditorApi'
-import PathRankGrid from '@/components/PathRankGrid.vue'
+import PathRankPanel from '@/components/PathRankPanel.vue'
 import {
   fetchFactions, saveFaction, deleteFaction, fetchArchetypes,
   fetchProjectileIds, fetchDamageTypes, fetchBuildingIds,
@@ -898,9 +921,6 @@ const selectedPath = ref<string | null>(null)
 const selectedPathParent = ref<string | null>(null)
 const pathForm = ref<PathEditorForm | null>(null)
 
-function onPathRanksUpdate(next: Record<string, PathRankStats>) {
-  if (pathForm.value) pathForm.value.ranks = next
-}
 
 // Perk References: per-rank list of standalone perk ids explicitly granted by
 // this path. Fixed row order regardless of which rank keys are actually
@@ -1341,12 +1361,139 @@ function sectionIndex(key: string): number {
 // standalone defs edited in the world-editor Perks screen — and its only
 // other content, the new-path-only Membership checkbox, was folded into the
 // Identity tab so it stays reachable without a dedicated (now-empty) tab.
+// One tab PER RANK, replacing the old split of "Rank Stats" (a wide all-ranks
+// table) and "Rank Slots" (a stack of three cards). Everything about bronze now
+// lives in one place: its slot, its stats, and its ability stats. The old layout
+// forced an author to hold a rank's identity across two tabs, and the stat table
+// gave no hint that the blocks are absolute-per-rank (see PathRankPanel).
 const PATH_TABS: { id: string; label: string; sections: string[] }[] = [
   { id: 'identity', label: 'Identity', sections: ['identity', 'preview', 'membership'] },
-  { id: 'combat', label: 'Combat', sections: ['combat', 'abilities', 'ranks'] },
-  { id: 'rankSlots', label: 'Rank Slots', sections: ['perks'] },
+  { id: 'combat', label: 'Combat', sections: ['combat', 'abilities'] },
+  { id: 'bronze', label: 'Bronze', sections: ['bronze-slot', 'bronze-stats', 'bronze-ability-stats'] },
+  { id: 'silver', label: 'Silver', sections: ['silver-slot', 'silver-stats', 'silver-ability-stats'] },
+  { id: 'gold', label: 'Gold', sections: ['gold-slot', 'gold-stats', 'gold-ability-stats'] },
 ]
 const activePathTab = ref<string>(PATH_TABS[0].id)
+
+// ── Per-rank editing helpers ────────────────────────────────────────────────
+// previousRankOf drives BOTH the inherited-value display and the floor: a rank
+// may only improve on the one before it, so bronze (no previous) is unfloored.
+function previousRankOf(rank: string): string {
+  const i = PERK_RANK_ORDER.indexOf(rank as (typeof PERK_RANK_ORDER)[number])
+  return i > 0 ? PERK_RANK_ORDER[i - 1] : ''
+}
+
+function rankStatsFor(rank: string): Record<string, number | undefined> {
+  if (!rank) return {}
+  return (pathForm.value?.ranks?.[rank] ?? {}) as Record<string, number | undefined>
+}
+
+// Everything authored BELOW a rank, accumulated bronze -> silver with later
+// ranks overriding earlier ones.
+//
+// Inheritance has to be TRANSITIVE, not one-rank-back: with only the immediately
+// previous rank, a value set at bronze vanished from gold whenever silver
+// happened to author nothing — so gold showed no inherited value and no floor,
+// and could silently be set below bronze.
+function accumulatedBelow(rank: string): Record<string, number | undefined> {
+  const out: Record<string, number | undefined> = {}
+  for (const r of PERK_RANK_ORDER) {
+    if (r === rank) break
+    Object.assign(out, rankStatsFor(r))
+  }
+  return out
+}
+
+function onRankStatsUpdate(rank: string, stats: Record<string, number | undefined>) {
+  if (!pathForm.value) return
+  pathForm.value.ranks = { ...(pathForm.value.ranks ?? {}), [rank]: stats }
+}
+
+// parentUnitBaseStats: the fieldless stats the PARENT UNIT authored
+// (abilityPower, critChance, ...). Every rank mirrors these as rows, so adding
+// ability power to the unit makes it editable at every rank immediately rather
+// than staying invisible until re-added by hand.
+//
+// Reads the LIVE form when the open path belongs to the unit being edited, and
+// only falls back to the loaded catalog otherwise. Reading the catalog alone
+// meant a newly-added stat did not appear in the rank tabs until the unit was
+// saved — the author had to commit a change to find out what it would do, which
+// is the opposite of how the rest of this editor behaves.
+const parentUnitBaseStats = computed<Record<string, number>>(() => {
+  const parent = pathForm.value?.parentUnit
+  if (parent && form.value.type === parent) {
+    return (form.value.baseStats ?? {}) as Record<string, number>
+  }
+  return (units.value.find((u) => u.type === parent)?.baseStats ?? {}) as Record<string, number>
+})
+
+// Labels come from the shared stat registry so a rank row reads "Ability Power",
+// not "abilityPower" — the same names the unit editor's Base Stats picker uses.
+// Every stat a unit may carry a base for — the server rejects anything else,
+// so the picker offers exactly that set.
+const addableStatIds = computed(() => baseAuthorableStatDefs().map((d) => d.id))
+
+const statLabelsById = computed<Record<string, string>>(() => {
+  const out: Record<string, string> = {}
+  for (const d of baseAuthorableStatDefs()) out[d.id] = d.label
+  return out
+})
+
+function rankBaseStatsFor(rank: string): Record<string, number> {
+  if (!rank) return {}
+  return ((pathForm.value?.ranks?.[rank] as Record<string, unknown> | undefined)?.baseStats ?? {}) as Record<string, number>
+}
+
+// The fieldless-stat half of accumulatedBelow — same transitive rule.
+function accumulatedBaseStatsBelow(rank: string): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const r of PERK_RANK_ORDER) {
+    if (r === rank) break
+    Object.assign(out, rankBaseStatsFor(r))
+  }
+  return out
+}
+
+function onRankBaseStatsUpdate(rank: string, stats: Record<string, number>) {
+  if (!pathForm.value) return
+  const existing = { ...(pathForm.value.ranks?.[rank] ?? {}) } as Record<string, unknown>
+  if (Object.keys(stats).length === 0) delete existing.baseStats
+  else existing.baseStats = stats
+  pathForm.value.ranks = { ...(pathForm.value.ranks ?? {}), [rank]: existing as never }
+}
+
+function rankAbilityStatsFor(rank: string): Record<string, { flat?: number; pct?: number }> {
+  return pathForm.value?.abilityStatsByRank?.[rank] ?? {}
+}
+
+// A rank's ability stats are TOTALS, not additions, so the floor is the previous
+// rank's value — the same rule the stat block follows, and the same one the
+// server enforces at load (validatePathAbilityStatsByRank). Clamping here means
+// a hand-typed regression is corrected at the point of authoring rather than
+// rejected later on save.
+function onRankAbilityStatsUpdate(
+  rank: string,
+  stats: Record<string, { flat?: number; pct?: number }>,
+) {
+  if (!pathForm.value) return
+  const prev = rankAbilityStatsFor(previousRankOf(rank))
+  const floored: Record<string, { flat?: number; pct?: number }> = {}
+  for (const [id, mod] of Object.entries(stats)) {
+    const floor = prev[id]
+    if (!floor) {
+      floored[id] = mod
+      continue
+    }
+    const next: { flat?: number; pct?: number } = { ...mod }
+    if (floor.flat !== undefined && (next.flat ?? 0) < floor.flat) next.flat = floor.flat
+    if (floor.pct !== undefined && (next.pct ?? 0) < floor.pct) next.pct = floor.pct
+    floored[id] = next
+  }
+  const byRank = { ...(pathForm.value.abilityStatsByRank ?? {}) }
+  if (Object.keys(floored).length === 0) delete byRank[rank]
+  else byRank[rank] = floored
+  pathForm.value.abilityStatsByRank = Object.keys(byRank).length > 0 ? byRank : undefined
+}
 function pathSectionTab(key: string): string {
   return PATH_TABS.find((t) => t.sections.includes(key))?.id ?? ''
 }

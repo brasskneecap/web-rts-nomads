@@ -88,13 +88,17 @@ describe('UnitTypeEditorPanel unit list + promotion paths', () => {
     const parentInput = wrapper.find('#pe-parent')
     expect((parentInput.element as HTMLInputElement).value).toBe('archer')
 
-    // Path sub-tab sections: Combat/Abilities/Rank Stats live under the Combat
-    // tab, plus Identity/Preview — all mounted (v-show). Perk pools were
-    // retired from the unit editor (perks are now standalone defs edited in
-    // the world-editor Perks screen).
+    // Path sub-tabs: Identity / Combat, then ONE TAB PER RANK. Each rank tab
+    // carries that rank's slot, stats and ability stats together — the old
+    // split of a wide all-ranks stat table plus a separate rank-slot stack is
+    // gone. All are mounted (v-show). Perk pools were retired from the unit
+    // editor (perks are standalone defs edited in the world-editor Perks screen).
     expect(wrapper.text()).toContain('Combat')
     expect(wrapper.text()).toContain('Abilities')
-    expect(wrapper.text()).toContain('Rank Stats')
+    expect(wrapper.text()).toContain('Bronze')
+    expect(wrapper.text()).toContain('Silver')
+    expect(wrapper.text()).toContain('Gold')
+    expect(wrapper.text()).toContain('Rank Ability Stats')
     expect(wrapper.text()).toContain('Preview')
     // Unit-only sections must not render while the path editor is showing.
     expect(wrapper.text()).not.toContain('Gating')

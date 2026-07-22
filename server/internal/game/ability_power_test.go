@@ -5,6 +5,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"webrts/server/pkg/protocol"
 )
 
 // TestAbilityPower_IsRegisteredAsAFlatPool pins the stat's shape. abilityPower
@@ -298,5 +300,129 @@ func TestAbilityStatLabels_AreDistinguishable(t *testing.T) {
 	}
 	if damage == power {
 		t.Errorf("abilityDamage and abilityPower share the label %q", damage)
+	}
+}
+
+// TestPreview_CasterUnitTypeAndRank covers the two knobs that make caster-scaled
+// abilities testable in the editor at all.
+//
+// Before them the preview hardcoded an adept at spawn rank, so an adRatio/apRatio
+// could only ever be previewed against ONE unit's stats, and an ability's byRank
+// overrides could not be seen at all — the editor could show you the fields but
+// never what they did.
+func TestPreview_CasterUnitTypeAndRank(t *testing.T) {
+	base, ok := getAbilityDef("fire_pit")
+	if !ok {
+		t.Fatal("fire_pit missing from the catalog")
+	}
+
+	run := func(t *testing.T, unitType, rank string, adRatio float64) int {
+		t.Helper()
+		def := base
+		def.Program = withADRatioOnDirectDamage(t, base, adRatio)
+		res, err := RunAbilityPreview(PreviewRequest{
+			Ability: def, Seed: 1,
+			CasterUnitType:  unitType,
+			CasterRank:      rank,
+			Units:           []PreviewSceneUnit{{Team: "enemy", X: 60, HP: 2000, MaxHP: 2000}},
+			Target:          0,
+			CastX:           60,
+			DurationSeconds: 4,
+		})
+		if err != nil {
+			t.Fatalf("preview failed: %v", err)
+		}
+		return res.Units[0].HPBefore - res.Units[0].HPAfter
+	}
+
+	t.Run("a different caster changes damage-ratio scaling", func(t *testing.T) {
+		// Two catalog units with different attack damage must produce different
+		// results for the same adRatio, or the picker is decoration.
+		adept := run(t, "adept", "", 1.0)
+		archer := run(t, "archer", "", 1.0)
+		if adept == archer {
+			t.Errorf("adept and archer both dealt %d — the caster unit type is not reaching the scaling", adept)
+		}
+	})
+
+	t.Run("an unknown unit type degrades to the default rather than failing", func(t *testing.T) {
+		fallback := run(t, "no_such_unit", "", 1.0)
+		adept := run(t, "adept", "", 1.0)
+		if fallback != adept {
+			t.Errorf("unknown caster type dealt %d, want the adept's %d", fallback, adept)
+		}
+	})
+
+	// fire_pit authors byRank overrides for dps and radius, so rank must move the
+	// number even with NO ratio in play.
+	t.Run("rank drives the ability's own byRank overrides", func(t *testing.T) {
+		bronze := run(t, "adept", unitRankBronze, 0)
+		gold := run(t, "adept", unitRankGold, 0)
+		if gold <= bronze {
+			t.Errorf("gold dealt %d, bronze %d — byRank overrides are not reaching the preview", gold, bronze)
+		}
+	})
+
+	t.Run("an unknown rank is ignored rather than failing", func(t *testing.T) {
+		if got := run(t, "adept", "platinum", 0); got <= 0 {
+			t.Errorf("an unrecognized rank broke the run (dealt %d)", got)
+		}
+	})
+}
+
+// TestPreview_CasterPathDrivesRankStats pins why the path selector is not
+// optional polish: pathModifierFor(path, rank) is what turns a rank into actual
+// stats, and a PATHLESS unit falls back to defaultRankCurve — a generic curve no
+// real unit uses. Previewing "gold" without a path therefore showed a unit that
+// does not exist in a match.
+func TestPreview_CasterPathDrivesRankStats(t *testing.T) {
+	// Find a unit that actually has promotion paths, so the test is driven by the
+	// catalog rather than by a hardcoded unit that may be renamed.
+	var unitType string
+	var paths []string
+	for ut, ps := range ListPathsByUnitType() {
+		if len(ps) > 0 {
+			unitType, paths = ut, ps
+			break
+		}
+	}
+	if unitType == "" {
+		t.Skip("no unit in the catalog has promotion paths")
+	}
+
+	spawnAt := func(t *testing.T, path string) *Unit {
+		t.Helper()
+		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.Players["p"] = &Player{ID: "p", PhysicalDamageMultiplier: 1, MagicDamageMultiplier: 1}
+		u := s.spawnPlayerUnitLocked(unitType, "p", "#fff", protocol.Vec2{})
+		if u == nil {
+			t.Fatalf("failed to spawn %q", unitType)
+		}
+		if path != "" {
+			u.ProgressionPath = path
+		}
+		u.Rank = unitRankGold
+		s.applyRankModifiersLocked(u, false)
+		return u
+	}
+
+	pathless := spawnAt(t, "")
+	onPath := spawnAt(t, paths[0])
+
+	// The generic curve and a real path's gold row should not be the same unit —
+	// if they are, the selector would be decoration.
+	if pathless.MaxHP == onPath.MaxHP && pathless.Damage == onPath.Damage {
+		t.Skipf("path %q's gold row happens to match the generic curve (hp=%d dmg=%d) — nothing to distinguish",
+			paths[0], pathless.MaxHP, pathless.Damage)
+	}
+
+	// And an unknown path must NOT be treated as a real one.
+	if knownPreviewPath("no_such_path") {
+		t.Error("an unknown path id was accepted")
+	}
+	if !knownPreviewPath(paths[0]) {
+		t.Errorf("catalog path %q was rejected", paths[0])
 	}
 }

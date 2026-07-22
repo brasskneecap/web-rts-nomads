@@ -55,6 +55,25 @@ export interface PreviewRequest {
    * other ability. Default 0.
    */
   casterCharge: number
+  /**
+   * Which catalog unit casts the ability, and at what rank. Empty/omitted uses
+   * the harness default (an adept at spawn rank).
+   *
+   * These exist because an ability's damage can SCALE off its caster
+   * (deal_damage's adRatio/apRatio) and its numbers can vary by rank
+   * (AbilityDef.byRank) — so previewing against one hardcoded unit at one rank
+   * showed neither. An unknown unit type or rank degrades to the default
+   * server-side rather than failing the run.
+   */
+  casterUnitType?: string
+  casterRank?: string
+  /**
+   * The promotion path the ranked caster is on. NOT optional detail: the path
+   * is what turns a rank into actual stats — a pathless unit falls back to a
+   * generic curve no real unit uses, so previewing "gold" without a path shows
+   * a unit that never exists in a match.
+   */
+  casterPath?: string
   durationSeconds: number
   /**
    * Forced outcomes for individual `conditional` actions, keyed by the
@@ -165,6 +184,9 @@ export function defaultPreviewRequest(ability: AuthoredAbilityDef): PreviewReque
     castX: 120,
     castY: 0,
     casterCharge: 0,
+    casterUnitType: '',
+    casterRank: '',
+    casterPath: '',
     durationSeconds: 3,
   }
 }

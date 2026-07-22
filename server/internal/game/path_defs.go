@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"sort"
 	"sync"
 )
@@ -104,6 +105,17 @@ type pathCatalogFile struct {
 	// may author either). Editor-authored; replaces the former standalone
 	// spell-pool catalog file (removed).
 	AbilityPoolsByRank map[string][]string `json:"abilityPoolsByRank,omitempty"`
+	// AbilityStatsByRank are the BROAD ability modifiers a unit on this path
+	// carries at a given rank — "+25 ability power at gold", "+15% radius".
+	// Keyed bronze/silver/gold, then by ability-stat id (AbilityStatDefs).
+	//
+	// ABSOLUTE per rank, not cumulative: a rank's block is the unit's total
+	// contribution AT that rank, exactly like Ranks' multipliers above (gold's
+	// x1.35 is off the base unit, not off silver's x1.2). The editor floors each
+	// rank at the previous one so the totals can never regress, and
+	// validatePathAbilityStatsByRank enforces the same rule for hand-edited
+	// files — otherwise a gold unit could silently be WEAKER than a silver one.
+	AbilityStatsByRank map[string]map[string]AbilityStatMod `json:"abilityStatsByRank,omitempty"`
 }
 
 // pathRankStatsJSON mirrors the stat-modifier fields of pathModifierDef (the
@@ -117,6 +129,18 @@ type pathCatalogFile struct {
 // can continue to omit them. When both are present in a rank row, the flat
 // override wins — see applyRankModifiersLocked for the resolution order.
 type pathRankStatsJSON struct {
+	// BaseStats sets per-rank values for the REGISTERED stats that have no
+	// typed field above — abilityPower, critChance, lifesteal, and anything else
+	// statBaseAuthorable allows (the same vocabulary UnitDef.BaseStats uses).
+	//
+	// The 12 typed fields below are MULTIPLIERS off the unit's base, which works
+	// for hp/damage but is meaningless for a stat whose base is 0 — no multiple
+	// of zero ability power is ever more than zero. So these are ABSOLUTE
+	// values: the stat IS this at that rank. The editor seeds each rank from the
+	// unit's own base and floors it at the previous rank, and
+	// validatePathRankBaseStats enforces the same for hand-edited files.
+	BaseStats map[string]float64 `json:"baseStats,omitempty"`
+
 	MaxHPMultiplier float64 `json:"maxHPMultiplier"`
 	// MaxMPMultiplier scales the unit def's catalog MaxMana for this (path, rank).
 	// Optional: omitted / zero defaults to 1.0 at load (so non-caster paths that
@@ -208,6 +232,12 @@ var pathProjectileScaleByPath = map[string]float64{}
 // rank-grants (path_ability_defs.go) + state migration in one resolution
 // pass.
 var pathAbilitiesByPath = map[string][]string{}
+
+// pathAbilityStatsByPath stores the per-(path, rank) BROAD ability modifiers a
+// unit carries at that rank — path -> rank -> stat id -> {flat, pct}. Read via
+// pathAbilityStatsFor, folded into a caster through
+// collectAbilityStatSourcesLocked's path source (ability_stats.go).
+var pathAbilityStatsByPath = map[string]map[string]map[string]AbilityStatMod{}
 
 // pathPerkRefsByPath stores the per-path, per-rank explicit perk-id
 // references (PathDef.PerksByRank), keyed by path id then rank (e.g.
@@ -534,6 +564,12 @@ func validatePathFile(file *pathCatalogFile, pathKey string) error {
 		// coherent.
 		return fmt.Errorf("path %q does not match directory name %q", file.Path, pathKey)
 	}
+	if err := validatePathAbilityStatsByRank(file.Path, file.AbilityStatsByRank); err != nil {
+		return err
+	}
+	if err := validatePathRankBaseStats(file.Path, file.Ranks); err != nil {
+		return err
+	}
 	if file.Projectile != "" {
 		if _, ok := getProjectileDef(file.Projectile); !ok {
 			return fmt.Errorf(`projectile %q is not a registered projectile def`, file.Projectile)
@@ -677,6 +713,7 @@ type pathDerivedMaps struct {
 	abilitiesByPath       map[string][]string
 	perkRefsByPath        map[string]map[string][]string
 	abilityPoolsByPath    map[string]map[string][]string
+	abilityStatsByPath    map[string]map[string]map[string]AbilityStatMod // path -> rank -> stat id
 	channelLoopByPath     map[string]ChannelLoopRange
 	pathsByUnitType       map[string][]string
 }
@@ -696,6 +733,7 @@ func newPathDerivedMaps() *pathDerivedMaps {
 		abilitiesByPath:       map[string][]string{},
 		perkRefsByPath:        map[string]map[string][]string{},
 		abilityPoolsByPath:    map[string]map[string][]string{},
+		abilityStatsByPath:    map[string]map[string]map[string]AbilityStatMod{},
 		channelLoopByPath:     map[string]ChannelLoopRange{},
 		pathsByUnitType:       map[string][]string{},
 	}
@@ -719,6 +757,7 @@ func livePathDerivedMaps() *pathDerivedMaps {
 		abilitiesByPath:       pathAbilitiesByPath,
 		perkRefsByPath:        pathPerkRefsByPath,
 		abilityPoolsByPath:    pathAbilityPoolsByPath,
+		abilityStatsByPath:    pathAbilityStatsByPath,
 		channelLoopByPath:     pathChannelLoopByPath,
 		pathsByUnitType:       pathsByUnitType,
 	}
@@ -810,6 +849,17 @@ func registerPathFileInto(dst *pathDerivedMaps, unitKey string, file *pathCatalo
 		}
 		dst.abilityPoolsByPath[file.Path] = pools
 	}
+	if len(file.AbilityStatsByRank) > 0 {
+		byRank := make(map[string]map[string]AbilityStatMod, len(file.AbilityStatsByRank))
+		for rankName, stats := range file.AbilityStatsByRank {
+			cp := make(map[string]AbilityStatMod, len(stats))
+			for id, mod := range stats {
+				cp[id] = mod
+			}
+			byRank[rankName] = cp
+		}
+		dst.abilityStatsByPath[file.Path] = byRank
+	}
 	for rankName, stats := range file.Ranks {
 		key := pathModifierKey(file.Path, rankName)
 		if _, exists := dst.modifiersByKey[key]; exists {
@@ -856,6 +906,7 @@ func registerPathFileInto(dst *pathDerivedMaps, unitKey string, file *pathCatalo
 			DodgeChance:           stats.DodgeChance,
 			BlockChance:           stats.BlockChance,
 			VisionRange:           stats.VisionRange,
+			BaseStats:             copyBaseStats(stats.BaseStats),
 		}
 	}
 	return nil
@@ -1029,4 +1080,121 @@ func sortedUnitTypesForPathValidation() []string {
 	}
 	sort.Strings(types)
 	return types
+}
+
+// pathAbilityStatsFor returns the ability stats a unit on `path` carries at
+// `rank`, or nil. Absolute per rank (see PathDef.AbilityStatsByRank), so only
+// the unit's CURRENT rank block applies — gold's numbers already include
+// everything silver had.
+func pathAbilityStatsFor(path, rank string) map[string]AbilityStatMod {
+	if path == "" || path == unitPathNone || rank == "" {
+		return nil
+	}
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	byRank, ok := pathAbilityStatsByPath[path]
+	if !ok {
+		return nil
+	}
+	stats, ok := byRank[rank]
+	if !ok || len(stats) == 0 {
+		return nil
+	}
+	out := make(map[string]AbilityStatMod, len(stats))
+	for id, mod := range stats {
+		out[id] = mod
+	}
+	return out
+}
+
+// pathRankOrder is bronze -> silver -> gold, the order a unit promotes through.
+// Used to check that a per-rank block never regresses.
+var pathRankOrder = []string{unitRankBronze, unitRankSilver, unitRankGold}
+
+// validatePathAbilityStatsByRank checks a path's abilityStatsByRank: real rank
+// keys, real stat ids, finite values, the same flat-only rule the unit/item
+// blocks follow — and that no stat DECREASES as the unit promotes.
+//
+// The monotonic check is the load-time twin of the editor's hard floor. The
+// blocks are ABSOLUTE per rank, so a gold value below silver's would silently
+// make a promoted unit WEAKER — a regression no rank-up should ever produce,
+// and one nothing else in the game would surface.
+func validatePathAbilityStatsByRank(pathID string, byRank map[string]map[string]AbilityStatMod) error {
+	if len(byRank) == 0 {
+		return nil
+	}
+	for rank := range byRank {
+		switch rank {
+		case unitRankBronze, unitRankSilver, unitRankGold:
+		default:
+			return fmt.Errorf("path %q: abilityStatsByRank has unknown rank %q (want %q, %q or %q)",
+				pathID, rank, unitRankBronze, unitRankSilver, unitRankGold)
+		}
+		if err := validateAbilityStats(fmt.Sprintf("path %q rank %q", pathID, rank), byRank[rank]); err != nil {
+			return err
+		}
+	}
+
+	// Walk bronze -> silver -> gold, carrying the highest value seen for each
+	// stat. A rank that omits a stat inherits the previous rank's value rather
+	// than dropping to zero, which is what "absolute per rank" means in practice.
+	best := map[string]AbilityStatMod{}
+	for _, rank := range pathRankOrder {
+		stats := byRank[rank]
+		for id, mod := range stats {
+			prev, seen := best[id]
+			if seen {
+				if mod.Flat < prev.Flat {
+					return fmt.Errorf("path %q: abilityStatsByRank[%q][%q].flat is %v, below the %v carried from an earlier rank — a promotion must never weaken a unit",
+						pathID, rank, id, mod.Flat, prev.Flat)
+				}
+				if mod.Pct < prev.Pct {
+					return fmt.Errorf("path %q: abilityStatsByRank[%q][%q].pct is %v, below the %v carried from an earlier rank — a promotion must never weaken a unit",
+						pathID, rank, id, mod.Pct, prev.Pct)
+				}
+			}
+			best[id] = mod
+		}
+	}
+	return nil
+}
+
+// validatePathRankBaseStats checks the per-rank baseStats blocks: every key must
+// be a stat a unit may carry a base for (statBaseAuthorable — the same set
+// UnitDef.BaseStats accepts, which excludes anything with a typed field so there
+// is never a double source), values finite, and no stat decreasing as the unit
+// promotes.
+//
+// The monotonic rule is the load-time twin of the editor's floor. These are
+// ABSOLUTE totals, so a gold value below silver's would make a promoted unit
+// weaker at a stat — a regression nothing else would surface.
+func validatePathRankBaseStats(pathID string, ranks map[string]pathRankStatsJSON) error {
+	best := map[string]float64{}
+	for _, rank := range pathRankOrder {
+		stats := ranks[rank].BaseStats
+		if len(stats) == 0 {
+			continue
+		}
+		ids := make([]string, 0, len(stats))
+		for id := range stats {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids) // deterministic error messages
+		for _, id := range ids {
+			if !isBaseAuthorableStat(id) {
+				return fmt.Errorf("path %q: ranks[%q].baseStats[%q] is not a stat a unit can carry a base for (allowed: %v)",
+					pathID, rank, id, baseAuthorableStatIDs())
+			}
+			v := stats[id]
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				return fmt.Errorf("path %q: ranks[%q].baseStats[%q] must be finite, got %v", pathID, rank, id, v)
+			}
+			if prev, seen := best[id]; seen && v < prev {
+				return fmt.Errorf("path %q: ranks[%q].baseStats[%q] is %v, below the %v carried from an earlier rank — a promotion must never weaken a unit",
+					pathID, rank, id, v, prev)
+			}
+			best[id] = v
+		}
+	}
+	return nil
 }

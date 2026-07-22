@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
-import PreviewSceneControls from './PreviewSceneControls.vue'
+import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import PreviewSceneControls, { type PreviewSceneConfig } from './PreviewSceneControls.vue'
+
+// lastConfig reads the most recent emitted scene config.
+function lastConfig(wrapper: ReturnType<typeof mount>): PreviewSceneConfig {
+  const events = wrapper.emitted('update:modelValue')!
+  return events[events.length - 1][0] as PreviewSceneConfig
+}
 
 describe('PreviewSceneControls', () => {
   describe('force-branch toggles', () => {
@@ -176,5 +182,88 @@ describe('PreviewSceneControls', () => {
     expect(wrapper.find('[data-test="preview-caster-charge"]').exists()).toBe(false)
     emitted = wrapper.emitted('update:modelValue')!
     expect((emitted[emitted.length - 1][0] as { casterCharge: number }).casterCharge).toBe(0)
+  })
+})
+
+// The caster picker and rank selector are what make CASTER-SCALED abilities
+// testable: deal_damage's adRatio/apRatio read the caster's stats, and byRank
+// varies an ability's own numbers, so a preview locked to one hardcoded unit at
+// one rank could show neither.
+describe('PreviewSceneControls caster + rank', () => {
+  it('defaults both to empty so the harness default (adept) is used', async () => {
+    const wrapper = mount(PreviewSceneControls)
+    await flushPromises()
+
+    const last = lastConfig(wrapper)
+    expect(last.casterUnitType).toBe('')
+    expect(last.casterRank).toBe('')
+  })
+
+  // Also covers that the picker is CATALOG-DRIVEN: with the fetch stubbed the
+  // option exists and can be chosen, so the list can never offer a unit the
+  // catalog doesn't have.
+  it('lists catalog units and emits the chosen one', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ units: [{ type: 'archer', name: 'Archer' }, { type: 'adept', name: 'Adept' }] }),
+    })))
+    const wrapper = mount(PreviewSceneControls)
+    await flushPromises()
+
+    const select = wrapper.find('[data-test="preview-caster-unit"]')
+    const values = select.findAll('option').map((o) => o.attributes('value'))
+    expect(values).toEqual(['', 'adept', 'archer']) // default first, then sorted by label
+
+    await select.setValue('archer')
+    expect(lastConfig(wrapper).casterUnitType).toBe('archer')
+    vi.unstubAllGlobals()
+  })
+
+  it('emits the chosen rank', async () => {
+    const wrapper = mount(PreviewSceneControls)
+    await flushPromises()
+
+    await wrapper.find('[data-test="preview-caster-rank"]').setValue('gold')
+    expect(lastConfig(wrapper).casterRank).toBe('gold')
+  })
+
+  // The path is what turns a rank into real stats, and a path belongs to ONE
+  // unit — so the options must follow the chosen caster, and a leftover
+  // selection must not survive a caster change into an incoherent pair.
+  it('offers the chosen caster paths and clears the path when the caster changes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        units: [{ type: 'archer', name: 'Archer' }, { type: 'adept', name: 'Adept' }],
+        pathsByUnit: { archer: ['marksman', 'trapper'], adept: ['arch_mage'] },
+      }),
+    })))
+    const wrapper = mount(PreviewSceneControls)
+    await flushPromises()
+
+    await wrapper.find('[data-test="preview-caster-unit"]').setValue('archer')
+    await flushPromises()
+
+    const pathValues = wrapper.find('[data-test="preview-caster-path"]').findAll('option').map((o) => o.attributes('value'))
+    expect(pathValues).toEqual(['', 'marksman', 'trapper'])
+
+    await wrapper.find('[data-test="preview-caster-path"]').setValue('trapper')
+    expect(lastConfig(wrapper).casterPath).toBe('trapper')
+
+    // Switching caster must drop the now-invalid path.
+    await wrapper.find('[data-test="preview-caster-unit"]').setValue('adept')
+    await flushPromises()
+    expect(lastConfig(wrapper).casterPath).toBe('')
+
+    vi.unstubAllGlobals()
+  })
+
+  it('always offers the default option even when the catalog fetch fails', async () => {
+    const wrapper = mount(PreviewSceneControls)
+    await flushPromises()
+
+    const options = wrapper.find('[data-test="preview-caster-unit"]').findAll('option')
+    expect(options.length).toBeGreaterThanOrEqual(1)
+    expect(options[0].attributes('value')).toBe('')
   })
 })

@@ -1,6 +1,9 @@
 package game
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // TestPathCatalog_ShippedPathsHaveAllRanks pins the structural invariants —
 // every shipped promotion path has all three rank rows loaded with positive
@@ -15,7 +18,11 @@ func TestPathCatalog_ShippedPathsHaveAllRanks(t *testing.T) {
 	for _, p := range paths {
 		for _, r := range ranks {
 			mod := pathModifierFor(p, r)
-			if mod == identityPathModifier {
+			// Compare the discriminating fields rather than the whole struct:
+			// pathModifierDef carries a BaseStats map now, so == is illegal.
+			// identityPathModifier is the "no row found" sentinel, whose Path
+			// and Rank are empty.
+			if mod.Path == "" && mod.Rank == "" {
 				t.Errorf("%s/%s resolved to identityPathModifier — missing catalog row?", p, r)
 				continue
 			}
@@ -49,7 +56,8 @@ func TestPathCatalog_NoneUsesGoDefaultCurve(t *testing.T) {
 	for _, r := range []string{unitRankBronze, unitRankSilver, unitRankGold} {
 		got := pathModifierFor(unitPathNone, r)
 		want := defaultRankCurve[r]
-		if got != want {
+		// reflect.DeepEqual, not ==: pathModifierDef carries a BaseStats map now.
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: got %+v, want %+v (must come from defaultRankCurve)", r, got, want)
 		}
 	}
@@ -64,7 +72,7 @@ func TestPathCatalog_BaseRankAlwaysIdentity(t *testing.T) {
 	paths := []string{unitPathNone, unitPathVanguard, unitPathBerserker, unitPathTrapper, unitPathMarksman, unitPathCleric, unitPathSiphoner, unitPathArchMage}
 	for _, path := range paths {
 		got := pathModifierFor(path, unitRankBase)
-		if got != identityPathModifier {
+		if !reflect.DeepEqual(got, identityPathModifier) {
 			t.Errorf("base rank for %q: got %+v, want identity %+v", path, got, identityPathModifier)
 		}
 	}
@@ -76,7 +84,7 @@ func TestPathCatalog_BaseRankAlwaysIdentity(t *testing.T) {
 // with unmodified base stats — obvious to QA, not a silent mis-match.
 func TestPathCatalog_UnknownPathFallsBackToIdentity(t *testing.T) {
 	got := pathModifierFor("not_a_real_path", unitRankSilver)
-	if got != identityPathModifier {
+	if !reflect.DeepEqual(got, identityPathModifier) {
 		t.Errorf("unknown path should fall back to identity; got %+v", got)
 	}
 }

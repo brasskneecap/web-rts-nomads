@@ -1,6 +1,9 @@
 package game
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // TestPathCatalogAccessors_MatchDirectMapReads locks the concurrency-safe
 // accessor layer added on top of the 10 package-global path-catalog maps in
@@ -17,7 +20,10 @@ func TestPathCatalogAccessors_MatchDirectMapReads(t *testing.T) {
 	if !wantOk {
 		t.Fatalf("setup: pathModifiersByKey[%q] missing — catalog not loaded?", key)
 	}
-	if gotOk != wantOk || gotMod != wantMod {
+	// reflect.DeepEqual, not ==: pathModifierDef now carries a BaseStats map
+	// (per-rank absolute values for fieldless stats), and a struct containing a
+	// map is not comparable.
+	if gotOk != wantOk || !reflect.DeepEqual(gotMod, wantMod) {
 		t.Errorf("pathModifierLookup(%q) = (%+v, %v), want (%+v, %v)", key, gotMod, gotOk, wantMod, wantOk)
 	}
 	if gotMod.Path != unitPathCleric {

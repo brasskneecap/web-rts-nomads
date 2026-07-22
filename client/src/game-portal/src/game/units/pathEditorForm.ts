@@ -62,6 +62,11 @@ export interface AuthoredPathDef {
   // (see perksByRank). Key presence, not array length, is what marks a rank
   // as an Ability slot — see rankSlotType in UnitTypeEditorPanel.vue.
   abilityPoolsByRank?: Record<string, string[]>
+  /** BROAD ability modifiers a unit on this path carries at a given rank —
+   *  rank -> ability-stat id -> {flat, pct}. TOTALS per rank, not additions:
+   *  gold's block replaces silver's, so the editor (and the server, at load)
+   *  floors each rank at the one before it. Server: PathDef.AbilityStatsByRank. */
+  abilityStatsByRank?: Record<string, Record<string, { flat?: number; pct?: number }>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
@@ -74,6 +79,7 @@ const MODELED_PATH_KEYS = [
   'path', 'description', 'visionRange', 'projectile', 'damageType', 'attackType',
   'projectileScale', 'abilities', 'channelLoop', 'bounds', 'ranks', 'attackOrigin', 'perksByRank',
   'abilityPoolsByRank',
+  'abilityStatsByRank',
 ] as const
 
 export interface PathEditorForm extends AuthoredPathDef {

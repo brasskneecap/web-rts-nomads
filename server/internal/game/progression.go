@@ -102,6 +102,12 @@ type pathModifierDef struct {
 	BlockChance           float64
 	// VisionRange is a per-rank flat override (world pixels); 0 = no override.
 	VisionRange float64
+	// BaseStats are ABSOLUTE per-rank values for registered stats with no typed
+	// field (abilityPower, critChance, lifesteal, ...). Applied in
+	// applyRankModifiersLocked by writing onto Unit.BaseStats, so every existing
+	// read site (unitBaseStat -> effectiveStatLocked) picks them up unchanged.
+	// See pathRankStatsJSON.BaseStats for why absolute rather than multiplied.
+	BaseStats map[string]float64
 }
 
 // Armor tuning. Damage reduction follows reduction = armor / (armor + armorMitigationK).
@@ -429,6 +435,19 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	unit.Damage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*pathDef.DamageMultiplier)))
 	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*pathDef.AttackSpeedMultiplier)
 	unit.MoveSpeed = math.Max(1.0, unit.BaseMoveSpeed*pathDef.MoveSpeedMultiplier)
+	// Per-rank base stats OVERWRITE the unit's own base for that stat — they are
+	// absolute totals, not additions (see pathModifierDef.BaseStats). Written
+	// onto Unit.BaseStats so every existing consumer (unitBaseStat, and through
+	// it effectiveStatLocked) picks them up with no new read site. A stat the
+	// rank does not author is left exactly as the unit type authored it.
+	if len(pathDef.BaseStats) > 0 {
+		if unit.BaseStats == nil {
+			unit.BaseStats = make(map[string]float64, len(pathDef.BaseStats))
+		}
+		for stat, value := range pathDef.BaseStats {
+			unit.BaseStats[stat] = value
+		}
+	}
 	unit.Armor = pathDef.Armor
 	unit.PathDodgeChance = pathDef.DodgeChance
 	unit.PathBlockChance = pathDef.BlockChance

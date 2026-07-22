@@ -54,6 +54,58 @@
           @input="onDurationInput"
         />
       </EditorField>
+      <!-- WHO casts, and at what rank. Both matter because an ability's damage
+           can scale off its caster (deal_damage's adRatio/apRatio) and its
+           numbers can vary by rank (byRank) — previewing against one hardcoded
+           unit showed neither. Blank = the harness default (an adept). -->
+      <EditorField label="Caster" for-id="pv-caster" inline class="pv-scene__field">
+        <select
+          id="pv-caster"
+          class="pv-scene__select"
+          :value="casterUnitType"
+          data-test="preview-caster-unit"
+          @change="onCasterUnitTypeChange"
+        >
+          <option value="">Default (adept)</option>
+          <option v-for="u in casterOptions" :key="u.type" :value="u.type">{{ u.label }}</option>
+        </select>
+      </EditorField>
+      <EditorField label="Rank" for-id="pv-rank" inline class="pv-scene__field">
+        <select
+          id="pv-rank"
+          class="pv-scene__select"
+          :value="casterRank"
+          data-test="preview-caster-rank"
+          @change="onCasterRankChange"
+        >
+          <option value="">Default</option>
+          <option value="bronze">Bronze</option>
+          <option value="silver">Silver</option>
+          <option value="gold">Gold</option>
+        </select>
+      </EditorField>
+      <!-- The path is what turns a rank into real stats (pathModifierFor), so
+           without it a ranked preview uses a generic curve no real unit has.
+           Options are the paths belonging to the CHOSEN caster, so the pair can
+           never be incoherent. -->
+      <EditorField
+        v-if="pathOptions.length > 0"
+        label="Path"
+        for-id="pv-path"
+        inline
+        class="pv-scene__field"
+      >
+        <select
+          id="pv-path"
+          class="pv-scene__select"
+          :value="casterPath"
+          data-test="preview-caster-path"
+          @change="onCasterPathChange"
+        >
+          <option value="">None (generic curve)</option>
+          <option v-for="p in pathOptions" :key="p" :value="p">{{ humanizePath(p) }}</option>
+        </select>
+      </EditorField>
       <!-- Only for charge-fire passives (arcane_missiles): seed the caster's
            Arcane Charge so the passive fires. Prefilled to the ability's own
            chargeRequired so one volley is ready by default; bump it to test
@@ -145,6 +197,12 @@ export interface PreviewSceneConfig {
   seed: number
   durationSeconds: number
   casterCharge: number
+  /** Which unit casts, and at what rank. Empty = the harness default (adept,
+      spawn rank). See PreviewRequest.casterUnitType. */
+  casterUnitType: string
+  casterRank: string
+  /** Promotion path — what actually determines a rank's stats. */
+  casterPath: string
   /** Forced outcomes for named `conditional` actions, keyed by action id. See
       the template comment on the Force-branches block, and Go's
       PreviewRequest.ConditionalOverrides. Empty for a program with no
@@ -182,6 +240,63 @@ const targetSelector = ref<TargetSelector>('first_enemy')
 const seed = ref(seedDefaults.seed)
 const durationSeconds = ref(seedDefaults.durationSeconds)
 const casterCharge = ref(seedDefaults.casterCharge)
+const casterUnitType = ref('')
+const casterRank = ref('')
+const casterPath = ref('')
+
+// Caster options come from the unit catalog, so the picker can never offer a
+// unit that no longer exists. A failed fetch leaves the list empty, which
+// degrades to "Default (adept) only" rather than to a wrong list — and the
+// server independently falls back for an unknown type, so a stale selection
+// still previews rather than erroring.
+const casterOptions = ref<{ type: string; label: string }[]>([])
+const pathsByUnit = ref<Record<string, string[]>>({})
+
+// Paths belonging to the SELECTED caster (the catalog's own pathsByUnit map), so
+// the two pickers can never describe a unit/path pair that doesn't exist. The
+// default caster is the adept, so its paths show before anything is chosen.
+const pathOptions = computed(() => pathsByUnit.value[casterUnitType.value || 'adept'] ?? [])
+
+function humanizePath(id: string): string {
+  return id
+    .split('_')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+async function loadCasterOptions() {
+  try {
+    const res = await fetch('/catalog/units')
+    if (!res.ok) return
+    const body = (await res.json()) as {
+      units?: { type: string; name?: string }[]
+      pathsByUnit?: Record<string, string[]>
+    }
+    casterOptions.value = (body.units ?? [])
+      .map((u) => ({ type: u.type, label: u.name || u.type }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+    pathsByUnit.value = body.pathsByUnit ?? {}
+  } catch {
+    // Offline / server down — see the comment above.
+  }
+}
+void loadCasterOptions()
+
+function onCasterUnitTypeChange(e: Event) {
+  casterUnitType.value = (e.target as HTMLSelectElement).value
+  // A path belongs to ONE unit, so a leftover selection would describe a pair
+  // that doesn't exist. Clear it rather than send an incoherent request.
+  casterPath.value = ''
+}
+
+function onCasterPathChange(e: Event) {
+  casterPath.value = (e.target as HTMLSelectElement).value
+}
+
+function onCasterRankChange(e: Event) {
+  casterRank.value = (e.target as HTMLSelectElement).value
+}
 
 // conditionalOverrides holds ONLY the conditionals the author has actually
 // toggled. An id absent from this map is sent as no override at all, so the
@@ -229,6 +344,9 @@ const config = computed<PreviewSceneConfig>(() => ({
   seed: seed.value,
   durationSeconds: durationSeconds.value,
   casterCharge: casterCharge.value,
+  casterUnitType: casterUnitType.value,
+  casterRank: casterRank.value,
+  casterPath: casterPath.value,
   conditionalOverrides: { ...conditionalOverrides.value },
 }))
 

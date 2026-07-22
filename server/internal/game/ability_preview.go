@@ -118,6 +118,29 @@ type PreviewRequest struct {
 	// finds a hostile in range. Ignored for any ability that isn't a charge-fire
 	// passive (the charge is simply never read). Default 0.
 	CasterCharge    float64 `json:"casterCharge"`
+	// CasterUnitType overrides which catalog unit casts the ability. Empty uses
+	// previewCasterUnitType (the adept).
+	//
+	// This is the seam that makes CASTER-SCALED abilities testable at all: an
+	// adRatio reads the caster's attack damage and an apRatio its ability power,
+	// so previewing those against one hardcoded unit tells you nothing about the
+	// unit that will actually cast it. An unknown type falls back to the default
+	// rather than failing the run — the editor's picker is catalog-driven, so a
+	// stale value means the unit was renamed, not that the preview is invalid.
+	CasterUnitType string `json:"casterUnitType,omitempty"`
+	// CasterRank previews the caster at bronze/silver/gold. Empty leaves the
+	// spawn rank. Rank drives BOTH the unit's own stat multipliers and an
+	// ability's byRank field overrides (AbilityRankOverride), so this is the
+	// only way to see what an ability does at gold without editing a unit.
+	CasterRank string `json:"casterRank,omitempty"`
+	// CasterPath is the PROMOTION PATH the ranked caster is on, and it is not
+	// optional detail: pathModifierFor(path, rank) is what turns a rank into
+	// actual stats, and a pathless unit falls back to defaultRankCurve — a
+	// GENERIC curve, not the numbers any real gold unit has. Previewing rank
+	// without a path therefore shows a unit that never exists in a match.
+	// Empty leaves the unit pathless (the generic curve). Unknown paths are
+	// ignored, like CasterUnitType/CasterRank.
+	CasterPath string `json:"casterPath,omitempty"`
 	DurationSeconds float64 `json:"durationSeconds"`
 	// ConditionalOverrides forces named `conditional` actions to a fixed
 	// outcome, keyed by the conditional's authored action id: true takes THEN,
@@ -255,10 +278,18 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 		PhysicalDamageMultiplier: 1.0, MagicDamageMultiplier: 1.0,
 	}
 
-	caster := s.spawnPlayerUnitLocked(previewCasterUnitType, previewCasterOwner, "#3498db", protocol.Vec2{X: req.CasterX, Y: req.CasterY})
+	casterType := req.CasterUnitType
+	if casterType == "" {
+		casterType = previewCasterUnitType
+	} else if _, known := getUnitDef(casterType); !known {
+		// Renamed/removed since the picker was last populated — degrade to the
+		// default rather than failing the whole run.
+		casterType = previewCasterUnitType
+	}
+	caster := s.spawnPlayerUnitLocked(casterType, previewCasterOwner, "#3498db", protocol.Vec2{X: req.CasterX, Y: req.CasterY})
 	if caster == nil {
 		s.mu.Unlock()
-		err := fmt.Errorf("preview: failed to spawn caster unit type %q", previewCasterUnitType)
+		err := fmt.Errorf("preview: failed to spawn caster unit type %q", casterType)
 		res.Error = err.Error()
 		return res, err
 	}
@@ -303,6 +334,27 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	// exactly one cast, never a second unrequested one.
 	caster.Abilities = []string{pdef.ID}
 	caster.AutoCastEnabled = nil
+	// Rank AFTER the loadout/stat overrides above, and re-applied through the
+	// real progression path: applyRankModifiersLocked scales the unit's Base*
+	// stats, and an ability's own byRank overrides key off caster.Rank at
+	// execute time. Setting the field alone would give the byRank half without
+	// the unit-stat half, which is exactly the mismatch that makes a preview
+	// lie about what gold looks like.
+	// Path BEFORE rank: applyRankModifiersLocked reads ProgressionPath to pick
+	// the multiplier row, so setting the path afterwards would apply the generic
+	// curve and then silently keep it.
+	if req.CasterPath != "" && knownPreviewPath(req.CasterPath) {
+		caster.ProgressionPath = req.CasterPath
+	}
+	if req.CasterRank != "" {
+		switch req.CasterRank {
+		case unitRankBronze, unitRankSilver, unitRankGold:
+			caster.Rank = req.CasterRank
+			s.applyRankModifiersLocked(caster, false)
+		}
+		// An unrecognized rank is ignored, matching the unknown-unit-type
+		// degrade above: a stale editor value must not fail the run.
+	}
 	s.initializeCombatUnitLocked(caster)
 	// Seed Arcane Charge so a charge-fire passive (arcane_missiles) can be
 	// previewed: with the ability under test as the caster's only ability and
@@ -471,4 +523,19 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	s.mu.Unlock()
 
 	return res, nil
+}
+
+// knownPreviewPath reports whether a path id exists in the catalog. Guards the
+// preview's CasterPath against a stale editor value: an unknown path must leave
+// the caster pathless (the generic rank curve) rather than silently pretending
+// to be a path that no longer exists.
+func knownPreviewPath(path string) bool {
+	for _, paths := range ListPathsByUnitType() {
+		for _, p := range paths {
+			if p == path {
+				return true
+			}
+		}
+	}
+	return false
 }

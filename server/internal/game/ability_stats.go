@@ -79,6 +79,16 @@ func (s *GameState) collectAbilityStatSourcesLocked(caster *Unit) []abilityStatS
 		out = append(out, abilityStatSource{id: "unit:" + caster.UnitType, stats: caster.AbilityStats})
 	}
 
+	// Promotion path at the unit's CURRENT rank. Absolute per rank, so this is
+	// the whole path contribution — gold's block already includes silver's (the
+	// editor floors each rank at the previous one, and
+	// validatePathAbilityStatsByRank enforces it for hand-edited files).
+	// Resolved fresh here rather than baked at rank-up so a promotion takes
+	// effect the same tick, like every other rank-driven value.
+	if stats := pathAbilityStatsFor(caster.ProgressionPath, caster.Rank); len(stats) > 0 {
+		out = append(out, abilityStatSource{id: "path:" + caster.ProgressionPath + ":" + caster.Rank, stats: stats})
+	}
+
 	for _, eq := range caster.Equipped {
 		if eq == nil || eq.ItemID == "" {
 			continue
@@ -140,7 +150,9 @@ func (s *GameState) applyAbilityStatsToConfigLocked(caster *Unit, action ActionT
 	}
 	// Cheap bail before any JSON work: does this caster carry ability stats at
 	// all? Every unit without an item or an authored block exits here.
-	if len(caster.AbilityStats) == 0 && !casterHasItemAbilityStats(caster) {
+	if len(caster.AbilityStats) == 0 &&
+		len(pathAbilityStatsFor(caster.ProgressionPath, caster.Rank)) == 0 &&
+		!casterHasItemAbilityStats(caster) {
 		return config
 	}
 	desc, ok := lookupActionDescriptor(action)

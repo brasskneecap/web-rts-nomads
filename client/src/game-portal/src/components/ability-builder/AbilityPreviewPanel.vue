@@ -192,6 +192,9 @@ const sceneConfig = ref<PreviewSceneConfig>({
   seed: 1,
   durationSeconds: 3,
   casterCharge: 0,
+  casterUnitType: '',
+  casterRank: '',
+  casterPath: '',
   conditionalOverrides: {},
 })
 
@@ -507,6 +510,9 @@ async function onRun() {
       castX: d.castX,
       castY: d.castY,
       casterCharge: sceneConfig.value.casterCharge,
+      casterUnitType: sceneConfig.value.casterUnitType,
+      casterRank: sceneConfig.value.casterRank,
+      casterPath: sceneConfig.value.casterPath,
       seed: sceneConfig.value.seed,
       durationSeconds: sceneConfig.value.durationSeconds,
       conditionalOverrides: sceneConfig.value.conditionalOverrides,

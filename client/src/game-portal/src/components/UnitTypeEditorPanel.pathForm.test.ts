@@ -57,7 +57,7 @@ async function selectMarksman(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('UnitTypeEditorPanel path form — selecting an existing path', () => {
-  it('shows the locked action-bar id, the per-rank vision override, and a resolved rank-grid cell', async () => {
+  it('shows the locked action-bar id, the per-rank vision override, and a resolved rank stat', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
@@ -68,12 +68,13 @@ describe('UnitTypeEditorPanel path form — selecting an existing path', () => {
     expect((idInput.element as HTMLInputElement).value).toBe('marksman')
     expect(idInput.attributes('disabled')).toBeDefined()
 
-    // Vision Range is now a per-rank flat override — bronze authored 7.
-    const bronzeVision = wrapper.find('input[data-rank="bronze"][data-field="visionRange"]')
+    // Vision Range is a per-rank flat override — bronze authored 7. Selectors
+    // are rank-scoped because every rank tab is mounted at once (v-show).
+    const bronzeVision = wrapper.find('[data-test="rank-bronze-add-visionRange"]')
     expect((bronzeVision.element as HTMLInputElement).value).toBe('7')
 
-    // Rank grid: base 18 damage × 1.5 = 27, resolved inline — proves the parent
-    // unit's real stats reached the grid.
+    // base 18 damage × 1.5 = 27, resolved inline — proves the parent unit's
+    // real stats reached the per-rank panel.
     const rankText = wrapper.text()
     expect(rankText).toContain('18')
     expect(rankText).toContain('27')
@@ -375,5 +376,138 @@ describe('UnitTypeEditorPanel path form — base-unit mode regression', () => {
     // Path-only sections must not leak into base-unit mode.
     expect(wrapper.text()).not.toContain('Perk Pools')
     expect(wrapper.text()).not.toContain('Rank Stats')
+  })
+})
+
+// The three rank tabs each own one block (slot + stats + ability stats). This
+// exists because they shipped EMPTY: v-for and v-show were on the same element,
+// and the shown/hidden state did not track the active tab — every rank block
+// stayed display:none no matter which tab was selected. Neither type-checking
+// nor a text assertion catches that, because v-show keeps the content in the
+// DOM; only the computed visibility shows it.
+describe('UnitTypeEditorPanel path form — rank tabs', () => {
+  it('shows exactly the selected rank block and hides the others', async () => {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    const hidden = (i: number) =>
+      wrapper.findAll('.unit-editor__rank-slot-stack')[i].attributes('style')?.includes('display: none') ?? false
+
+    // Identity is the default tab: no rank block is showing.
+    expect([hidden(0), hidden(1), hidden(2)]).toEqual([true, true, true])
+
+    for (const [i, rank] of ['bronze', 'silver', 'gold'].entries()) {
+      await wrapper.find(`[data-test="unit-path-tab-${rank}"]`).trigger('click')
+      await flushPromises()
+      expect(
+        [hidden(0), hidden(1), hidden(2)],
+        `after selecting ${rank}, only its block should show`,
+      ).toEqual([0, 1, 2].map((n) => n !== i))
+    }
+  })
+
+  it('gives each rank tab its slot, stats and ability-stats cards', async () => {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    await wrapper.find('[data-test="unit-path-tab-silver"]').trigger('click')
+    await flushPromises()
+
+    const silver = wrapper.findAll('.unit-editor__rank-slot-stack')[1]
+    expect(silver.find('[data-test="slot-type-silver"]').exists()).toBe(true)
+    expect(silver.find('[data-test="rank-silver-mult-maxHPMultiplier"]').exists()).toBe(true)
+    // Inheritance context — silver must say what bronze already gave.
+    expect(silver.text()).toContain('carry forward from')
+  })
+})
+
+// A stat added to the UNIT must show in the rank tabs immediately. It used to
+// require saving first, because the rank panels read the loaded catalog rather
+// than the live form — so the author had to commit a change to find out what it
+// would do, which is the opposite of how the rest of this editor behaves.
+describe('UnitTypeEditorPanel path form — unit stats reach the ranks live', () => {
+  it('mirrors a base stat added to the unit without a save', async () => {
+    stubCatalogFetch({
+      '/catalog/units': {
+        units: [
+          {
+            type: 'archer', name: 'Archer', faction: 'human',
+            hp: 120, damage: 18, attackSpeed: 1.2, moveSpeed: 60, attackRange: 5,
+            // Nothing authored on disk — the row must come from the live edit.
+          },
+        ],
+      },
+    })
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    // Not there yet.
+    expect(wrapper.find('[data-test="rank-bronze-base-abilityPower"]').exists()).toBe(false)
+
+    // Simulate the unit's Base Stats row being added, WITHOUT saving.
+    const vm = wrapper.vm as unknown as { form: { baseStats?: Record<string, number> } }
+    vm.form.baseStats = { abilityPower: 20 }
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="rank-bronze-base-abilityPower"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('inherits 20 from the unit')
+  })
+})
+
+// Per-rank unit stats: introduce one at a rank, and it must reach EVERY higher
+// rank and disappear from all of them when taken back.
+describe('UnitTypeEditorPanel path form — unit stats across ranks', () => {
+  async function openBronze() {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+    await wrapper.find('[data-test="unit-path-tab-bronze"]').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  // Inheritance is TRANSITIVE. Looking only one rank back meant a value set at
+  // bronze vanished from gold whenever silver happened to author nothing — so
+  // gold had no inherited value and no floor, and could be set below bronze.
+  it('carries a bronze stat up to gold through an untouched silver', async () => {
+    const wrapper = await openBronze()
+    await wrapper.find('[data-test="rank-bronze-add-stat"]').setValue('abilityPower')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="rank-silver-base-abilityPower"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="rank-gold-base-abilityPower"]').exists()).toBe(true)
+  })
+
+  // Only the rank that OWNS the value gets an ✕; the ranks inheriting it do not.
+  it('offers the remove only on the rank that set it', async () => {
+    const wrapper = await openBronze()
+    await wrapper.find('[data-test="rank-bronze-add-stat"]').setValue('abilityPower')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="rank-bronze-remove-abilityPower"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="rank-silver-remove-abilityPower"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="rank-gold-remove-abilityPower"]').exists()).toBe(false)
+  })
+
+  it('clears the stat from every rank when the owning rank removes it', async () => {
+    const wrapper = await openBronze()
+    await wrapper.find('[data-test="rank-bronze-add-stat"]').setValue('abilityPower')
+    await flushPromises()
+
+    await wrapper.find('[data-test="rank-bronze-remove-abilityPower"]').trigger('click')
+    await flushPromises()
+
+    for (const rank of ['bronze', 'silver', 'gold']) {
+      expect(
+        wrapper.find(`[data-test="rank-${rank}-base-abilityPower"]`).exists(),
+        `${rank} should no longer show the stat`,
+      ).toBe(false)
+    }
   })
 })
