@@ -746,13 +746,15 @@
                    AbilityStatsByRank). Same grid the unit and item editors
                    use, so the authored shape is identical everywhere. -->
               <SectionCard title="Rank Ability Stats" :index="3">
-                <p v-if="previousRankOf(rank)" class="unit-hint">
-                  Totals, not additions — these replace {{ previousRankOf(rank) }}'s, so they
-                  must be at least as high.
+                <p class="unit-hint">
+                  Totals, not additions — these replace what the unit and lower ranks
+                  set, so they must be at least as high.
                 </p>
                 <AbilityStatsEditor
                   :model-value="rankAbilityStatsFor(rank)"
                   :defs="abilityStatDefs"
+                  :inherited="accumulatedAbilityStatsBelow(rank)"
+                  inherited-from="below"
                   :empty-text="`No ability stats at ${rank} — abilities use their authored values.`"
                   @update:model-value="onRankAbilityStatsUpdate(rank, $event)"
                 />
@@ -1419,6 +1421,20 @@ function onRankStatsUpdate(rank: string, stats: Record<string, number | undefine
 // meant a newly-added stat did not appear in the rank tabs until the unit was
 // saved — the author had to commit a change to find out what it would do, which
 // is the opposite of how the rest of this editor behaves.
+// The parent unit's OWN broad ability stats (its Ability Stats section). Live
+// form first, so an edit shows in the rank tabs without a save — same rule as
+// parentUnitBaseStats below.
+const parentUnitAbilityStats = computed<Record<string, { flat?: number; pct?: number }>>(() => {
+  const parent = pathForm.value?.parentUnit
+  if (parent && form.value.type === parent) {
+    return (form.value.abilityStats ?? {}) as Record<string, { flat?: number; pct?: number }>
+  }
+  return (units.value.find((u) => u.type === parent)?.abilityStats ?? {}) as Record<
+    string,
+    { flat?: number; pct?: number }
+  >
+})
+
 const parentUnitBaseStats = computed<Record<string, number>>(() => {
   const parent = pathForm.value?.parentUnit
   if (parent && form.value.type === parent) {
@@ -1444,6 +1460,23 @@ function rankBaseStatsFor(rank: string): Record<string, number> {
   return ((pathForm.value?.ranks?.[rank] as Record<string, unknown> | undefined)?.baseStats ?? {}) as Record<string, number>
 }
 
+// The ability-stat half of accumulatedBelow — same transitive rule, so a stat
+// introduced at bronze reaches gold even when silver authors nothing.
+//
+// STARTS FROM THE PARENT UNIT'S OWN abilityStats. A unit that grants "+15%
+// radius" already grants it at every rank, so bronze must show it as inherited
+// and floor against it — exactly as the unit's baseStats seed the per-rank unit
+// stats. Without this a rank could be authored BELOW what the unit itself gives,
+// and the author had no idea the unit gave anything.
+function accumulatedAbilityStatsBelow(rank: string): Record<string, { flat?: number; pct?: number }> {
+  const out: Record<string, { flat?: number; pct?: number }> = { ...parentUnitAbilityStats.value }
+  for (const r of PERK_RANK_ORDER) {
+    if (r === rank) break
+    Object.assign(out, rankAbilityStatsFor(r))
+  }
+  return out
+}
+
 // The fieldless-stat half of accumulatedBelow — same transitive rule.
 function accumulatedBaseStatsBelow(rank: string): Record<string, number> {
   const out: Record<string, number> = {}
@@ -1466,32 +1499,19 @@ function rankAbilityStatsFor(rank: string): Record<string, { flat?: number; pct?
   return pathForm.value?.abilityStatsByRank?.[rank] ?? {}
 }
 
-// A rank's ability stats are TOTALS, not additions, so the floor is the previous
-// rank's value — the same rule the stat block follows, and the same one the
-// server enforces at load (validatePathAbilityStatsByRank). Clamping here means
-// a hand-typed regression is corrected at the point of authoring rather than
-// rejected later on save.
+// Stores exactly what the editor emits. The FLOOR is applied inside
+// AbilityStatsEditor, on commit, against the same accumulated-below map passed
+// in as `inherited` — re-flooring here as well was actively harmful: it inflated
+// an UNTOUCHED inherited row back up to the inherited number and stored it, so
+// a rank silently came to own a value it was only displaying.
 function onRankAbilityStatsUpdate(
   rank: string,
   stats: Record<string, { flat?: number; pct?: number }>,
 ) {
   if (!pathForm.value) return
-  const prev = rankAbilityStatsFor(previousRankOf(rank))
-  const floored: Record<string, { flat?: number; pct?: number }> = {}
-  for (const [id, mod] of Object.entries(stats)) {
-    const floor = prev[id]
-    if (!floor) {
-      floored[id] = mod
-      continue
-    }
-    const next: { flat?: number; pct?: number } = { ...mod }
-    if (floor.flat !== undefined && (next.flat ?? 0) < floor.flat) next.flat = floor.flat
-    if (floor.pct !== undefined && (next.pct ?? 0) < floor.pct) next.pct = floor.pct
-    floored[id] = next
-  }
   const byRank = { ...(pathForm.value.abilityStatsByRank ?? {}) }
-  if (Object.keys(floored).length === 0) delete byRank[rank]
-  else byRank[rank] = floored
+  if (Object.keys(stats).length === 0) delete byRank[rank]
+  else byRank[rank] = stats
   pathForm.value.abilityStatsByRank = Object.keys(byRank).length > 0 ? byRank : undefined
 }
 function pathSectionTab(key: string): string {

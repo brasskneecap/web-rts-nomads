@@ -59,33 +59,141 @@ describe('AbilityStatsEditor', () => {
     expect(w.find('[data-test="ability-stat-flatonly"]').exists()).toBe(false)
   })
 
-  // Regression guard: typing a percentage and THEN switching the row to a count
-  // must not ship a pct the server will reject and make the whole def unsaveable.
-  it('drops a percentage when the row is switched to a flat-only stat', async () => {
-    const w = mountEditor({ radius: { pct: 0.25 } })
-    const select = w.findComponent({ name: 'FilterableSelect' })
-    await select.vm.$emit('update:modelValue', 'count')
-    expect(lastEmit(w)).toEqual({ count: {} })
-  })
-
-  it('ignores a row whose stat has not been picked yet', async () => {
+  // A stat is chosen from the "Add a stat…" picker, exactly as the per-rank unit
+  // stats do it. The row then names a real stat from the moment it exists —
+  // there is no half-made row, which is what the old pick-from-the-row flow left
+  // lying around for a re-seed to destroy.
+  it('adds a row from the picker, with no value set', async () => {
     const w = mountEditor()
-    await w.find('button').trigger('click') // the RepeatableList "Add" button
+    expect(w.findAll('[data-test="ability-stat-row"]')).toHaveLength(0)
+
+    await w.find('[data-test="ability-stat-add"]').setValue('radius')
     expect(w.findAll('[data-test="ability-stat-row"]')).toHaveLength(1)
-    expect(lastEmit(w)).toEqual({})
+    expect(w.find('[data-test="ability-stat-name-radius"]').text()).toBe('Radius')
+    // Blank, not zero — nothing has been authored yet.
+    expect((w.find('[data-test="ability-stat-flat"]').element as HTMLInputElement).value).toBe('')
   })
 
-  // An id the server no longer offers must stay visible rather than silently
-  // vanishing from the picker and taking the authored value with it.
-  it('keeps an unknown authored id as an option', () => {
+  it('stops offering a stat that already has a row', () => {
+    const w = mountEditor({ radius: { pct: 0.1 } })
+    const values = w.find('[data-test="ability-stat-add"]').findAll('option').map((o) => o.attributes('value'))
+    expect(values).not.toContain('radius')
+    expect(values).toContain('duration')
+  })
+
+  // A flat-only stat must never carry a pct — the server rejects it outright and
+  // the whole def becomes unsaveable.
+  it('offers no percentage field for a flat-only stat', async () => {
+    const w = mountEditor()
+    await w.find('[data-test="ability-stat-add"]').setValue('count')
+    expect(w.find('[data-test="ability-stat-pct"]').exists()).toBe(false)
+    expect(w.find('[data-test="ability-stat-flatonly"]').exists()).toBe(true)
+  })
+
+  // An id the server no longer offers must still render as its own row rather
+  // than vanishing and taking the authored value with it.
+  it('keeps an unknown authored id as a row, labelled by its id', () => {
     const w = mountEditor({ 'gone.duration': { flat: 3 } })
-    const opts = w.findComponent({ name: 'FilterableSelect' }).props('options') as { id: string }[]
-    expect(opts.map((o) => o.id)).toContain('gone.duration')
+    expect(w.find('[data-test="ability-stat-name-gone.duration"]').text()).toBe('gone.duration')
   })
 
   it('omits a zero contribution rather than writing flat: 0', async () => {
     const w = mountEditor({ radius: { flat: 5 } })
     await w.find('[data-test="ability-stat-flat"]').setValue('0')
     expect(lastEmit(w)).toEqual({ radius: {} })
+  })
+})
+
+// Inheritance is used by the per-rank tabs (bronze -> silver -> gold). The unit
+// and item editors pass no `inherited` and keep the plain add/remove behaviour.
+describe('AbilityStatsEditor inheritance', () => {
+  function mountInheriting(authored: Record<string, { flat?: number; pct?: number }> = {}) {
+    return mount(AbilityStatsEditor, {
+      props: {
+        modelValue: authored,
+        defs: DEFS,
+        inherited: { duration: { flat: 5 } },
+        inheritedFrom: 'bronze',
+      },
+    })
+  }
+
+  // The inherited value shows as a FADED PLACEHOLDER in the field, not as a
+  // worded note — same treatment as the per-rank unit stats, and far less text
+  // per row now that rows sit side by side.
+  it('shows an inherited stat as a row with the value as a placeholder', () => {
+    const w = mountInheriting()
+    expect(w.findAll('[data-test="ability-stat-row"]')).toHaveLength(1)
+
+    const flat = w.find('[data-test="ability-stat-flat"]')
+    expect(flat.attributes('placeholder')).toBe('5')
+    // The field itself is BLANK — "not set here" must read differently from
+    // "set to the same value", or the remove rule and the emit would disagree.
+    expect((flat.element as HTMLInputElement).value).toBe('')
+  })
+
+  it('floors the inputs at the inherited value', () => {
+    const w = mountInheriting()
+    expect(w.find('[data-test="ability-stat-flat"]').attributes('min')).toBe('5')
+  })
+
+  // An inherited row is not this level's to remove or re-point.
+  it('offers no remove on an inherited row', () => {
+    const w = mountInheriting()
+    expect(w.find('[data-test="ability-stat-remove-duration"]').exists()).toBe(false)
+    expect(w.find('[data-test="ability-stat-name-duration"]').text()).toBe('Duration')
+  })
+
+  // THE SUBTLE ONE: displaying an inherited value must not make this level OWN
+  // it. Emitting it would give the row a remove button here, and taking the stat
+  // back at the rank that really set it would leave orphaned copies behind.
+  it('does not author an inherited value it merely displays', async () => {
+    const w = mountInheriting()
+    await w.vm.$nextTick()
+    const events = w.emitted('update:modelValue')
+    if (events) expect(events[events.length - 1][0]).toEqual({})
+  })
+
+  it('authors the value once it is raised above the inherited one', async () => {
+    const w = mountInheriting()
+    const flat = w.find('[data-test="ability-stat-flat"]')
+    await flat.setValue('9')
+    await flat.trigger('change')
+    const events = w.emitted('update:modelValue')!
+    expect(events[events.length - 1][0]).toEqual({ duration: { flat: 9 } })
+  })
+
+  it('clamps back up to the inherited value on commit', async () => {
+    const w = mountInheriting()
+    const flat = w.find('[data-test="ability-stat-flat"]')
+    await flat.setValue('2')
+    await flat.trigger('change')
+    expect((flat.element as HTMLInputElement).value).toBe('5')
+  })
+})
+
+// The rows are laid out by THIS component, not by RepeatableList: its .ed-list
+// is a flex column shared by every editor and also holds the empty text and the
+// add button, so styling it would have gridded those too. An earlier attempt
+// targeted class names RepeatableList does not have, so the CSS was dead and
+// every row stayed full-width.
+describe('AbilityStatsEditor layout', () => {
+  // Stacked like the per-rank unit stats: a plain NAME label above the fields,
+  // with the ✕ to the RIGHT of those fields.
+  it('puts the stat name above its fields and the remove beside them', () => {
+    const w = mountEditor({ radius: { pct: 0.1 } })
+    const row = w.find('[data-test="ability-stat-row"]')
+
+    expect(row.find('.abilstat-label').text()).toBe('Radius')
+    expect(row.find('.abilstat-fields [data-test="ability-stat-flat"]').exists()).toBe(true)
+    expect(row.find('.abilstat-fields [data-test="ability-stat-remove-radius"]').exists()).toBe(true)
+  })
+
+  it('wraps its rows in a grid, with the add picker outside it', () => {
+    const w = mountEditor({ radius: { pct: 0.1 }, duration: { flat: 2 } })
+
+    const grid = w.find('.abilstat-grid')
+    expect(grid.findAll('[data-test="ability-stat-row"]')).toHaveLength(2)
+    expect(grid.find('[data-test="ability-stat-add"]').exists()).toBe(false)
   })
 })

@@ -29,6 +29,13 @@ function stubCatalogFetch(overrides: Record<string, unknown> = {}) {
     '/catalog/projectiles': { projectiles: [] },
     '/catalog/abilities': { abilities: [] },
     '/catalog/damage-types': { damageTypes: [] },
+    // Ability-stat rows are server-derived; without them the "Add a stat…"
+    // picker has nothing to offer and does not render.
+    '/catalog/ability-stats': { stats: [
+      { id: 'radius', label: 'Radius', kind: 'radius' },
+      { id: 'duration', label: 'Duration', kind: 'duration' },
+      { id: 'count', label: 'Count', kind: 'count', flatOnly: true },
+    ] },
     '/catalog/buildings': { buildings: [] },
     ...overrides,
   }
@@ -509,5 +516,113 @@ describe('UnitTypeEditorPanel path form — unit stats across ranks', () => {
         `${rank} should no longer show the stat`,
       ).toBe(false)
     }
+  })
+})
+
+// Rank Ability Stats follow the SAME rules as the per-rank unit stats:
+// transitive inheritance, a floor, and removal only at the rank that owns the
+// value. They shipped without any of it — the section was a plain add/remove
+// grid, so a gold block could silently be set below bronze's.
+describe('UnitTypeEditorPanel path form — rank ability stats inherit', () => {
+  async function addDurationAtBronze() {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+    await wrapper.find('[data-test="unit-path-tab-bronze"]').trigger('click')
+    await flushPromises()
+
+    const stacks = () => wrapper.findAll('.unit-editor__rank-slot-stack')
+    const bronze = stacks()[0]
+    // A stat is chosen from the "Add a stat…" picker — the same flow the
+    // per-rank unit stats use.
+    await bronze.find('[data-test="ability-stat-add"]').setValue('duration')
+    await flushPromises()
+    const flat = bronze.find('[data-test="ability-stat-flat"]')
+    await flat.setValue('5')
+    await flat.trigger('change')
+    await flushPromises()
+    return { wrapper, stacks }
+  }
+
+  it('carries a bronze ability stat to silver and gold, floored, shown as a placeholder', async () => {
+    const { stacks } = await addDurationAtBronze()
+
+    for (const i of [1, 2]) {
+      const rank = stacks()[i]
+      expect(rank.findAll('[data-test="ability-stat-row"]').length, `rank ${i}`).toBe(1)
+      const flat = rank.find('[data-test="ability-stat-flat"]')
+      expect(flat.attributes('min'), `rank ${i} floor`).toBe('5')
+      // Faded placeholder, blank field — "not set here", not "set to 5".
+      expect(flat.attributes('placeholder'), `rank ${i} placeholder`).toBe('5')
+      expect((flat.element as HTMLInputElement).value, `rank ${i} value`).toBe('')
+    }
+  })
+
+  it('offers the remove only at the rank that set it', async () => {
+    const { stacks } = await addDurationAtBronze()
+    expect(stacks()[0].find('[data-test="ability-stat-remove-duration"]').exists()).toBe(true)
+    expect(stacks()[1].find('[data-test="ability-stat-remove-duration"]').exists()).toBe(false)
+    expect(stacks()[2].find('[data-test="ability-stat-remove-duration"]').exists()).toBe(false)
+  })
+
+  it('clears it from every rank when the owning rank removes it', async () => {
+    const { stacks } = await addDurationAtBronze()
+    await stacks()[0].find('[data-test="ability-stat-remove-duration"]').trigger('click')
+    await flushPromises()
+
+    for (const i of [0, 1, 2]) {
+      expect(stacks()[i].findAll('[data-test="ability-stat-row"]').length, `rank ${i}`).toBe(0)
+    }
+  })
+})
+
+// A broad ability stat on the UNIT already applies at every rank, so bronze must
+// show it as inherited and floor against it. It was invisible there — a rank
+// could be authored below what the unit itself grants, with no sign the unit
+// granted anything.
+describe('UnitTypeEditorPanel path form — unit ability stats reach the ranks', () => {
+  it('shows a unit ability stat as inherited at bronze, floored, without a save', async () => {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    const stacks = () => wrapper.findAll('.unit-editor__rank-slot-stack')
+    expect(stacks()[0].findAll('[data-test="ability-stat-row"]')).toHaveLength(0)
+
+    // Edit the UNIT's own Ability Stats — no save.
+    const vm = wrapper.vm as unknown as {
+      form: { abilityStats?: Record<string, { flat?: number; pct?: number }> }
+    }
+    vm.form.abilityStats = { radius: { pct: 0.15 } }
+    await flushPromises()
+
+    for (const [i, rank] of ['bronze', 'silver', 'gold'].entries()) {
+      const pct = stacks()[i].find('[data-test="ability-stat-pct"]')
+      expect(pct.exists(), `${rank} row`).toBe(true)
+      // 0.15 stored -> 15 shown, as a faded placeholder on a blank field.
+      expect(pct.attributes('placeholder'), `${rank} placeholder`).toBe('15')
+      expect(pct.attributes('min'), `${rank} floor`).toBe('15')
+      expect((pct.element as HTMLInputElement).value, `${rank} value`).toBe('')
+    }
+  })
+
+  // An inherited-from-the-unit row is not a rank's to delete.
+  it('offers no remove on a row that comes from the unit', async () => {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    const vm = wrapper.vm as unknown as {
+      form: { abilityStats?: Record<string, { flat?: number; pct?: number }> }
+    }
+    vm.form.abilityStats = { radius: { pct: 0.15 } }
+    await flushPromises()
+
+    expect(
+      wrapper.findAll('.unit-editor__rank-slot-stack')[0].find('[data-test="ability-stat-remove-radius"]').exists(),
+    ).toBe(false)
   })
 })
