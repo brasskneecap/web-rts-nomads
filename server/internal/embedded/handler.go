@@ -14,7 +14,7 @@ import (
 // SPA fallthrough. The mux normally catches these first; this list is defense
 // in depth so a missing route registration cannot accidentally serve index.html
 // in place of an API 404.
-var apiPrefixes = []string{"/ws", "/health", "/api", "/catalog", "/maps", "/matches", "/lobbies"}
+var apiPrefixes = []string{"/ws", "/health", "/api", "/catalog", "/maps", "/matches", "/lobbies", "/tilesets"}
 
 // Handler returns an http.Handler that serves the SPA from distFS. distFS must
 // be rooted at the SPA's dist/ directory (i.e. index.html sits at the root of

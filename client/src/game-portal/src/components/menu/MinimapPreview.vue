@@ -62,7 +62,7 @@ import {
   drawMinimapBase,
   drawMinimapPOIs,
 } from '@/game/rendering/minimapLayers'
-import { isTerrainTilesetReady, onSheetReady } from '@/game/rendering/terrainTileset'
+import { isTerrainTilesetReady, onTilesetReady } from '@/game/rendering/terrainTileset'
 import UiPanel from '@/components/ui/UiPanel.vue'
 
 const props = withDefaults(
@@ -164,7 +164,7 @@ function renderMap(file: MapCatalogFile) {
   // meantime. Install the hook at most once.
   if (!isTerrainTilesetReady() && !tilesetReadyHookInstalled) {
     tilesetReadyHookInstalled = true
-    onSheetReady('tileset', () => {
+    onTilesetReady('tileset', () => {
       const id = currentMapId
       if (!id) return
       const cached = fileCache.get(id)

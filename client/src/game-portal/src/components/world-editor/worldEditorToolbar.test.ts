@@ -16,10 +16,11 @@ describe('world editor toolbar categories', () => {
     expect(byId.play.enabled).toBe(true)
     expect(byId.abilities.enabled).toBe(true)
     expect(byId.exit.enabled).toBe(true)
-    // Later sub-projects: visible but disabled ("coming soon").
     expect(byId.effects.enabled).toBe(true)
     expect(byId.projectiles.enabled).toBe(true)
     expect(byId.perks.enabled).toBe(true)
-    expect(byId.campaigns.enabled).toBe(false)
+    // Campaigns and the Tileset editor are now shipped and enabled.
+    expect(byId.campaigns.enabled).toBe(true)
+    expect(byId.tilesets.enabled).toBe(true)
   })
 })

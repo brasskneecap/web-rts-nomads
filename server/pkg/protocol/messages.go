@@ -579,14 +579,65 @@ type TerrainTile struct {
 }
 
 type TileCoord struct {
-	Sheet string `json:"sheet"`
-	SX    int    `json:"sx"`
-	SY    int    `json:"sy"`
+	Tileset string `json:"tileset"`
+	Col     int    `json:"col"`
+	Row     int    `json:"row"`
+}
+
+// UnmarshalJSON accepts both the current shape (`tileset`/`col`/`row`) and the
+// legacy pixel-based shape (`sheet`/`sx`/`sy`) so existing map JSONs continue
+// to load without a one-time rewrite. Legacy pixel coordinates are converted
+// to grid indices by integer-dividing by the old logical tile size (32px):
+// col = sx/32, row = sy/32. Maps re-saved through the editor are written in
+// the new shape (default marshaling already emits tileset/col/row).
+func (c *TileCoord) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		Tileset string `json:"tileset"`
+		Col     *int   `json:"col"`
+		Row     *int   `json:"row"`
+		Sheet   string `json:"sheet"`
+		SX      *int   `json:"sx"`
+		SY      *int   `json:"sy"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if raw.Tileset != "" || raw.Col != nil || raw.Row != nil {
+		c.Tileset = raw.Tileset
+		if raw.Col != nil {
+			c.Col = *raw.Col
+		}
+		if raw.Row != nil {
+			c.Row = *raw.Row
+		}
+		return nil
+	}
+	c.Tileset = raw.Sheet
+	if raw.SX != nil {
+		c.Col = *raw.SX / 32
+	}
+	if raw.SY != nil {
+		c.Row = *raw.SY / 32
+	}
+	return nil
 }
 
 type TileInstance struct {
 	GridCoord
 	TileCoord
+}
+
+// UnmarshalJSON decodes GridCoord and TileCoord separately rather than
+// relying on default struct-embedding decode. This is required, not
+// stylistic: TileCoord's custom UnmarshalJSON (pointer receiver) promotes to
+// *TileInstance's method set, which would make encoding/json delegate the
+// ENTIRE tile payload to TileCoord.UnmarshalJSON and silently drop the
+// sibling GridCoord x/y fields if this method were absent.
+func (t *TileInstance) UnmarshalJSON(b []byte) error {
+	if err := json.Unmarshal(b, &t.GridCoord); err != nil {
+		return err
+	}
+	return json.Unmarshal(b, &t.TileCoord)
 }
 
 type ObstacleTile struct {

@@ -6,6 +6,7 @@ import type {
   ObstacleTile,
   TerrainTile,
   TileInstance,
+  TilesetDef,
 } from '../network/protocol'
 import { registerUploadedIcons } from '../rendering/itemAssets'
 import {
@@ -165,6 +166,17 @@ export async function fetchObstacleDefs(): Promise<ObstacleDef[]> {
 
   const data = (await response.json()) as { obstacles: ObstacleDef[] }
   return data.obstacles
+}
+
+export async function fetchTilesetDefs(): Promise<TilesetDef[]> {
+  const response = await fetch(`${API_BASE}/catalog/tilesets`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to load tileset defs: ${response.status}`)
+  }
+
+  const body = (await response.json()) as { tilesets?: TilesetDef[] }
+  return body.tilesets ?? []
 }
 
 // `attackOrigin` is independently optional server-side (a path authoring only

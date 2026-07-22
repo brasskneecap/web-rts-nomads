@@ -438,6 +438,8 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 
 	registerAdvancementRoutes(mux, profileManager, hub.GetMatchManager())
 	registerEditorRoutes(mux)
+	registerTilesetRoutes(mux)
+	registerTileLibraryRoutes(mux)
 
 	lm := hub.GetLobbyManager()
 	mm := hub.GetMatchManager()

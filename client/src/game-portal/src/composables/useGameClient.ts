@@ -128,12 +128,12 @@ export function useGameClient() {
     client?.stop()
     stopUiSync()
 
-    const { initialize: initProfile, refresh: refreshProfile, profile } = useProfile()
-    await initProfile()
-    // Always refresh right before reading — mid-session toggles/purchases land
-    // in the profile ref, but a fresh tab that never visited /profile would
-    // otherwise read the very first fetch's snapshot, missing any state the
-    // user mutated since. Cheap enough to do on every match start.
+    const { refresh: refreshProfile, profile } = useProfile()
+    // One fetch, always fresh. refresh() re-fetches /profile (and populates the
+    // singleton profile ref) regardless of prior init, so on a first-ever start
+    // this replaces the old initProfile()+refreshProfile() pair that fired two
+    // identical /profile requests back-to-back. Fresh state is required because
+    // mid-session toggles/purchases land in the profile ref before a match.
     await refreshProfile()
 
     client = new GameClient(canvas, mapId)
