@@ -241,6 +241,10 @@ func (s *GameState) playEffectOnUnitForDurationLocked(unit *Unit, effectID strin
 	s.queueEffectLocked(def.ID, unit.ID, unit.X, unit.Y, sizeScale, duration, "" /*variant*/)
 	if n := len(s.activeEffects); n > 0 {
 		s.activeEffects[n-1].Anchor = def.Anchor.OrCenter()
+		// This visual represents the STATUS, not an event at a position: when
+		// the afflicted unit dies the status is gone with it, so the visual must
+		// go too rather than burning a corpse for the rest of its duration.
+		s.activeEffects[n-1].RequiresLiveAnchor = true
 	}
 	return true
 }

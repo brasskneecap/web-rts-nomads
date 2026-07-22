@@ -55,9 +55,9 @@
         />
       </EditorField>
       <!-- WHO casts, and at what rank. Both matter because an ability's damage
-           can scale off its caster (deal_damage's adRatio/apRatio) and its
-           numbers can vary by rank (byRank) — previewing against one hardcoded
-           unit showed neither. Blank = the harness default (an adept). -->
+           can scale off its caster (deal_damage's adRatio/apRatio) and off that
+           caster's rank — previewing against one hardcoded unit showed neither.
+           Blank = the harness default (an adept). -->
       <EditorField label="Caster" for-id="pv-caster" inline class="pv-scene__field">
         <select
           id="pv-caster"

@@ -73,6 +73,10 @@
   --ed-line: rgba(212, 168, 71, 0.22);
   --ed-line-strong: rgba(212, 168, 71, 0.5);
   --ed-field: rgba(8, 6, 4, 0.55);   /* input/select fill (darkens the wood) */
+  /* Fill behind a pinned header. Must be OPAQUE — content scrolls beneath it
+     and the panel art behind is textured, so any alpha shows the cards through
+     the header. */
+  --ed-sticky-bg: #14100b;
   --ed-danger: #f0846c;
   --ed-ok: #86c46b;
   --ed-radius: 6px;

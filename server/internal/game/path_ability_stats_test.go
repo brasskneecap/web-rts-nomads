@@ -194,3 +194,96 @@ func TestValidatePathRankBaseStats(t *testing.T) {
 		t.Error("a typed-field stat was accepted as a per-rank base stat")
 	}
 }
+
+// TestPathRankStats_InheritIndependentOfPromotionOrder is the regression for a
+// bug that only ever showed on a unit that did NOT walk up the ranks.
+//
+// Both per-rank blocks are absolute with "a rank that omits a stat inherits it".
+// That inheritance used to be an accident: applyRankModifiersLocked wrote only
+// the CURRENT row's baseStats and never cleared what it wrote, so a unit that
+// promoted bronze -> silver kept bronze's value, while a unit created directly
+// at silver (debug spawn, a load that restores rank before applying modifiers)
+// silently got nothing. pathAbilityStatsFor had the same shape and was worse —
+// it returned only the current rank's block, so a bronze-authored ability stat
+// vanished on promotion for EVERY unit.
+func TestPathRankStats_InheritIndependentOfPromotionOrder(t *testing.T) {
+	s := newProjectileTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Authored at BRONZE ONLY, in both blocks — the shape the Trapper uses.
+	pathCatalogMu.Lock()
+	for _, rank := range pathRankOrder {
+		def := pathModifierDef{
+			Path: "zz_inherit", Rank: rank,
+			MaxHPMultiplier: 1, MaxMPMultiplier: 1, HealthRegenMultiplier: 1,
+			DamageMultiplier: 1, AttackSpeedMultiplier: 1, MoveSpeedMultiplier: 1,
+			AttackRangeMultiplier: 1,
+		}
+		if rank == unitRankBronze {
+			def.BaseStats = map[string]float64{statAbilityPower: 15}
+		}
+		pathModifiersByKey[pathModifierKey("zz_inherit", rank)] = def
+	}
+	pathAbilityStatsByPath["zz_inherit"] = map[string]map[string]AbilityStatMod{
+		unitRankBronze: {"radius": {Flat: 20}},
+	}
+	pathCatalogMu.Unlock()
+	defer func() {
+		pathCatalogMu.Lock()
+		for _, rank := range pathRankOrder {
+			delete(pathModifiersByKey, pathModifierKey("zz_inherit", rank))
+		}
+		delete(pathAbilityStatsByPath, "zz_inherit")
+		pathCatalogMu.Unlock()
+	}()
+
+	for _, rank := range pathRankOrder {
+		// A FRESH unit per rank, promoted straight to it — never through bronze.
+		caster := spawnProjTestUnit(t, s, "p1", 0, 0)
+		caster.ProgressionPath = "zz_inherit"
+		caster.Rank = rank
+		s.applyRankModifiersLocked(caster, false)
+
+		if got := unitBaseStat(caster, statAbilityPower); got != 15 {
+			t.Errorf("%s: ability power = %v, want 15 inherited from bronze", rank, got)
+		}
+		raw := s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, mustJSON(map[string]any{"radius": 100.0}))
+		if got, _ := decodedConfig(t, raw)["radius"].(float64); math.Abs(got-120) > 1e-9 {
+			t.Errorf("%s: radius = %v, want 120 inherited from bronze", rank, got)
+		}
+	}
+}
+
+// Base rank is not a promotion rank. It must not pick up bronze's numbers just
+// because bronze is first in the fold order.
+func TestPathRankStats_BaseRankInheritsNothing(t *testing.T) {
+	key := pathModifierKey("zz_base", unitRankBronze)
+	pathCatalogMu.Lock()
+	pathModifiersByKey[key] = pathModifierDef{
+		Path: "zz_base", Rank: unitRankBronze,
+		BaseStats: map[string]float64{statAbilityPower: 15},
+	}
+	pathAbilityStatsByPath["zz_base"] = map[string]map[string]AbilityStatMod{
+		unitRankBronze: {"radius": {Flat: 20}},
+	}
+	pathCatalogMu.Unlock()
+	defer func() {
+		pathCatalogMu.Lock()
+		delete(pathModifiersByKey, key)
+		delete(pathAbilityStatsByPath, "zz_base")
+		pathCatalogMu.Unlock()
+	}()
+
+	// Sanity: bronze DOES see them, so a nil at base rank means the guard, not
+	// an empty registry.
+	if got := accumulatedRankBaseStats("zz_base", unitRankBronze); len(got) != 1 {
+		t.Fatalf("bronze base stats = %v, want the authored entry", got)
+	}
+	if got := accumulatedRankBaseStats("zz_base", unitRankBase); got != nil {
+		t.Errorf("base-rank base stats = %v, want nil", got)
+	}
+	if got := pathAbilityStatsFor("zz_base", unitRankBase); got != nil {
+		t.Errorf("base-rank ability stats = %v, want nil", got)
+	}
+}

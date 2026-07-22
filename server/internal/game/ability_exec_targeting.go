@@ -167,11 +167,24 @@ func (s *GameState) candidatePoolIDsLocked(ctx *RuntimeAbilityContext, q TargetQ
 	switch q.Source {
 	case SrcAllInScene:
 		ids := make([]int, 0, len(s.Units))
-		for _, u := range s.Units {
-			if u == nil {
-				continue
+		if targetQueryWantsLiving(q.AliveState) {
+			for _, u := range s.Units {
+				if u == nil {
+					continue
+				}
+				ids = append(ids, u.ID)
 			}
-			ids = append(ids, u.ID)
+		}
+		// Corpses are NOT in s.Units, so a scene sweep reaches a body only when
+		// the query asked for one. This is the whole reason the field's zero
+		// value means "alive".
+		if targetQueryWantsDead(q.AliveState) {
+			for _, c := range s.Corpses {
+				if c == nil {
+					continue
+				}
+				ids = append(ids, c.ID)
+			}
 		}
 		return ids
 	case SrcPrevActionTargets:
@@ -260,6 +273,19 @@ func (s *GameState) relationMatchesLocked(caster, u *Unit, rels []TargetRelation
 // q.MinCount, q.Filters, and q.RequireLineOfSight are not enforced in Phase
 // 3 (see the TODOs in applyTargetFiltersLocked below); they are validated
 // fields on the wire but have no runtime effect yet.
+// targetQueryWantsLiving / targetQueryWantsDead decode TargetQueryDef.AliveState.
+// Split into two predicates rather than a switch at each site because the two
+// pools are physically different lists (s.Units vs s.Corpses) and "any" needs
+// both. An unrecognized value reads as the default, alive — a typo must not
+// silently widen a query to include bodies.
+func targetQueryWantsLiving(aliveState string) bool {
+	return aliveState != "dead"
+}
+
+func targetQueryWantsDead(aliveState string) bool {
+	return aliveState == "dead" || aliveState == "any"
+}
+
 func (s *GameState) resolveTargetQueryLocked(ctx *RuntimeAbilityContext, q TargetQueryDef) []int {
 	caster := s.getUnitByIDLocked(ctx.CasterID)
 	if caster == nil {
@@ -274,7 +300,15 @@ func (s *GameState) resolveTargetQueryLocked(ctx *RuntimeAbilityContext, q Targe
 			continue
 		}
 		poolSeen[id] = struct{}{}
-		if u := s.getUnitByIDLocked(id); u != nil {
+		// Corpse-aware resolution, gated on the query having asked for the
+		// dead: a query that did not ask must never resolve a body, however it
+		// came by the id (a named context set that outlived its units, a
+		// previous action's targets, the initial target).
+		u := s.getUnitByIDLocked(id)
+		if u == nil && targetQueryWantsDead(q.AliveState) {
+			u = s.getCorpseByIDLocked(id)
+		}
+		if u != nil {
 			candidates = append(candidates, u)
 		}
 	}

@@ -161,9 +161,6 @@ type AbilityDef struct {
 	// cast behaviour on its own. See spell_modifier.go.
 	Tags []string `json:"tags,omitempty"`
 
-	ByRank map[string][]AbilityRankOverride `json:"byRank,omitempty"`
-
-
 	// Category classifies what the ability is for (heal / buff_ally / summon /
 	// offensive). Optional; empty = unspecified. INERT in Phase 1 — populated
 	// from JSON and validated at load (see init below) but read by no runtime
@@ -660,9 +657,6 @@ func validateAbilityDef(def *AbilityDef) error {
 	}
 	if def.Program != nil && def.SchemaVersion < 2 {
 		return fmt.Errorf("program is set but schemaVersion is %d (composable abilities must set schemaVersion >= 2)", def.SchemaVersion)
-	}
-	if err := validateAbilityRankOverrides(*def); err != nil {
-		return err
 	}
 	if def.Program != nil {
 		for _, issue := range validateAbilityProgram(def.Program) {

@@ -976,3 +976,45 @@ func onlyConditionalActionID(t *testing.T, def AbilityDef) string {
 	}
 	return found[0]
 }
+
+// The previewer must show what a match shows. A previewed kill leaves a body,
+// because a real kill does — otherwise an author watching the preview sees the
+// target blink out of existence and builds around behaviour the game no longer
+// has.
+//
+// Asserted on the FRAMES (the wire snapshots the editor replays), not on the
+// GameState, because the frames are the only thing the client ever sees.
+func TestRunAbilityPreview_AKillLeavesACorpseInTheFrames(t *testing.T) {
+	def, ok := getAbilityDef("fire_pit")
+	if !ok {
+		t.Fatal(`getAbilityDef("fire_pit") = _, false`)
+	}
+	res, err := RunAbilityPreview(PreviewRequest{
+		Ability: def, Seed: 1, CasterX: 0, CasterY: 0, CastX: 50, CastY: 0, Target: 0,
+		DurationSeconds: 6,
+		// 1 HP: the first tick of the pit kills it.
+		Units: []PreviewSceneUnit{{Team: "enemy", X: 50, Y: 0, HP: 1, MaxHP: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Error != "" {
+		t.Fatalf("unexpected cast failure: %q", res.Error)
+	}
+
+	sawCorpse := false
+	for _, f := range res.Frames {
+		if len(f.Snapshot.Corpses) > 0 {
+			sawCorpse = true
+			// The body must carry who it was — that is what the editor shows
+			// when the author clicks it.
+			if f.Snapshot.Corpses[0].UnitType == "" {
+				t.Error("preview corpse has no unitType; the client cannot identify the body")
+			}
+			break
+		}
+	}
+	if !sawCorpse {
+		t.Error("no frame contained a corpse — the preview does not mirror what a match shows")
+	}
+}

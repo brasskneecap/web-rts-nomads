@@ -349,11 +349,6 @@ func (s *GameState) executeActionLocked(ctx *RuntimeAbilityContext, a *AbilityAc
 	// way round. See ability_field_mods.go's FOLD ORDER note.
 	caster := s.getUnitByIDLocked(ctx.CasterID)
 	rawConfig := ctx.resolveConfigVars(a.Config)
-	// RANK selects the BASE before anything folds on top, so a perk's x1.5 means
-	// the same thing at every rank (see AbilityRankOverride).
-	if def, ok := getAbilityDef(ctx.AbilityID); ok && caster != nil {
-		rawConfig = applyAbilityRankOverridesToConfig(def, caster.Rank, a.ID, rawConfig)
-	}
 	rawConfig = s.applyAbilityFieldModsToConfigLocked(caster, ctx.AbilityID, a.ID, rawConfig)
 	rawConfig = s.applyAbilityStatsToConfigLocked(caster, a.Type, rawConfig)
 	cfg, err := desc.Decode(rawConfig)

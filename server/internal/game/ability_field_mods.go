@@ -282,115 +282,6 @@ func (s *GameState) applyAbilityFieldModsToConfigLocked(caster *Unit, abilityID,
 	return out
 }
 
-// AbilityRankOverride sets one action field to a specific value at a given rank.
-//
-// Rank SELECTS THE BASE; it is not a modifier source. That is exactly the
-// contract paramsByRank had ("rank selects the base, it is not itself a
-// modifier") and keeping it means a perk's ×1.5 composes with a rank the same
-// way at every rank, instead of a gold unit's perk multiplying a different
-// number than a bronze one's by accident.
-//
-// A `set` shape (rather than add/multiply) is deliberate: a designer authoring
-// "fire pit does 45 damage at gold" should type 45, not the 2.8125 multiplier
-// that happens to turn 16 into 45.
-type AbilityRankOverride struct {
-	Action string  `json:"action"`
-	Field  string  `json:"field"`
-	Value  float64 `json:"value"`
-}
-
-// applyAbilityRankOverridesToConfig rewrites an action's config with the
-// rank-specific base values before any modifier folds. Returns config unchanged
-// for an unranked caster or an ability with no overrides — the common case.
-func applyAbilityRankOverridesToConfig(def AbilityDef, rank, actionID string, config json.RawMessage) json.RawMessage {
-	if rank == "" || len(def.ByRank) == 0 || len(config) == 0 {
-		return config
-	}
-	overrides := def.ByRank[rank]
-	if len(overrides) == 0 {
-		return config
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal(config, &decoded); err != nil {
-		return config
-	}
-	changed := false
-	for _, o := range overrides {
-		if o.Action != actionID {
-			continue
-		}
-		if _, present := decoded[o.Field]; !present {
-			continue
-		}
-		decoded[o.Field] = o.Value
-		changed = true
-	}
-	if !changed {
-		return config
-	}
-	out, err := json.Marshal(decoded)
-	if err != nil {
-		return config
-	}
-	return out
-}
-
-// abilityRankBaseValue returns the rank-effective authored value of one action
-// field: the ByRank override when one exists, else the program's own literal.
-func abilityRankBaseValue(def AbilityDef, rank, actionID, field string, authored float64) float64 {
-	if rank == "" {
-		return authored
-	}
-	for _, o := range def.ByRank[rank] {
-		if o.Action == actionID && o.Field == field {
-			return o.Value
-		}
-	}
-	return authored
-}
-
-// validateAbilityRankOverrides checks an ability's byRank block: ranks must be
-// real, and every {action, field} must exist in this ability's own program, so a
-// rename can never leave a rank silently un-scaled.
-func validateAbilityRankOverrides(def AbilityDef) error {
-	if len(def.ByRank) == 0 {
-		return nil
-	}
-	actions := programActionTypes(def)
-	ranks := make([]string, 0, len(def.ByRank))
-	for r := range def.ByRank {
-		ranks = append(ranks, r)
-	}
-	sort.Strings(ranks)
-	for _, rank := range ranks {
-		switch rank {
-		case unitRankBronze, unitRankSilver, unitRankGold:
-		default:
-			return fmt.Errorf("ability %q: byRank has unknown rank %q (want %q, %q or %q)", def.ID, rank, unitRankBronze, unitRankSilver, unitRankGold)
-		}
-		for _, o := range def.ByRank[rank] {
-			actionType, exists := actions[o.Action]
-			if !exists {
-				return fmt.Errorf("ability %q: byRank[%q] targets action %q, which its program does not contain (present: %v)",
-					def.ID, rank, o.Action, sortedActionIDs(actions))
-			}
-			desc, ok := lookupActionDescriptor(actionType)
-			if !ok {
-				continue
-			}
-			f, found := schemaFieldByKey(desc, o.Field)
-			if !found || !isNumericControl(f.Control) {
-				return fmt.Errorf("ability %q: byRank[%q] targets action %q field %q, which is not a numeric field of %s (available: %v)",
-					def.ID, rank, o.Action, o.Field, actionType, sortedFieldKeys(desc))
-			}
-			if math.IsNaN(o.Value) || math.IsInf(o.Value, 0) {
-				return fmt.Errorf("ability %q: byRank[%q][%s.%s].value must be finite, got %v", def.ID, rank, o.Action, o.Field, o.Value)
-			}
-		}
-	}
-	return nil
-}
-
 // targetQueryRadiusField is the pseudo-field key a modifier uses to address a
 // target query's radius: "target.radius". The prefix distinguishes it from a
 // config key, because TargetQueryDef lives on the action as a SIBLING of Config,
@@ -613,9 +504,6 @@ func (s *GameState) EffectiveAbilityFieldLocked(caster *Unit, abilityID, actionI
 	base, actionType, found := programActionConfigValue(def, actionID, field)
 	if !found {
 		return 0, false
-	}
-	if caster != nil {
-		base = abilityRankBaseValue(def, caster.Rank, actionID, field, base)
 	}
 	v := s.foldOneFieldLocked(caster, def, actionID, field, base)
 	kind := ""

@@ -588,7 +588,22 @@ type TargetQueryDef struct {
 	// victims. No-op when the key is absent or not a unit-set.
 	ExcludeRef         *ContextRef `json:"excludeRef,omitempty"`
 	RequireLineOfSight bool        `json:"requireLineOfSight,omitempty"`
-	AliveState         string      `json:"aliveState,omitempty"`
+	// AliveState selects which side of the living/dead line this query draws
+	// from. The ZERO VALUE ("") means ALIVE ONLY, and that is load-bearing:
+	// every query authored before corpses existed must keep selecting only
+	// living units, or the day bodies linger on the field every meteor, chain
+	// and zone tick starts spending itself on them. Opting into corpses is an
+	// explicit act.
+	//
+	//   ""/"alive" — living units (every existing query)
+	//   "dead"     — CORPSES only; the pool is s.Corpses, which no other query
+	//                shape can reach (getUnitByIDLocked does not resolve a body)
+	//   "any"      — both
+	//
+	// Relations work unchanged on a corpse: a body belongs to the player whose
+	// unit it was. That is what lets a raise target `enemy` corpses while a
+	// revive targets `ally` ones — see docs/design/death_and_corpses.md §4.
+	AliveState string `json:"aliveState,omitempty"`
 }
 
 // TargetFilter is a placeholder for a richer unit/object filter (defined further

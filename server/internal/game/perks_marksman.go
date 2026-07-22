@@ -679,6 +679,6 @@ func (s *GameState) fireExplosiveTipsLocked(attacker, primaryTarget *Unit, def *
 		}
 	}
 	for _, id := range deadUnitIDs {
-		s.removeUnitLocked(id)
+		s.killUnitLocked(id)
 	}
 }

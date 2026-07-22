@@ -1854,6 +1854,28 @@ type LootDropSnapshot struct {
 	ItemIDs   []string       `json:"itemIds,omitempty"`
 }
 
+// CorpseSnapshot is a dead unit's body: enough to draw it and to address it,
+// nothing more. It carries no combat stats because a corpse has no behaviour —
+// see docs/design/death_and_corpses.md.
+type CorpseSnapshot struct {
+	ID       int    `json:"id"`
+	OwnerID  string `json:"ownerId"`
+	UnitType string `json:"unitType"`
+	// Name / Rank / ProgressionPath identify WHO this was, so clicking a body
+	// can say "Gold Trapper Archer" rather than just naming a unit type. They
+	// are the only stats a corpse carries: it has no behaviour, so it has no
+	// damage, range or speed worth sending.
+	Name            string  `json:"name,omitempty"`
+	Rank            string  `json:"rank,omitempty"`
+	ProgressionPath string  `json:"progressionPath,omitempty"`
+	Color           string  `json:"color,omitempty"`
+	X               float64 `json:"x"`
+	Y               float64 `json:"y"`
+	// Remaining is seconds left before the body decays, so the renderer can
+	// fade it out rather than popping it.
+	Remaining float64 `json:"remaining"`
+}
+
 type MatchSnapshotMessage struct {
 	Type      string         `json:"type"`
 	Tick      int            `json:"tick"`
@@ -1877,6 +1899,12 @@ type MatchSnapshotMessage struct {
 	ObstacleMetadata   []ObstacleMetadataPatch     `json:"obstacleMetadata,omitempty"`
 	Players            []PlayerSnapshot            `json:"players"`
 	Units              []UnitSnapshot              `json:"units"`
+	// Corpses are bodies of dead units still on the field. A SEPARATE list from
+	// Units, mirroring the server's own split: a corpse is not a unit, and
+	// keeping it out of Units means no client code that iterates units —
+	// selection, drag-select, click targeting, health bars, minimap blips —
+	// picks one up by accident. The renderer draws these and nothing else does.
+	Corpses            []CorpseSnapshot            `json:"corpses,omitempty"`
 	Wave               WaveSnapshot                `json:"wave"`
 	Banners            []BannerSnapshot            `json:"banners,omitempty"`
 	Traps              []TrapSnapshot              `json:"traps,omitempty"`

@@ -118,7 +118,12 @@ func init() {
 					return targets
 				}
 				u := s.getUnitByIDLocked(ctx.CurrentStatus.TargetUnitID)
-				if u != nil {
+				// ALIVE, not just resolvable: a unit that took lethal damage
+				// earlier in this same Update pass is still in unitsByID until
+				// drainPendingDeathsLocked runs, so a re-applying status
+				// (a zone's per-tick refresh) would otherwise pin a fresh
+				// flame onto a corpse right after tickEffectsLocked dropped it.
+				if s.unitIsAliveLocked(u) {
 					// Refresh-not-restack: a "refresh"-stacking status re-runs its On
 					// Apply every time the zone re-applies it, so queueing here
 					// unconditionally stacked one flame per tick. See

@@ -118,7 +118,7 @@ export type AbilityFamily = 'basic' | 'channel' | 'charge' | 'meteor' | 'archmag
 // in the form's `remainder`.
 const MODELED_KEYS = [
   'id','displayName','description','generatedDescription',
-  'schemaVersion','program','compiledProgram','runnable','custom','byRank',
+  'schemaVersion','program','compiledProgram','runnable','custom',
   'type','canTargetSelf','canTargetAllies','canTargetEnemies',
   'targetsPoint','castRange','castTime','manaCost','cooldown','damageType','tags',
   'category','targetCount','supportsAutoCast','autoCastTargetSelector','defaultAutoCast',

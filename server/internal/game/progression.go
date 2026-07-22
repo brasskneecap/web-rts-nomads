@@ -198,6 +198,16 @@ func applyArmorMitigation(damage, armor int) int {
 //  4. Anything else (unknown path id, missing rank row) → identity, so a typo
 //     fails loud in-game (unit shows unmodified base stats) rather than
 //     silently matching an unintended row.
+//
+// BaseStats is the one field ACCUMULATED across ranks rather than read from the
+// row alone. The typed multipliers are authored on every rank row, so reading
+// the row is enough; a baseStats entry is authored where it CHANGES and
+// inherited everywhere above (the editor floors on it, and
+// validatePathRankBaseStats enforces the same rule for hand-edits). Resolving
+// the current row alone made that inheritance an accident of promotion order —
+// a unit that walked bronze→silver kept bronze's value only because
+// applyRankModifiersLocked never clears what it wrote, while a unit created
+// directly at silver got nothing. See accumulatedRankBaseStats.
 func pathModifierFor(path, rank string) pathModifierDef {
 	if rank == unitRankBase {
 		return identityPathModifier
@@ -208,10 +218,38 @@ func pathModifierFor(path, rank string) pathModifierDef {
 		}
 		return identityPathModifier
 	}
-	if def, ok := pathModifierLookup(pathModifierKey(path, rank)); ok {
-		return def
+	def, ok := pathModifierLookup(pathModifierKey(path, rank))
+	if !ok {
+		def = identityPathModifier
 	}
-	return identityPathModifier
+	// Replaces (never mutates) the catalog row's own map — pathModifierDef is
+	// returned by value but its BaseStats map is shared with the registry.
+	def.BaseStats = accumulatedRankBaseStats(path, rank)
+	return def
+}
+
+// accumulatedRankBaseStats folds a path's per-rank baseStats from bronze up to
+// and including `rank`, higher ranks winning. Returns nil when nothing is
+// authored, so the common case allocates nothing.
+func accumulatedRankBaseStats(path, rank string) map[string]float64 {
+	top := pathRankIndex(rank)
+	if top < 0 {
+		return nil
+	}
+	var out map[string]float64
+	for _, r := range pathRankOrder[:top+1] {
+		row, ok := pathModifierLookup(pathModifierKey(path, r))
+		if !ok || len(row.BaseStats) == 0 {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]float64, len(row.BaseStats))
+		}
+		for stat, value := range row.BaseStats {
+			out[stat] = value
+		}
+	}
+	return out
 }
 
 func rankDefForXP(xp int) rankProgressionDef {

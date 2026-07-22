@@ -10,6 +10,8 @@
     "trap"
   ],
   "category": "offensive",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
@@ -109,7 +111,8 @@
                                       "type": "deal_damage",
                                       "config": {
                                         "amount": 16,
-                                        "type": "fire"
+                                        "type": "fire",
+                                        "apRatio": 0.2
                                       }
                                     }
                                   ]
@@ -129,7 +132,8 @@
                             },
                             "config": {
                               "amount": 16,
-                              "type": "fire"
+                              "type": "fire",
+                              "apRatio": 0.2
                             }
                           }
                         ]
@@ -141,42 +145,6 @@
             }
           }
         ]
-      }
-    ]
-  },
-  "byRank": {
-    "silver": [
-      {
-        "action": "pit",
-        "field": "radius",
-        "value": 75
-      },
-      {
-        "action": "direct_dmg",
-        "field": "amount",
-        "value": 28
-      },
-      {
-        "action": "burn_dmg",
-        "field": "amount",
-        "value": 28
-      }
-    ],
-    "gold": [
-      {
-        "action": "pit",
-        "field": "radius",
-        "value": 95
-      },
-      {
-        "action": "direct_dmg",
-        "field": "amount",
-        "value": 45
-      },
-      {
-        "action": "burn_dmg",
-        "field": "amount",
-        "value": 45
       }
     ]
   }

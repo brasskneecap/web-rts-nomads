@@ -1413,7 +1413,7 @@ func (s *GameState) tickProjectilesLocked(dt float64) {
 	s.Projectiles = append(kept, s.Projectiles...)
 
 	for _, id := range deadUnitIDs {
-		s.removeUnitLocked(id)
+		s.killUnitLocked(id)
 	}
 }
 

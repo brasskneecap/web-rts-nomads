@@ -626,3 +626,42 @@ describe('UnitTypeEditorPanel path form — unit ability stats reach the ranks',
     ).toBe(false)
   })
 })
+
+// The unit's own EditorHeader lives OUTSIDE the scroll viewport, so its Save
+// stays put on its own. Save Path did not: it sat in a bar that scrolled away
+// with the cards, and on a long rank tab it was simply gone. Both header rows
+// now live in one pinned container.
+//
+// These are STRUCTURE assertions. jsdom applies no scoped CSS, so nothing here
+// proves `position: sticky` actually pins — that needs eyes on the running app.
+// What they do prevent is a refactor quietly moving the actions back out of the
+// header, which is what would un-pin them.
+describe('UnitTypeEditorPanel path header', () => {
+  it('keeps the path strip and the section-tab row in one header container', async () => {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    const header = wrapper.find('.unit-editor__path-header')
+    expect(header.exists()).toBe(true)
+    expect(header.find('.unit-editor__path-strip').exists()).toBe(true)
+    expect(header.find('.unit-editor__path-tabrow').exists()).toBe(true)
+  })
+
+  it('puts the id and both path actions on the section-tab row', async () => {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    const tabrow = wrapper.find('.unit-editor__path-tabrow')
+    // The section tablist itself, so the actions really are sharing its line.
+    expect(tabrow.find('[data-test="unit-path-tab-identity"]').exists()).toBe(true)
+    expect(tabrow.find('#pe-id').exists()).toBe(true)
+
+    const labels = tabrow.findAll('button').map((b) => b.text())
+    expect(labels).toContain('Save Path')
+    expect(labels).toContain('Delete Path')
+  })
+})

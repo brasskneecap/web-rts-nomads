@@ -463,7 +463,7 @@ func (s *GameState) tickBeamsLocked(dt float64) {
 	// tickProjectilesLocked. Momentary beams are skipped by the removal paths,
 	// so a beam that just killed its own target keeps flashing.
 	for _, id := range deadUnitIDs {
-		s.removeUnitLocked(id)
+		s.killUnitLocked(id)
 	}
 }
 

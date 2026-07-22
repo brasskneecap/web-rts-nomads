@@ -102,7 +102,18 @@ type Unit struct {
 	Status       string
 	X            float64
 	Y            float64
-	HP           int
+	// Dead marks a CORPSE: the unit died, was torn down (see
+	// tearDownDeadUnitLocked) and is lingering on the field until it decays.
+	// It is still in s.Units and still resolvable by ID — that is the point,
+	// so a body can be raised or revived — but it is not alive. Never test
+	// this field directly; ask unitIsAliveLocked, which is the single
+	// definition every attached-to-a-unit system shares.
+	// See docs/design/death_and_corpses.md.
+	Dead bool
+	// CorpseRemaining counts a corpse down to decay, in seconds. Meaningless
+	// (and zero) while the unit is alive.
+	CorpseRemaining float64
+	HP              int
 	MaxHP        int
 	BaseMaxHP    int
 	// HealthRegenPerSecond is the baseline passive HP regeneration rate (HP per
@@ -673,6 +684,12 @@ const (
 	unitFormationSpacing   = 40.0
 	unitSeparationDistance = 22.0
 
+	// corpseLifetimeSeconds is how long a body lingers before it decays off the
+	// field. A feel-check starting point, not a balance decision — it is also
+	// the window an eventual revive or raise has to work in, so moving it moves
+	// how those play. See docs/design/death_and_corpses.md §8.
+	corpseLifetimeSeconds = 20.0
+
 	// guardMinAggroRange is the floor applied to GuardAggroRange at spawn for
 	// placed-enemy guard units. Authored values below this are raised so guards
 	// reliably notice approaching player units before they're already in melee.
@@ -917,6 +934,24 @@ type GameState struct {
 
 	Units   []*Unit
 	Players map[string]*Player
+
+	// Corpses are the bodies of units that have died and not yet decayed.
+	//
+	// A SEPARATE list from s.Units, deliberately. The alternative — leaving a
+	// dead unit in s.Units behind a Dead flag — puts a corpse in front of ~110
+	// existing `range s.Units` loops, every one of which was written when a
+	// dead unit could not still be there. Several would be wrong in ways that
+	// are invisible until someone notices: a body granting fog-of-war vision
+	// for 20 seconds, a cleric auto-healing it, an aura counting it as a nearby
+	// ally. Keeping the list separate makes every one of those loops correct by
+	// construction, and makes reading a corpse an explicit act.
+	//
+	// The Unit VALUE is untouched — same pointer, same ID, same rank/perks/
+	// items — so a revive is a move back into s.Units, not a reconstruction.
+	// getUnitByIDLocked deliberately does NOT resolve a corpse; use
+	// getCorpseByIDLocked. See docs/design/death_and_corpses.md.
+	Corpses     []*Unit
+	corpsesByID map[int]*Unit
 
 	Productions      map[string][]*UnitProduction
 	EnemySpawnTimers map[string]*EnemySpawnTimer
@@ -1919,6 +1954,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 		ObstacleMetadata:   obstacleMetadata,
 		Players:            players,
 		Units:              units,
+		Corpses:            s.corpseSnapshotsLocked(nil, ""),
 		Banners:            banners,
 		Traps:              traps,
 		Projectiles:        projectiles,
@@ -2332,6 +2368,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		ObstacleMetadata:   obstacleMetadata,
 		Players:            players,
 		Units:              units,
+		Corpses:            s.corpseSnapshotsLocked(fow, viewerID),
 		Banners:            banners,
 		Traps:              traps,
 		Projectiles:        projectiles,
@@ -2835,6 +2872,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		ObstacleMetadata:   obstacleMetadata,
 		Players:            players,
 		Units:              units,
+		Corpses:            s.corpseSnapshotsLocked(nil, ""),
 		Banners:            banners,
 		Traps:              traps,
 		Projectiles:        projectiles,
@@ -3457,6 +3495,7 @@ func (s *GameState) Update(dt float64) {
 	}
 	stopPerUnitTick()
 
+	profileSection("corpses", func() { s.tickCorpsesLocked(dt) })
 	profileSection("separation", func() { s.applyUnitSeparationLocked(blocked) })
 	// Refresh predicate cache AFTER separation so cached flags reflect final
 	// end-of-tick positions for the snapshot consumers.
@@ -3976,11 +4015,69 @@ func (s *GameState) RemovePlayer(playerID string) {
 	})
 }
 
+// removeUnitLocked takes a unit off the field entirely: tear down every
+// reference to it, then delete it from the registry.
+//
+// DEATH does not call this. A unit that dies becomes a CORPSE — same tear-down,
+// but it stays in the registry until it decays (see killUnitToCorpseLocked and
+// docs/design/death_and_corpses.md). This is still the right call for a unit
+// that leaves the field without dying, and it is what corpse decay eventually
+// calls. Safe to call twice: every step is idempotent.
 func (s *GameState) removeUnitLocked(unitID int) {
+	s.tearDownDeadUnitLocked(unitID)
+	s.removeUnitByIDLocked(unitID)
+}
+
+// killUnitToCorpseLocked turns a unit that has just died into a corpse: run the
+// full tear-down (nothing may still point at it, swing at it, or fly toward it —
+// docs/design/death_and_corpses.md §6) and leave the body on the field for
+// corpseLifetimeSeconds.
+//
+// Deliberately NOT a partial tear-down. A corpse is inert; a revive restores a
+// clean unit rather than the mid-fight state it died in, which is exactly why
+// nothing here needs saving and restoring.
+//
+// Must be called under s.mu.
+func (s *GameState) killUnitToCorpseLocked(unit *Unit) {
+	if unit == nil || unit.Dead {
+		return
+	}
+	s.tearDownDeadUnitLocked(unit.ID)
+	// Out of the live registry and into the corpse list. This is what keeps
+	// every existing `range s.Units` loop correct without auditing it: a body
+	// is not a unit, and getUnitByIDLocked will not resolve one.
+	s.removeUnitByIDLocked(unit.ID)
+	unit.Dead = true
+	unit.CorpseRemaining = corpseLifetimeSeconds
+	if s.corpsesByID == nil {
+		s.corpsesByID = make(map[int]*Unit, 8)
+	}
+	s.Corpses = append(s.Corpses, unit)
+	s.corpsesByID[unit.ID] = unit
+	// The corpse's own combat/order state, cleared for the same reason the
+	// tear-down clears everyone else's references to it: a body must not be
+	// carrying a half-finished swing or a standing order when it decays — or,
+	// later, when it is revived.
+	unit.AttackTargetID = 0
+	unit.AttackBuildingTargetID = ""
+	unit.AttackWindupRemaining = 0
+	unit.AttackCooldown = 0
+	unit.Attacking = false
+	unit.Casting = false
+	unit.Order = OrderState{Type: OrderIdle}
+	unit.Status = "Dead"
+	unit.Path = nil
+}
+
+// tearDownDeadUnitLocked drops every reference the rest of the world holds to
+// unitID, without removing the unit from the registry. Shared by
+// removeUnitLocked and killUnitToCorpseLocked so a corpse and a despawn tear
+// down identically.
+func (s *GameState) tearDownDeadUnitLocked(unitID int) {
 	// Clean up any active channel the dying unit was running, and clear the
 	// channel state on any unit that was targeting this unit's beam.
-	// Do this before removeUnitByIDLocked so the unit is still resolvable
-	// inside stopUnitChannelLocked / clearChannelStateLocked.
+	// Do this while the unit is still resolvable inside
+	// stopUnitChannelLocked / clearChannelStateLocked.
 	if u, ok := s.unitsByID[unitID]; ok && u != nil {
 		if u.ChannelAbilityID != "" {
 			// Caster died — clear without a reason (no UI feedback needed).
@@ -3997,8 +4094,6 @@ func (s *GameState) removeUnitLocked(unitID int) {
 	if u, ok := s.unitsByID[unitID]; ok && u != nil && u.NeutralCampID != "" {
 		s.onUnitRemovedFromCampLocked(unitID, u.NeutralCampID)
 	}
-
-	s.removeUnitByIDLocked(unitID)
 
 	// Drop in-flight projectiles involving this unit so stale IDs don't linger.
 	s.cullProjectilesLocked(func(p *Projectile) bool {

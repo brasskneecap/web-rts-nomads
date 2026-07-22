@@ -26,6 +26,7 @@ import type {
   ProjectileSnapshot,
   ResourceType,
   ShieldPoolSnapshot,
+  CorpseSnapshot,
   TrapSnapshot,
   UnitCapability,
   UnitOrder,
@@ -359,6 +360,10 @@ export type DetailItem = {
 // enough that large trap zones like explosive_trap (80 radius) don't swallow
 // clicks intended for ground orders or units inside the zone.
 const TRAP_CENTER_HIT_RADIUS = 14
+// Click radius for a body. A little larger than the splatter it draws so the
+// target is not frustratingly precise, small enough that a corpse never
+// swallows a move order aimed just past it.
+const CORPSE_HIT_RADIUS = 14
 
 /**
  * Picks the initial snapshot-interpolation buffer depth based on the current
@@ -746,6 +751,9 @@ export class GameState {
   notifications: Notification[] = []
 
   units: Unit[] = []
+  /** Bodies of dead units, kept OUT of `units` on purpose — nothing that walks
+   *  the unit list should ever see a corpse. Renderer-only. */
+  corpses: CorpseSnapshot[] = []
   banners: BannerSnapshot[] = []
   traps: TrapSnapshot[] = []
   projectiles: ProjectileSnapshot[] = []
@@ -914,6 +922,10 @@ export class GameState {
   selectedBuildingId: string | null = null
   selectedObstacleId: string | null = null
   selectedTrapId: string | null = null
+  /** The body a player clicked, so they can see what they just lost. Its own
+   *  field rather than a unit selection: a corpse is not in `units`, gives no
+   *  orders and takes none. Mirrors selectedTrapId. */
+  selectedCorpseId: number | null = null
   /** The zone id selected by a canvas left-click that hit no unit/building/trap.
    *  Cleared whenever any other selection is made or the selection is cleared. */
   selectedZoneId: string | null = null
@@ -1740,6 +1752,7 @@ export class GameState {
     }
 
     this.units = frame.units.map((unit) => ({ ...unit }))
+    this.corpses = message.corpses ?? []
     this.banners = message.banners ?? []
     this.traps = message.traps ?? []
     this.projectiles = message.projectiles ?? []
@@ -1747,6 +1760,10 @@ export class GameState {
     this.effects = message.effects ?? []
     if (this.selectedTrapId && !this.traps.some((t) => t.id === this.selectedTrapId)) {
       this.selectedTrapId = null
+    }
+    // A body decays out from under its own selection panel after 20s.
+    if (this.selectedCorpseId !== null && !this.corpses.some((c) => c.id === this.selectedCorpseId)) {
+      this.selectedCorpseId = null
     }
     // Battle tracker (debug) — only populated when the active map has
     // debug.battleTracker=true. Null when disabled so reactive watchers can
@@ -1967,6 +1984,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.selectedZoneId = null
+    this.selectedCorpseId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -1986,6 +2004,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.selectedZoneId = null
+    this.selectedCorpseId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -2005,6 +2024,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.selectedZoneId = null
+    this.selectedCorpseId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -2291,6 +2311,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.selectedZoneId = null
+    this.selectedCorpseId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -2306,6 +2327,7 @@ export class GameState {
     this.selectedObstacleId = obstacleId
     this.selectedTrapId = null
     this.selectedZoneId = null
+    this.selectedCorpseId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -2323,6 +2345,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = trapId
     this.selectedZoneId = null
+    this.selectedCorpseId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -2341,6 +2364,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.selectedZoneId = zoneId
+    this.selectedCorpseId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -2396,6 +2420,51 @@ export class GameState {
   getSelectedTrap(): TrapSnapshot | null {
     if (!this.selectedTrapId) return null
     return this.traps.find((trap) => trap.id === this.selectedTrapId) ?? null
+  }
+
+  // Selects a body. Mirrors selectTrap: no ownership filter — you can inspect
+  // what you killed as readily as what you lost.
+  selectCorpse(corpseId: number) {
+    this.selectedUnitIds.clear()
+    this.selectedUnitOrder = []
+    this.selectedBuildingId = null
+    this.selectedObstacleId = null
+    this.selectedTrapId = null
+    this.selectedZoneId = null
+    this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = null
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
+    // Last: the clears above are the shared reset, and one of them would
+    // otherwise wipe what we just set.
+    this.selectedCorpseId = corpseId
+  }
+
+  getSelectedCorpse(): CorpseSnapshot | null {
+    if (this.selectedCorpseId === null) return null
+    return this.corpses.find((corpse) => corpse.id === this.selectedCorpseId) ?? null
+  }
+
+  // Returns the body under (x, y), closest first. Same deliberate
+  // click-near-the-centre rule as traps, and the same low priority: anything
+  // alive standing over a body is selected instead.
+  getCorpseAtPosition(x: number, y: number): CorpseSnapshot | undefined {
+    const hitRadiusSq = CORPSE_HIT_RADIUS * CORPSE_HIT_RADIUS
+    let best: CorpseSnapshot | undefined
+    let bestDistSq = Infinity
+    for (const corpse of this.corpses) {
+      const dx = corpse.x - x
+      const dy = corpse.y - y
+      const distSq = dx * dx + dy * dy
+      if (distSq > hitRadiusSq) continue
+      if (distSq < bestDistSq) {
+        best = corpse
+        bestDistSq = distSq
+      }
+    }
+    return best
   }
 
   // Returns the trap under (x, y). Trap selection requires clicking near the
@@ -2476,6 +2545,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.selectedZoneId = null
+    this.selectedCorpseId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.unitTargetingMode = null
@@ -2805,6 +2875,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.selectedZoneId = null
+    this.selectedCorpseId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = unitId
     this.buildingTargetingMode = null
@@ -3237,6 +3308,27 @@ export class GameState {
           : 'Trap',
         details: getTrapDetails(selectedTrap),
         actions: [],
+      }
+    }
+
+    // A body reports as `kind: 'unit'` on purpose: the whole point of clicking
+    // one is to see WHO it was, so it should read with the same name/path/rank
+    // header a living unit gets. `actions` stays empty — a corpse takes no
+    // orders, and it is not in `units`, so nothing could act on it anyway.
+    const selectedCorpse = this.getSelectedCorpse()
+    if (selectedCorpse) {
+      const mine = selectedCorpse.ownerId === this.localPlayerId
+      return {
+        kind: 'unit',
+        title: selectedCorpse.name || selectedCorpse.unitType,
+        subtitle: mine ? 'Your dead' : `Dead (${selectedCorpse.ownerId})`,
+        details: getCorpseDetails(selectedCorpse),
+        actions: [],
+        pathLabel:
+          selectedCorpse.progressionPath && selectedCorpse.progressionPath !== 'none'
+            ? formatUnitPath(selectedCorpse.progressionPath)
+            : undefined,
+        rankLabel: formatUnitRank(selectedCorpse.rank ?? ''),
       }
     }
 
@@ -5216,6 +5308,19 @@ function formatTrapName(trapType: TrapSnapshot['type']): string {
     default:
       return trapType
   }
+}
+
+// A corpse has no combat stats to show — it has no behaviour. The one live
+// number is how long the body has left, which is also the window any future
+// revive or raise has to work in.
+function getCorpseDetails(corpse: CorpseSnapshot): DetailItem[] {
+  return [
+    {
+      id: 'corpse-remaining',
+      label: 'Decays in',
+      value: `${Math.max(0, corpse.remaining).toFixed(1)}s`,
+    },
+  ]
 }
 
 function getTrapDetails(trap: TrapSnapshot): DetailItem[] {

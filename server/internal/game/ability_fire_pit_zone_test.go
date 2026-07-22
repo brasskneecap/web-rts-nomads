@@ -107,46 +107,37 @@ func TestFirePitZone_DamagesEnemiesNotAllies(t *testing.T) {
 	}
 }
 
-// TestFirePitZone_RankScaling pins the per-rank parameter bases that the old
-// perk ConfigByRank used to carry (dps 16/28/45, radius 55/75/95). Values are
-// read from the ability's own declaration rather than hardcoded, so a catalog
-// re-tune moves the test with it.
-func TestFirePitZone_RankScaling(t *testing.T) {
-
+// TestFirePitZone_RankIsNotAnAbilityConcern replaces TestFirePitZone_RankScaling,
+// which pinned the per-rank damage/radius bases (dps 16/28/45, radius 55/75/95)
+// the ability itself used to carry in a `byRank` block.
+//
+// That mechanism is retired. An ability now declares ONE set of numbers and a
+// promoted unit hits harder because ITS rank raises ability power / ability
+// damage / the path's per-rank ability stats — one scaling story instead of two,
+// and it applies to every ability a rank grants rather than only the ones whose
+// author remembered to write a byRank block.
+func TestFirePitZone_RankIsNotAnAbilityConcern(t *testing.T) {
+	var seen []float64
 	for _, rank := range []string{unitRankBronze, unitRankSilver, unitRankGold} {
-		t.Run(rank, func(t *testing.T) {
-			s := newTrapState(t)
-			s.mu.Lock()
-			defer s.mu.Unlock()
-
-			caster, _ := castFirePit(t, s, rank)
-
-			wantDPS := authoredTrapField(t, "fire_pit", rank, "dps")
-			wantRadius := authoredTrapField(t, "fire_pit", rank, "radius")
-
-			if got := effTrapField(t, s, caster, "fire_pit", "dps"); got != wantDPS {
-				t.Errorf("dps at %s = %v, want %v", rank, got, wantDPS)
-			}
-			if got := effTrapField(t, s, caster, "fire_pit", "radius"); got != wantRadius {
-				t.Errorf("radius at %s = %v, want %v", rank, got, wantRadius)
-			}
-			// The spawned zone must actually use the rank-scaled radius.
-			if len(s.AbilityZones) != 1 {
-				t.Fatalf("AbilityZones = %d, want 1", len(s.AbilityZones))
-			}
-			if z := s.AbilityZones[0]; z.Radius != wantRadius {
-				t.Errorf("zone radius at %s = %v, want %v", rank, z.Radius, wantRadius)
-			}
-		})
-	}
-
-	t.Run("higher ranks really do scale up", func(t *testing.T) {
-		bronze := authoredTrapField(t, "fire_pit", unitRankBronze, "dps")
-		gold := authoredTrapField(t, "fire_pit", unitRankGold, "dps")
-		if !(gold > bronze) {
-			t.Fatalf("gold dps %v should exceed bronze %v — per-rank bases are not being applied", gold, bronze)
+		s := newTrapState(t)
+		s.mu.Lock()
+		caster, _ := castFirePit(t, s, rank)
+		seen = append(seen, effTrapField(t, s, caster, "fire_pit", "dps"))
+		if len(s.AbilityZones) != 1 {
+			s.mu.Unlock()
+			t.Fatalf("AbilityZones = %d, want 1", len(s.AbilityZones))
 		}
-	})
+		s.mu.Unlock()
+	}
+	// The archer's path authors no per-rank ability stats, so with rank no longer
+	// selecting a base the pit is identical at every rank. This is the assertion
+	// that fails if a byRank-shaped mechanism comes back.
+	for i, got := range seen {
+		if got != seen[0] {
+			t.Errorf("dps at rank %d = %v, want %v — the ability itself must not vary by rank",
+				i, got, seen[0])
+		}
+	}
 }
 
 // TestFirePitZone_ModifierPerksReachTheMigratedTrap pins that the Trapper's

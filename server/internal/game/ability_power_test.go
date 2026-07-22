@@ -353,13 +353,25 @@ func TestPreview_CasterUnitTypeAndRank(t *testing.T) {
 		}
 	})
 
-	// fire_pit authors byRank overrides for dps and radius, so rank must move the
-	// number even with NO ratio in play.
-	t.Run("rank drives the ability's own byRank overrides", func(t *testing.T) {
+	// An ability's OWN numbers no longer vary by rank — abilities used to be able
+	// to carry per-rank field overrides, and that is retired. With no ratio in
+	// play there is nothing for the rank to reach.
+	t.Run("rank alone does not change an ability's own numbers", func(t *testing.T) {
 		bronze := run(t, "adept", unitRankBronze, 0)
 		gold := run(t, "adept", unitRankGold, 0)
+		if gold != bronze {
+			t.Errorf("gold dealt %d, bronze %d — an unratioed ability must be rank-invariant", gold, bronze)
+		}
+	})
+
+	// ...and the flip side, which is the whole point of retiring byRank: rank
+	// still scales the ability, but THROUGH the caster. A ratio is what connects
+	// the two, so a gold unit's higher attack damage lands on the ability.
+	t.Run("rank scales a ratioed ability through the caster's stats", func(t *testing.T) {
+		bronze := run(t, "adept", unitRankBronze, 1.0)
+		gold := run(t, "adept", unitRankGold, 1.0)
 		if gold <= bronze {
-			t.Errorf("gold dealt %d, bronze %d — byRank overrides are not reaching the preview", gold, bronze)
+			t.Errorf("gold dealt %d, bronze %d — rank is not reaching the ability through the caster", gold, bronze)
 		}
 	})
 

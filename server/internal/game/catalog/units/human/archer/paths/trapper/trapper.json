@@ -1,6 +1,5 @@
 {
   "path": "trapper",
-  "visionRange": 352,
   "description": "Utility-through-traps archer path. Stat tuning deferred; rows currently mirror the default rank curve (see none.json) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Trapper gets its formal pass.",
   "bounds": {
     "halfWidth": 20,
@@ -9,34 +8,78 @@
     "ringOffsetX": 0,
     "ringOffsetY": -16
   },
-  "perksByRank": {
-    "silver": ["amplified_effects", "barbed_field", "explosive_chain", "exposed_weakness", "extended_setup", "lasting_flames", "rapid_deployment", "wider_nets"],
-    "gold": ["ascendant_infusion", "increased_deployment", "overload_protocol"]
-  },
-  "abilityPoolsByRank": {
-    "bronze": ["caltrops", "explosive_trap", "fire_pit", "marker_trap"]
-  },
+  "visionRange": 352,
+  "abilities": [],
   "ranks": {
     "bronze": {
-      "maxHPMultiplier": 1.50,
-      "damageMultiplier": 1.50,
-      "attackSpeedMultiplier": 1.00,
-      "moveSpeedMultiplier": 1.00,
-      "armor": 10
-    },
-    "silver": {
-      "maxHPMultiplier": 1.80,
-      "damageMultiplier": 1.80,
-      "attackSpeedMultiplier": 1.10,
-      "moveSpeedMultiplier": 1.00,
-      "armor": 20
+      "baseStats": {
+        "abilityPower": 15
+      },
+      "maxHPMultiplier": 1.5,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 1.5,
+      "attackSpeedMultiplier": 1,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
+      "armor": 10,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
     },
     "gold": {
-      "maxHPMultiplier": 2.10,
-      "damageMultiplier": 2.10,
+      "maxHPMultiplier": 2.1,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 2.1,
       "attackSpeedMultiplier": 1.25,
-      "moveSpeedMultiplier": 1.00,
-      "armor": 30
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
+      "armor": 30,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
+    },
+    "silver": {
+      "maxHPMultiplier": 1.8,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 1.8,
+      "attackSpeedMultiplier": 1.1,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
+      "armor": 20,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
     }
+  },
+  "perksByRank": {
+    "gold": [
+      "ascendant_infusion",
+      "increased_deployment",
+      "overload_protocol"
+    ],
+    "silver": [
+      "amplified_effects",
+      "barbed_field",
+      "explosive_chain",
+      "exposed_weakness",
+      "extended_setup",
+      "lasting_flames",
+      "rapid_deployment",
+      "wider_nets"
+    ]
+  },
+  "abilityPoolsByRank": {
+    "bronze": [
+      "caltrops",
+      "explosive_trap",
+      "fire_pit",
+      "marker_trap"
+    ]
   }
 }

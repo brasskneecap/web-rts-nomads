@@ -467,11 +467,14 @@
         </div>
 
         <!-- Paths tab: a nested path selector (existing paths + New Path on the
-             right), then the selected path's inline editor — a compact action
-             bar (id + Save/Delete) over its own sub-tabbed sections. -->
+             right) over the selected path's inline editor. Both live in a
+             STICKY header — the unit's own EditorHeader sits outside this
+             scroll viewport and so stays put on its own, which made Save Path
+             the one save button that scrolled away. -->
         <div v-else class="unit-editor__paths-tab">
           <p v-if="!selectedType" class="unit-hint">Save this unit before adding promotion paths.</p>
           <template v-else>
+            <div class="unit-editor__path-header">
             <div class="unit-editor__path-strip" role="tablist" aria-label="Promotion paths">
               <button
                 v-for="entry in pathsByUnit[selectedType] ?? []"
@@ -491,8 +494,15 @@
               >+ New Path</button>
             </div>
 
-            <template v-if="pathForm">
-              <!-- Compact action bar: id editable only for a brand-new path. -->
+            <!-- Section tabs and this path's actions share one line: id
+                 (editable only for a brand-new path) + Save/Delete. -->
+            <div v-if="pathForm" class="unit-editor__path-tabrow">
+              <EditorTabs
+                v-model="activePathTab"
+                :tabs="PATH_TABS"
+                id-prefix="unit-path"
+                label="Path sections"
+              />
               <div class="unit-editor__path-actions">
                 <label class="unit-editor__path-id">
                   <span>id</span>
@@ -507,17 +517,16 @@
                 </label>
                 <UiButton size="sm" variant="active" :disabled="busy || !pathForm.parentUnit || !pathForm.path" @click="savePath">Save Path</UiButton>
                 <UiButton v-if="selectedPath !== null" size="sm" variant="secondary" :disabled="busy" @click="removePath">Delete Path</UiButton>
-                <span v-if="saveError" class="unit-error unit-editor__path-error">{{ saveError }}</span>
               </div>
+            </div>
 
-              <EditorTabs
-                v-model="activePathTab"
-                :tabs="PATH_TABS"
-                id-prefix="unit-path"
-                label="Path sections"
-                class="unit-editor__tabs"
-              />
+            <!-- Its own row, not squeezed into the tab row: a server message is
+                 long enough to push the tabs around, and it must stay readable
+                 while it is pinned. -->
+            <p v-if="pathForm && saveError" class="unit-error unit-editor__path-error">{{ saveError }}</p>
+            </div>
 
+            <template v-if="pathForm">
               <div class="unit-editor__grid">
                 <!-- Identity -->
                 <SectionCard v-show="activePathTab === pathSectionTab('identity')" title="Identity" :index="pathSectionIndex('identity')">
@@ -926,7 +935,7 @@ const pathForm = ref<PathEditorForm | null>(null)
 
 // Perk References: per-rank list of standalone perk ids explicitly granted by
 // this path. Fixed row order regardless of which rank keys are actually
-// present on perksByRank, mirroring PathRankGrid's RANK_ORDER idiom.
+// present on perksByRank.
 const PERK_RANK_ORDER = ['bronze', 'silver', 'gold'] as const
 
 function perksForRank(rank: string): string[] {
@@ -2538,12 +2547,40 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/* Both header rows pin to the top of the scroll viewport (GameScrollArea's
+   .game-scroll__viewport, a plain overflow-y:auto box, so sticky resolves
+   against it — no transformed or overflow-clipped ancestor in between).
+   OPAQUE background is load-bearing: cards scroll UNDER this and the panel art
+   behind is textured, so any alpha would show them through. */
+.unit-editor__path-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ed-gap);
+  background: var(--ed-sticky-bg);
+  padding-bottom: 4px;
+}
+
 /* Path selector strip — same tab look as the unit/section tabs, with New Path
    pushed to the far right. */
 .unit-editor__path-strip {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  border-bottom: 1px solid var(--ed-line);
+}
+
+/* Section tabs on the left, this path's id/Save/Delete on the right, sharing
+   the hairline that connects the row to the cards below it. The tabs keep
+   their natural width and the actions take the slack. */
+.unit-editor__path-tabrow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--ed-line);
 }
 
@@ -2575,14 +2612,15 @@ onBeforeUnmount(() => {
   color: var(--ed-brass);
 }
 
-/* Compact action bar under the path selector: id (new paths only) + Save/Delete,
-   pushed to the right. */
+/* id + Save/Delete, riding the right end of the section-tab row. Bottom padding
+   lifts them clear of the hairline the tabs sit on. */
 .unit-editor__path-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+  padding-bottom: 4px;
 }
 
 .unit-editor__path-id {
@@ -2601,7 +2639,7 @@ onBeforeUnmount(() => {
 }
 
 .unit-editor__path-error {
-  margin-left: 4px;
+  margin: 0;
 }
 
 /* The rank grid can be wider than its card — scroll it horizontally so every

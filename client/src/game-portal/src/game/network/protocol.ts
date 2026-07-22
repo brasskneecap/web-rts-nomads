@@ -1340,6 +1340,30 @@ export type BannerSnapshot = {
   remainingSeconds: number
 }
 
+/** A dead unit's body, still on the field until it decays.
+ *
+ *  A SEPARATE list from `units`, mirroring the server's own split: a corpse is
+ *  not a unit. Keeping it out of `units` is what stops every place that
+ *  iterates units — selection, drag-select, click targeting, health bars,
+ *  minimap blips, the HUD — from picking one up by accident. Only the renderer
+ *  reads this. See docs/design/death_and_corpses.md. */
+export type CorpseSnapshot = {
+  id: number
+  ownerId: string
+  unitType: string
+  /** Who this was. The only "stats" a body carries — it has no behaviour, so it
+   *  has no damage/range/speed worth sending. Enough to name the unit a player
+   *  just lost when they click its corpse. */
+  name?: string
+  rank?: string
+  progressionPath?: string
+  color?: string
+  x: number
+  y: number
+  /** Seconds left before the body decays; drives the fade-out. */
+  remaining: number
+}
+
 export type TrapSnapshot = {
   id: string
   ownerId: string
@@ -1676,6 +1700,8 @@ export type MatchSnapshotMessage = {
   obstacleMetadata?: ObstacleMetadataPatch[]
   players: PlayerSnapshot[]
   units: UnitSnapshot[]
+  /** Bodies of dead units. Absent when nothing has died recently. */
+  corpses?: CorpseSnapshot[]
   wave: WaveSnapshot
   banners?: BannerSnapshot[]
   traps?: TrapSnapshot[]

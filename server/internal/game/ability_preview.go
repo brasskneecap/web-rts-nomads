@@ -129,9 +129,12 @@ type PreviewRequest struct {
 	// stale value means the unit was renamed, not that the preview is invalid.
 	CasterUnitType string `json:"casterUnitType,omitempty"`
 	// CasterRank previews the caster at bronze/silver/gold. Empty leaves the
-	// spawn rank. Rank drives BOTH the unit's own stat multipliers and an
-	// ability's byRank field overrides (AbilityRankOverride), so this is the
-	// only way to see what an ability does at gold without editing a unit.
+	// spawn rank. Rank reaches an ability only THROUGH the caster — its stat
+	// multipliers, its path's per-rank base stats and per-rank ability stats.
+	// The ability's own numbers are the same at every rank (an ability used to
+	// be able to carry per-rank overrides of its own; that was retired so there
+	// is one scaling story, not two). This is the only way to see what an
+	// ability does at gold without editing a unit.
 	CasterRank string `json:"casterRank,omitempty"`
 	// CasterPath is the PROMOTION PATH the ranked caster is on, and it is not
 	// optional detail: pathModifierFor(path, rank) is what turns a rank into

@@ -198,6 +198,9 @@ func (s *GameState) despawnNeutralCampLocked(camp *NeutralCamp) {
 		if u == nil {
 			continue
 		}
+		// removeUnitLocked, NOT killUnitLocked: a hidden camp DESPAWNS, it does
+		// not die (that is the same distinction the chest-gate above makes).
+		// Leaving bodies here would litter the map every time a wave starts.
 		s.removeUnitLocked(id)
 	}
 	// Belt-and-suspenders clear: any IDs the hook may have missed.

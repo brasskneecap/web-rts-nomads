@@ -1083,11 +1083,17 @@ func sortedUnitTypesForPathValidation() []string {
 }
 
 // pathAbilityStatsFor returns the ability stats a unit on `path` carries at
-// `rank`, or nil. Absolute per rank (see PathDef.AbilityStatsByRank), so only
-// the unit's CURRENT rank block applies — gold's numbers already include
-// everything silver had.
+// `rank`, or nil.
+//
+// Values are ABSOLUTE per rank (see PathDef.AbilityStatsByRank) — gold's number
+// for a stat replaces silver's rather than adding to it — but a rank that does
+// not mention a stat INHERITS it, so resolution folds bronze up to `rank` with
+// the highest authored rank winning. Reading only the current rank's block
+// dropped a bronze-authored stat the moment the unit promoted, which is the
+// opposite of the floor the editor and validatePathAbilityStatsByRank promise.
 func pathAbilityStatsFor(path, rank string) map[string]AbilityStatMod {
-	if path == "" || path == unitPathNone || rank == "" {
+	top := pathRankIndex(rank)
+	if path == "" || path == unitPathNone || top < 0 {
 		return nil
 	}
 	pathCatalogMu.RLock()
@@ -1096,13 +1102,16 @@ func pathAbilityStatsFor(path, rank string) map[string]AbilityStatMod {
 	if !ok {
 		return nil
 	}
-	stats, ok := byRank[rank]
-	if !ok || len(stats) == 0 {
-		return nil
-	}
-	out := make(map[string]AbilityStatMod, len(stats))
-	for id, mod := range stats {
-		out[id] = mod
+	var out map[string]AbilityStatMod
+	for _, r := range pathRankOrder[:top+1] {
+		if stats := byRank[r]; len(stats) > 0 {
+			if out == nil {
+				out = make(map[string]AbilityStatMod, len(stats))
+			}
+			for id, mod := range stats {
+				out[id] = mod
+			}
+		}
 	}
 	return out
 }
@@ -1110,6 +1119,19 @@ func pathAbilityStatsFor(path, rank string) map[string]AbilityStatMod {
 // pathRankOrder is bronze -> silver -> gold, the order a unit promotes through.
 // Used to check that a per-rank block never regresses.
 var pathRankOrder = []string{unitRankBronze, unitRankSilver, unitRankGold}
+
+// pathRankIndex is rank's position in pathRankOrder, or -1 for anything that is
+// not a promotion rank (base, or a typo). Callers that fold "every rank up to
+// this one" MUST reject -1 rather than treat it as "fold them all" — base rank
+// would then inherit gold's numbers.
+func pathRankIndex(rank string) int {
+	for i, r := range pathRankOrder {
+		if r == rank {
+			return i
+		}
+	}
+	return -1
+}
 
 // validatePathAbilityStatsByRank checks a path's abilityStatsByRank: real rank
 // keys, real stat ids, finite values, the same flat-only rule the unit/item

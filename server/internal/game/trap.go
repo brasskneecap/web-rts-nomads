@@ -783,7 +783,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 
 	// Cull units that died from trap effects this tick.
 	for _, id := range deadUnitIDs {
-		s.removeUnitLocked(id)
+		s.killUnitLocked(id)
 	}
 }
 
@@ -947,7 +947,7 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 	}
 
 	for _, id := range deadUnitIDs {
-		s.removeUnitLocked(id)
+		s.killUnitLocked(id)
 	}
 }
 
@@ -1555,7 +1555,7 @@ func (s *GameState) fireFinalExposureLocked(victim *Unit) {
 	}
 
 	for _, id := range dead {
-		s.removeUnitLocked(id)
+		s.killUnitLocked(id)
 	}
 }
 
@@ -1685,7 +1685,7 @@ func (s *GameState) fireTrapExpiryEffectsLocked(trap *Trap) {
 			dead = s.fireTrapOverloadOnExitLocked(trap, ownerUnit, victim, dead)
 		}
 		for _, id := range dead {
-			s.removeUnitLocked(id)
+			s.killUnitLocked(id)
 		}
 		trap.UnitsInZone = nil
 		return

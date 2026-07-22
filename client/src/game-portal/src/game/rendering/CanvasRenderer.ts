@@ -41,7 +41,7 @@ import {
 import { getResolvedAttackOriginFor, getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
 import { resolveUnitShadow, SHADOW_LIGHT_DX, SHADOW_LIGHT_DY, SHADOW_LIGHT_SHIFT } from '../maps/unitShadow'
-import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone, ZoneSnapshot } from '../network/protocol'
+import type { BannerSnapshot, BeamSnapshot, BuildingTile, CorpseSnapshot, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone, ZoneSnapshot } from '../network/protocol'
 import { ENEMY_PLAYER_ID, ZONE_TEAM_OWNER } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
@@ -86,6 +86,15 @@ function resolveItemIconImage(itemId: string): HTMLImageElement | null {
   if (img) itemIconCache.set(itemId, img)
   return img
 }
+
+
+// Placeholder corpse look. Both are here rather than inline so the eventual
+// swap to real body art has one obvious place to start.
+const CORPSE_POOL_RADIUS = 9
+// Seconds of fade at the END of a body's life. The server sends `remaining`, so
+// this is purely a render choice.
+const CORPSE_FADE_SECONDS = 1.5
+
 
 export type MinimapBounds = {
   x: number
@@ -556,6 +565,9 @@ export class CanvasRenderer {
     this.drawMapBackground()
     this.drawZoneOverlay()
     this.drawBuildingSpawnMarkers()
+    // Corpses sit UNDER everything a living unit draws: they are ground decals,
+    // and a body should never occlude the unit standing over it.
+    this.drawCorpses(this.state.corpses)
     this.drawTraps(this.state.traps)
     this.drawBanners(this.state.banners)
     // Loot-drop chests render after banners but before units so the collecting
@@ -1544,6 +1556,62 @@ export class CanvasRenderer {
   // Alpha fades linearly from 1 → 0.15 as remainingSeconds → 0, using the
   // same per-id initial-duration cache pattern as drawBanners.
   // ──────────────────────────────────────────────────────────────────────────
+  // ── Corpses ────────────────────────────────────────────────────────────────
+  // PLACEHOLDER ART. A dead unit currently renders as a dark red splatter on
+  // the ground, drawn procedurally — no sprite, no per-unit-type art, nothing
+  // to author. It exists so the whole death→corpse→decay system can ship and be
+  // played with before any death animation or body sprite is drawn. When real
+  // art arrives, this method is the only thing that changes; nothing else in
+  // the client knows what a corpse looks like.
+  //
+  // Deliberately NOT drawn as a faded unit sprite: a body that looks like a
+  // unit invites clicking it, and corpses are not in `units`, so a click would
+  // do nothing and read as a bug.
+  private drawCorpses(corpses: CorpseSnapshot[]) {
+    if (corpses.length === 0) return
+    const ctx = this.ctx
+    for (const corpse of corpses) {
+      // Fade over the last second of the body's life so it dissolves instead of
+      // popping. Full opacity for the rest of its 20s.
+      const fade = Math.max(0, Math.min(1, corpse.remaining / CORPSE_FADE_SECONDS))
+      ctx.save()
+      ctx.globalAlpha = 0.85 * fade
+      ctx.translate(corpse.x, corpse.y)
+
+      // A main pool plus a few satellite spatters. Offsets are derived from the
+      // unit id, not random, so a given body looks the same on every frame and
+      // on every client — the renderer must stay deterministic.
+      ctx.fillStyle = '#6b1414'
+      ctx.beginPath()
+      ctx.ellipse(0, 0, CORPSE_POOL_RADIUS, CORPSE_POOL_RADIUS * 0.62, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Selected body: a thin ring, the one visual affordance telling the
+      // player their click landed on something.
+      if (this.state.selectedCorpseId === corpse.id) {
+        ctx.strokeStyle = '#d8c58a'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.ellipse(0, 0, CORPSE_POOL_RADIUS + 4, (CORPSE_POOL_RADIUS + 4) * 0.62, 0, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+
+      ctx.fillStyle = '#8c1c1c'
+      for (let i = 0; i < 4; i++) {
+        // Cheap deterministic hash of (id, i) -> angle/distance/size.
+        const h = Math.sin((corpse.id + 1) * 12.9898 + i * 78.233) * 43758.5453
+        const frac = h - Math.floor(h)
+        const angle = frac * Math.PI * 2
+        const dist = CORPSE_POOL_RADIUS * (0.7 + frac * 0.8)
+        const r = 1.5 + frac * 2.5
+        ctx.beginPath()
+        ctx.ellipse(Math.cos(angle) * dist, Math.sin(angle) * dist * 0.6, r, r * 0.62, 0, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.restore()
+    }
+  }
+
   private drawTraps(traps: TrapSnapshot[]) {
     const ctx = this.ctx
     const now = this.timeSource()

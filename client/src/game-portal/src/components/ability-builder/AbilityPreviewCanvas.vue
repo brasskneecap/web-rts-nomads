@@ -288,6 +288,7 @@ function applyFrame(i: number) {
   const frame = props.frames[i]
   if (!frame) {
     state.units = []
+    state.corpses = []
     state.projectiles = []
     state.beams = []
     state.effects = []
@@ -296,6 +297,13 @@ function applyFrame(i: number) {
   }
   const snap = frame.snapshot
   state.units = (snap.units ?? []).map(mapUnitSnapshot)
+  // corpses: the preview must show what a match shows. A previewed kill leaves
+  // a body in the captured frame exactly as it does live (the frames ARE
+  // snapshotUnfilteredLocked output), so without this an ability that kills
+  // something previews as the target simply blinking out of existence — which
+  // is no longer what happens in a real match. Same reasoning, and the same
+  // one-line fix, as traps below.
+  state.corpses = snap.corpses ?? []
   state.projectiles = snap.projectiles ?? []
   state.beams = snap.beams ?? []
   state.effects = snap.effects ?? []
@@ -394,11 +402,13 @@ function editModePoints(): Array<{ x: number; y: number }> {
 
 // applyEditModeScene writes the synthetic caster+scene-unit snapshot onto
 // the standalone GameState — the edit-mode equivalent of applyFrame above.
-// No projectiles/beams/effects/traps exist before a cast is ever requested
-// (clearing traps also drops any trap left over from a previous run's frames).
+// No corpses/projectiles/beams/effects/traps exist before a cast is ever
+// requested (clearing them also drops anything left over from a previous run's
+// frames — a body from the last replay must not haunt the edit-mode scene).
 function applyEditModeScene() {
   if (!state) return
   state.units = buildEditModeUnits(props.casterX ?? 0, props.casterY ?? 0, props.sceneUnits).map(mapUnitSnapshot)
+  state.corpses = []
   state.projectiles = []
   state.beams = []
   state.effects = []

@@ -1,6 +1,5 @@
 {
   "path": "marksman",
-  "visionRange": 448,
   "description": "Precision-ranged archer path. Stat tuning deferred; rows currently mirror the default rank curve (see none.json) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Marksman gets its formal pass.",
   "bounds": {
     "halfWidth": 20,
@@ -9,35 +8,67 @@
     "ringOffsetX": 0,
     "ringOffsetY": -12
   },
-  "perksByRank": {
-    "bronze": ["eagle_spirit", "hawk_spirit", "vulture_spirit"],
-    "silver": ["hunters_mark", "pierce", "split_shot"],
-    "gold": ["bullseye", "double_shot", "explosive_tips"]
-  },
+  "visionRange": 448,
+  "abilities": [],
   "ranks": {
     "bronze": {
-      "maxHPMultiplier": 1.10,
+      "maxHPMultiplier": 1.1,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
       "damageMultiplier": 1.75,
+      "attackSpeedMultiplier": 1,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
       "attackRangeMultiplier": 1.25,
-      "attackSpeedMultiplier": 1.00,
-      "moveSpeedMultiplier": 1.00,
-      "armor": 10
-    },
-    "silver": {
-      "maxHPMultiplier": 1.20,
-      "damageMultiplier": 2,
-      "attackRangeMultiplier": 1.5,
-      "attackSpeedMultiplier": 1.10,
-      "moveSpeedMultiplier": 1.00,
-      "armor": 20
+      "armor": 10,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
     },
     "gold": {
       "maxHPMultiplier": 1.35,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
       "damageMultiplier": 2.25,
-      "attackRangeMultiplier": 1.75,
       "attackSpeedMultiplier": 1.25,
-      "moveSpeedMultiplier": 1.00,
-      "armor": 30
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 1.75,
+      "armor": 30,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
+    },
+    "silver": {
+      "maxHPMultiplier": 1.2,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 2,
+      "attackSpeedMultiplier": 1.1,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 1.5,
+      "armor": 20,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
     }
+  },
+  "perksByRank": {
+    "bronze": [
+      "eagle_spirit",
+      "hawk_spirit",
+      "vulture_spirit"
+    ],
+    "gold": [
+      "bullseye",
+      "double_shot",
+      "explosive_tips"
+    ],
+    "silver": [
+      "hunters_mark",
+      "pierce",
+      "split_shot"
+    ]
   }
 }

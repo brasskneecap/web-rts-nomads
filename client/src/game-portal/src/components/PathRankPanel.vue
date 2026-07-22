@@ -248,9 +248,8 @@ interface MultiplierColumn {
   baseKey: string
 }
 
-// Field names mirror PathRankGrid's, which were confirmed against the server's
-// pathRankStatsJSON. Kept in this component (rather than imported from the grid)
-// because the grid is on its way out once the tabs land.
+// Field names are the server's pathRankStatsJSON keys. This panel is the only
+// place they are listed — the old all-ranks PathRankGrid it replaced is deleted.
 const MULTIPLIER_COLUMNS: MultiplierColumn[] = [
   { key: 'maxHPMultiplier', label: 'Max HP', baseKey: 'hp' },
   { key: 'maxMPMultiplier', label: 'Max MP', baseKey: 'maxMana' },

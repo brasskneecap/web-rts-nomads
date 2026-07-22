@@ -322,8 +322,11 @@ func (s *GameState) tickAbilityStatusesLocked(dt float64) {
 	kept := active[:0]
 
 	for _, st := range active {
+		// unitIsAliveLocked, not a bare HP check: a status is attached to a
+		// LIVING host, so it must end the moment the host stops being one —
+		// including once dying units linger on the field as corpses.
 		target := s.getUnitByIDLocked(st.TargetUnitID)
-		if target == nil || target.HP <= 0 {
+		if !s.unitIsAliveLocked(target) {
 			s.fireAbilityStatusExpireLocked(st)
 			continue
 		}
@@ -334,7 +337,7 @@ func (s *GameState) tickAbilityStatusesLocked(dt float64) {
 			for st.tickTimer <= statusTickEpsilon {
 				st.tickTimer += st.TickInterval
 				s.fireAbilityStatusTickLocked(st)
-				if u := s.getUnitByIDLocked(st.TargetUnitID); u == nil || u.HP <= 0 {
+				if u := s.getUnitByIDLocked(st.TargetUnitID); !s.unitIsAliveLocked(u) {
 					diedMidTick = true
 					break
 				}

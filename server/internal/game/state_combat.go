@@ -977,7 +977,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 	}
 
 	for _, id := range deadUnitIDs {
-		s.removeUnitLocked(id)
+		s.killUnitLocked(id)
 	}
 	for _, id := range destroyedBuildingIDs {
 		s.destroyBuildingLocked(id)
@@ -1053,7 +1053,7 @@ func (s *GameState) tickBuildingCombatLocked(dt float64) {
 	}
 
 	for _, id := range deadUnitIDs {
-		s.removeUnitLocked(id)
+		s.killUnitLocked(id)
 	}
 }
 

@@ -186,9 +186,9 @@ describe('PreviewSceneControls', () => {
 })
 
 // The caster picker and rank selector are what make CASTER-SCALED abilities
-// testable: deal_damage's adRatio/apRatio read the caster's stats, and byRank
-// varies an ability's own numbers, so a preview locked to one hardcoded unit at
-// one rank could show neither.
+// testable: deal_damage's adRatio/apRatio read the caster's stats, and rank
+// changes those stats, so a preview locked to one hardcoded unit at one rank
+// could show neither.
 describe('PreviewSceneControls caster + rank', () => {
   it('defaults both to empty so the harness default (adept) is used', async () => {
     const wrapper = mount(PreviewSceneControls)

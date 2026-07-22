@@ -287,6 +287,31 @@ func (s *GameState) enqueueDeathLocked(target *Unit, src DamageSource) {
 	s.pendingDeaths = append(s.pendingDeaths, pendingDeath{UnitID: target.ID, Source: src})
 }
 
+// unitIsAliveLocked is THE definition of "this unit is still a living host" —
+// the question anything attached to a unit (a status, a status's visual, an
+// aura the unit projects) must ask before it keeps running.
+//
+// It is deliberately stricter than a bare HP check, and it is the seam to change
+// when units stop leaving the field the instant they die. A corpse that lingers
+// as a `*Unit` — a death animation, a lootable body, a raiseable skeleton — is
+// STILL NOT ALIVE, and every attached-to-a-unit system should stop the moment
+// this returns false rather than each site inventing its own test. Today the
+// three conditions are:
+//
+//   - the unit is gone from the registry entirely, or
+//   - its HP has reached zero, or
+//   - it is queued in this tick's pendingDeaths but not yet drained (the window
+//     between taking lethal damage and being removed, which is most of an
+//     Update pass — see drainPendingDeathsLocked's placement).
+//
+// A future explicit dead/alive flag belongs HERE, not at the call sites.
+//
+// Takes an already-resolved *Unit: it is a within-tick working value, matching
+// the project's target-resolution convention. Must be called under s.mu.
+func (s *GameState) unitIsAliveLocked(u *Unit) bool {
+	return u != nil && !u.Dead && u.HP > 0 && !s.pendingDeathsSet[u.ID]
+}
+
 // drainPendingDeathsLocked processes the per-tick death queue built up by
 // applyUnitDamageWithSourceLocked. For each entry:
 //
@@ -294,7 +319,7 @@ func (s *GameState) enqueueDeathLocked(target *Unit, src DamageSource) {
 //     the drain), skip — that call site already handled XP/stats. This is the
 //     safe coexistence path for legacy call sites.
 //   - If still present with HP<=0, run full kill bookkeeping using the
-//     DamageSource attribution, then removeUnitLocked.
+//     DamageSource attribution, then killUnitToCorpseLocked.
 //   - If HP>0 (re-healed — hypothetical; no revive perk exists yet), skip.
 //
 // Must be called once per tick from Update(), AFTER all combat/trap/projectile
@@ -421,9 +446,11 @@ func (s *GameState) drainPendingDeathsLocked() {
 		// select_targets{source:"current_event"} bind the corpse. A peer to
 		// the reactions above, not a replacement for any of them.
 		s.fireOnUnitDeathLocked(target, d.Source)
-		// Anonymous or after bookkeeping: remove the unit. If the unit was
-		// already removed by the call site above, removeUnitLocked is safe
-		// (removeUnitByIDLocked is a no-op for unknown IDs).
-		s.removeUnitLocked(d.UnitID)
+		// Anonymous or after bookkeeping: the unit becomes a CORPSE — torn
+		// down exactly as a removal would tear it down, but left on the field
+		// to decay (docs/design/death_and_corpses.md). It is still resolvable
+		// by ID from here on, which is what a later revive/raise needs; every
+		// system that must not act on it asks unitIsAliveLocked.
+		s.killUnitToCorpseLocked(target)
 	}
 }

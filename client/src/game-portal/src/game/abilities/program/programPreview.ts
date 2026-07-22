@@ -60,10 +60,10 @@ export interface PreviewRequest {
    * the harness default (an adept at spawn rank).
    *
    * These exist because an ability's damage can SCALE off its caster
-   * (deal_damage's adRatio/apRatio) and its numbers can vary by rank
-   * (AbilityDef.byRank) — so previewing against one hardcoded unit at one rank
-   * showed neither. An unknown unit type or rank degrades to the default
-   * server-side rather than failing the run.
+   * (deal_damage's adRatio/apRatio) and off the caster's rank — its stat
+   * multipliers and its path's per-rank stats — so previewing against one
+   * hardcoded unit at one rank showed neither. An unknown unit type or rank
+   * degrades to the default server-side rather than failing the run.
    */
   casterUnitType?: string
   casterRank?: string

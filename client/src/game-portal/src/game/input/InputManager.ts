@@ -455,13 +455,21 @@ export class InputManager {
           if (clickedTrap) {
             this.state.selectTrap(clickedTrap.id)
           } else {
-            // Zones have the absolute lowest priority: only selected when
-            // nothing else was hit (no unit/building/obstacle/trap).
-            const clickedZoneId = this.state.getZoneIdAtWorld(world.x, world.y)
-            if (clickedZoneId) {
-              this.state.selectZone(clickedZoneId)
+            // Corpses sit just below traps: anything alive standing over a body
+            // is selected first, but a body still beats bare ground so a player
+            // can click it to see what they lost.
+            const clickedCorpse = this.state.getCorpseAtPosition(world.x, world.y)
+            if (clickedCorpse) {
+              this.state.selectCorpse(clickedCorpse.id)
             } else {
-              this.state.clearSelection()
+              // Zones have the absolute lowest priority: only selected when
+              // nothing else was hit (no unit/building/obstacle/trap/corpse).
+              const clickedZoneId = this.state.getZoneIdAtWorld(world.x, world.y)
+              if (clickedZoneId) {
+                this.state.selectZone(clickedZoneId)
+              } else {
+                this.state.clearSelection()
+              }
             }
           }
         }

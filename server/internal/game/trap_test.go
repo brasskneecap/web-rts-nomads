@@ -1540,19 +1540,3 @@ func effTrapField(t *testing.T, s *GameState, caster *Unit, abilityID, param str
 	return v
 }
 
-// authoredTrapField is the same address read WITHOUT any caster folding — the
-// ability's own authored number, rank-adjusted. Used where a test needs the
-// expected value derived from the catalog rather than hardcoded.
-func authoredTrapField(t *testing.T, abilityID, rank, param string) float64 {
-	t.Helper()
-	def, ok := getAbilityDef(abilityID)
-	if !ok {
-		t.Fatalf("ability %q not found", abilityID)
-	}
-	site := trapFieldSite[abilityID][param]
-	authored, _, found := programActionConfigValue(def, site[0], site[1])
-	if !found {
-		t.Fatalf("%s action %q field %q not found", abilityID, site[0], site[1])
-	}
-	return abilityRankBaseValue(def, rank, site[0], site[1], authored)
-}

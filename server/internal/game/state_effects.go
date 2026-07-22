@@ -42,6 +42,21 @@ type effectInstance struct {
 	// never sets it) ⇒ the client treats empty as center, preserving prior
 	// behavior. playEffectOnUnitLocked sets it from the EffectDef.
 	Anchor EffectAnchor
+	// RequiresLiveAnchor drops the effect the moment its anchor stops being
+	// alive (unitIsAliveLocked) instead of letting it play out at the death
+	// position.
+	//
+	// The default (false) is right for a one-shot burst: an impact spark should
+	// finish where the unit died. It is WRONG for a visual that represents an
+	// ongoing STATE — burning is the flame of a status that no longer exists
+	// once its host is gone, so a corpse kept burning for the rest of the
+	// authored duration. Set by playEffectOnUnitForDurationLocked, whose only
+	// caller is play_presentation's bindToStatusDuration path.
+	//
+	// Deliberately keyed on ALIVENESS, not on the unit being gone: once dying
+	// units linger on the field as corpses, "the body is still there" must not
+	// keep a state visual running.
+	RequiresLiveAnchor bool
 }
 
 // queueEffectLocked spawns a transient visual effect anchored to a unit or
@@ -90,12 +105,16 @@ func (s *GameState) tickEffectsLocked() {
 		// Keep fallback position current so the snapshot is accurate even when
 		// the anchor was not in the last client frame.
 		if e.AnchorUnitID != 0 {
-			if anchor := s.getUnitByIDLocked(e.AnchorUnitID); anchor != nil && anchor.HP > 0 {
+			anchor := s.getUnitByIDLocked(e.AnchorUnitID)
+			if s.unitIsAliveLocked(anchor) {
 				e.FallbackX = anchor.X
 				e.FallbackY = anchor.Y
+			} else if e.RequiresLiveAnchor {
+				continue // state-visual whose subject is gone — drop, don't play out
 			}
-			// If anchor is gone we keep the last-known FallbackX/Y so the
-			// effect finishes at the position where the unit died.
+			// Otherwise the anchor is gone but we keep the last-known
+			// FallbackX/Y so the effect finishes at the position where the unit
+			// died.
 		}
 		if write != read {
 			s.activeEffects[write] = *e
