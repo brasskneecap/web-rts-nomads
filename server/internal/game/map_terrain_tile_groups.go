@@ -78,31 +78,51 @@ func (s *terrainStore) UnmarshalJSON(b []byte) error {
 
 // ── Tiles ──────────────────────────────────────────────────────────────────
 //
-// Grouped form: [ { "sheet": "...", "sx": N, "sy": N, "locations": [[x,y],...] } ].
-// A tile's identity is the (sheet, sx, sy) tuple, so groups are an array rather
-// than an object keyed by a single name.
+// Grouped form: [ { "tileset": "...", "col": N, "row": N, "locations": [[x,y],...] } ].
+// A tile's identity is the (tileset, col, row) tuple, so groups are an array
+// rather than an object keyed by a single name.
 
 // TileGroup is the authored representation of every tile sharing one
-// (sheet, sx, sy), plus its [x, y] locations.
+// (tileset, col, row), plus its [x, y] locations.
 type TileGroup struct {
 	protocol.TileCoord
 	Locations [][2]int `json:"locations"`
 }
 
-// tileKey identifies a distinct tile for grouping.
-type tileKey struct {
-	sheet  string
-	sx, sy int
+// UnmarshalJSON decodes a group's coord fields via protocol.TileCoord's own
+// UnmarshalJSON (so legacy sheet/sx/sy groups migrate the same way a single
+// TileCoord does) and separately decodes Locations. A custom method is
+// required here — if TileGroup relied on its embedded TileCoord's promoted
+// UnmarshalJSON, encoding/json would delegate the ENTIRE group payload to
+// TileCoord.UnmarshalJSON and silently drop the sibling "locations" field.
+func (g *TileGroup) UnmarshalJSON(b []byte) error {
+	if err := json.Unmarshal(b, &g.TileCoord); err != nil {
+		return err
+	}
+	var loc struct {
+		Locations [][2]int `json:"locations"`
+	}
+	if err := json.Unmarshal(b, &loc); err != nil {
+		return err
+	}
+	g.Locations = loc.Locations
+	return nil
 }
 
-// groupTiles collapses flat tile instances into per-(sheet,sx,sy) groups,
-// ordered deterministically by sheet then sx then sy. Locations keep input
-// order.
+// tileKey identifies a distinct tile for grouping.
+type tileKey struct {
+	tileset  string
+	col, row int
+}
+
+// groupTiles collapses flat tile instances into per-(tileset,col,row) groups,
+// ordered deterministically by tileset then col then row. Locations keep
+// input order.
 func groupTiles(tiles []protocol.TileInstance) []*TileGroup {
 	index := make(map[tileKey]*TileGroup)
 	order := make([]tileKey, 0)
 	for _, t := range tiles {
-		k := tileKey{t.Sheet, t.SX, t.SY}
+		k := tileKey{t.Tileset, t.Col, t.Row}
 		g, ok := index[k]
 		if !ok {
 			g = &TileGroup{TileCoord: t.TileCoord}
@@ -113,13 +133,13 @@ func groupTiles(tiles []protocol.TileInstance) []*TileGroup {
 	}
 	sort.Slice(order, func(i, j int) bool {
 		a, b := order[i], order[j]
-		if a.sheet != b.sheet {
-			return a.sheet < b.sheet
+		if a.tileset != b.tileset {
+			return a.tileset < b.tileset
 		}
-		if a.sx != b.sx {
-			return a.sx < b.sx
+		if a.col != b.col {
+			return a.col < b.col
 		}
-		return a.sy < b.sy
+		return a.row < b.row
 	})
 	out := make([]*TileGroup, 0, len(order))
 	for _, k := range order {

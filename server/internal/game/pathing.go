@@ -86,25 +86,32 @@ func (s *GameState) buildBlockedCells() map[gridPoint]bool {
 // its visual coord is one of the two "pure interior" Wang slots:
 //   (sx=64, sy=32) — mask 15, all 4 corners the "1" state
 //   (sx=0,  sy=96) — mask 0,  all 4 corners the "0" state
-// These are the same slots in every Wang sheet (grass-dirt, grass-grass-25,
-// dirt-dirt-25), so a tiles[] override pointing to (0, 96) on
-// grass-dirt-elevation-25.png is a pure-dirt walkable surface even if the
-// auto-tile underneath would have rendered a cliff transition.
+// These are the same slots in every Wang sheet, so a tiles[] override pointing
+// to (0, 96) on a *-elevation-25 sheet is a pure-interior walkable surface even
+// if the auto-tile underneath would have rendered a cliff transition.
 //
 // Mirrors computeWangMask in client terrainTileset.ts; if the algorithm
-// changes there, update both. If MapConfig.DefaultTile isn't one of the two
-// recognized canonical coords (grass or dirt pure), no terrain blocks are
-// added — the map is treated as if everything is walkable, matching the
-// editor's "no auto-tile" fallback path.
+// changes there, update both. If MapConfig.DefaultTile isn't a recognized
+// base-`tileset` grass/dirt coord (e.g. a flat *-elevation-0 sheet), the
+// auto-tile pass is skipped — the unpainted ground is uniformly walkable — but
+// tiles[] overrides are still evaluated so painted cliffs continue to block.
+// Mirrors the client's isTerrainCellBlocked.
 func addTerrainBlocks(blocked map[gridPoint]bool, cfg *protocol.MapConfig) {
-	defaultTerrain := inferDefaultTerrain(cfg.DefaultTile)
-	if defaultTerrain == "" {
-		return
-	}
-
 	gridCols := cfg.GridCols
 	gridRows := cfg.GridRows
 
+	// tiles[] overrides decide their own cell regardless of the default ground,
+	// so a painted cliff (-25 sheet) blocks even on a flat, walkable default.
+	tileOverrides := make(map[gridPoint]protocol.TileCoord, len(cfg.Tiles))
+	for _, t := range cfg.Tiles {
+		tileOverrides[gridPoint{X: t.X, Y: t.Y}] = t.TileCoord
+	}
+
+	// The Wang auto-tiler (and its transition-cliff blocking) only applies when
+	// the default ground is a recognized base-`tileset` grass/dirt terrain. For
+	// a flat-sheet default (inferDefaultTerrain == ""), the unpainted ground is
+	// uniform walkable, so only tile overrides can block.
+	defaultTerrain := inferDefaultTerrain(cfg.DefaultTile)
 	overrides := make(map[gridPoint]string, len(cfg.Terrain))
 	for _, t := range cfg.Terrain {
 		if t.X < 0 || t.X >= gridCols || t.Y < 0 || t.Y >= gridRows {
@@ -112,7 +119,6 @@ func addTerrainBlocks(blocked map[gridPoint]bool, cfg *protocol.MapConfig) {
 		}
 		overrides[gridPoint{X: t.X, Y: t.Y}] = t.Terrain
 	}
-
 	terrainAt := func(x, y int) string {
 		if x < 0 || x >= gridCols || y < 0 || y >= gridRows {
 			return defaultTerrain
@@ -123,19 +129,17 @@ func addTerrainBlocks(blocked map[gridPoint]bool, cfg *protocol.MapConfig) {
 		return defaultTerrain
 	}
 
-	tileOverrides := make(map[gridPoint]protocol.TileCoord, len(cfg.Tiles))
-	for _, t := range cfg.Tiles {
-		tileOverrides[gridPoint{X: t.X, Y: t.Y}] = t.TileCoord
-	}
-
 	for y := 0; y < gridRows; y++ {
 		for x := 0; x < gridCols; x++ {
 			cell := gridPoint{X: x, Y: y}
 			if override, ok := tileOverrides[cell]; ok {
-				if !isPureWangTileCoord(override) {
+				if !isWalkableGroundTile(override) {
 					blocked[cell] = true
 				}
 				continue
+			}
+			if defaultTerrain == "" {
+				continue // flat-sheet default: unpainted ground is walkable
 			}
 			mask := computeWangMask(x, y, defaultTerrain, terrainAt)
 			if mask != 0 && mask != 15 {
@@ -145,16 +149,31 @@ func addTerrainBlocks(blocked map[gridPoint]bool, cfg *protocol.MapConfig) {
 	}
 }
 
-// isPureWangTileCoord returns true for the two interior cells in any Wang
-// 4×4 sheet: (64,32) is the "all-1-corners" tile (pure grass / pure high
-// terrain) and (0,96) is the "all-0-corners" tile (pure dirt / pure low
-// terrain). Both represent flat walkable surfaces regardless of which sheet
-// the override points at.
-func isPureWangTileCoord(c protocol.TileCoord) bool {
-	if c.SX == 64 && c.SY == 32 {
+// isWalkableGroundTile reports whether a tiles[] override renders a flat,
+// walkable ground surface (as opposed to a cliff / edge / decoration, which
+// blocks movement).
+//
+//   - flat (-0) elevation sheets: uniform single-terrain (or a flat blend)
+//     with no cliffs — every tile is walkable ground.
+//   - every other (Wang 4×4) sheet, including the -25 cliff sheets: the two
+//     pure-interior slots — (col2,row1) grass and (col0,row3) dirt — are
+//     walkable; the cliff/edge tiles block. Mirrors the client's
+//     isWalkableGroundTile in terrainTileset.ts — keep the two in sync.
+func isWalkableGroundTile(c protocol.TileCoord) bool {
+	// Flat (-0) elevation sheets are uniform single-terrain (or a flat blend)
+	// with no cliffs — every tile is walkable ground. The matching -25 sheets
+	// carry the cliffs and fall through to the interior-slot rule below. Keep
+	// in sync with the client's isWalkableGroundTile in terrainTileset.ts.
+	switch c.Tileset {
+	case "corrupt-corrupt-elevation-0", "dirt-dirt-elevation-0", "dirt-grass-elevation-0",
+		"grass-grass-elevation-0", "snow-snow-elevation-0":
 		return true
 	}
-	if c.SX == 0 && c.SY == 96 {
+	// Wang sheets: pure-interior slots — (64,32)=col2,row1 grass; (0,96)=col0,row3 dirt.
+	if c.Col == 2 && c.Row == 1 {
+		return true
+	}
+	if c.Col == 0 && c.Row == 3 {
 		return true
 	}
 	return false
@@ -167,13 +186,13 @@ func inferDefaultTerrain(coord *protocol.TileCoord) string {
 	if coord == nil {
 		return "grass"
 	}
-	if coord.Sheet != "tileset" && coord.Sheet != "grass-dirt-0" {
+	if coord.Tileset != "tileset" {
 		return ""
 	}
 	switch {
-	case coord.SX == 64 && coord.SY == 32:
+	case coord.Col == 2 && coord.Row == 1:
 		return "grass"
-	case coord.SX == 0 && coord.SY == 96:
+	case coord.Col == 0 && coord.Row == 3:
 		return "dirt"
 	}
 	return ""

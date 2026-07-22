@@ -23,6 +23,7 @@ import { UNIT_DEF_MAP, initPathAttackOrigin, initPathBounds, initPathsByUnitType
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
 import { initItemDefs, ITEM_DEF_MAP, DEFAULT_CONSUMABLE_RANGE } from '../maps/itemDefs'
+import { initTilesetDefs } from '../rendering/terrainTileset'
 import {
   fetchBuildingDefs,
   fetchObstacleDefs,
@@ -30,6 +31,7 @@ import {
   fetchActionIcons,
   fetchPerkDefs,
   fetchItemDefs,
+  fetchTilesetDefs,
 } from '../maps/catalog'
 
 export type GameUiSnapshot = {
@@ -186,28 +188,40 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean; ephemeral?: boolean } = {}) {
-    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs] = await Promise.all([
+    window.addEventListener('keydown', this.handleDevHotkey)
+    this.network.setEphemeral(!!options.ephemeral)
+
+    // Fetch the render catalogs and open the match connection CONCURRENTLY.
+    // The WS connect + join_match don't depend on the catalog defs — the defs
+    // only feed rendering, which is gated behind the welcome-map load — so
+    // running them in series just stacked their latencies onto the startup
+    // wall. Init the defs as soon as the catalogs land, and wait for both
+    // before starting the render loop. (A snapshot that applies before the
+    // defs are in renders as placeholders for a frame, same as sprite pop-in.)
+    const catalogsReady = Promise.all([
       fetchBuildingDefs(),
       fetchObstacleDefs(),
       fetchUnitDefs(),
       fetchActionIcons(),
       fetchPerkDefs(),
       fetchItemDefs().catch(() => []),
-    ])
-    initBuildingDefs(buildingDefs.buildings)
-    initBuildingStyleRenders(buildingDefs.buildingStyles)
-    initObstacleDefs(obstacleDefs)
-    initUnitDefs(unitDefs.units)
-    initPathBounds(unitDefs.paths)
-    initPathAttackOrigin(unitDefs.paths)
-    initPathsByUnitType(unitDefs.pathsByUnit)
-    initActionIcons(actionIcons)
-    initPerkDefs(perkDefs)
-    // No initRecipeDefs: an item carries its own recipe (ItemDef.crafting).
-    initItemDefs(itemDefs)
-    window.addEventListener('keydown', this.handleDevHotkey)
-    this.network.setEphemeral(!!options.ephemeral)
-    await this.network.connect(options)
+      fetchTilesetDefs(),
+    ]).then(([buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs, tilesetDefs]) => {
+      initBuildingDefs(buildingDefs.buildings)
+      initBuildingStyleRenders(buildingDefs.buildingStyles)
+      initObstacleDefs(obstacleDefs)
+      initUnitDefs(unitDefs.units)
+      initPathBounds(unitDefs.paths)
+      initPathAttackOrigin(unitDefs.paths)
+      initPathsByUnitType(unitDefs.pathsByUnit)
+      initActionIcons(actionIcons)
+      initPerkDefs(perkDefs)
+      // No initRecipeDefs: an item carries its own recipe (ItemDef.crafting).
+      initItemDefs(itemDefs)
+      initTilesetDefs(tilesetDefs)
+    })
+
+    await Promise.all([catalogsReady, this.network.connect(options)])
     this.loop.start()
   }
 

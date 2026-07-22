@@ -798,6 +798,8 @@
             <select id="default-ground" :value="defaultGroundName" @change="onDefaultGroundChange">
               <option value="grass">Grass</option>
               <option value="dirt">Dirt</option>
+              <option value="snow">Snow</option>
+              <option value="corrupt">Corrupt</option>
             </select>
           </div>
 
@@ -812,13 +814,13 @@
           <div v-if="brushMode === 'tile'" class="control-group">
             <label for="tile-sheet">Tile Sheet</label>
             <select id="tile-sheet" v-model="selectedTileSheet" :disabled="!paintModeEnabled">
-              <option v-for="sheet in TILE_SHEET_NAMES" :key="sheet" :value="sheet">
+              <option v-for="sheet in tilesetIds" :key="sheet" :value="sheet">
                 {{ sheet }}
               </option>
             </select>
             <div class="tile-picker-hint">
               {{ selectedTileCoord
-                ? `Selected: (${selectedTileCoord.sx}, ${selectedTileCoord.sy}) — right-click a cell to erase`
+                ? `Selected: (${selectedTileCoord.col}, ${selectedTileCoord.row}) — right-click a cell to erase`
                 : 'Click a tile below to select it' }}
             </div>
             <canvas
@@ -1633,7 +1635,7 @@
 <script setup lang="ts">
 import type { ListDef } from '@/game/maps/listDefs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchLists, fetchUnitDefs, saveMapCatalogFile, LevelConflictError } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchLists, fetchUnitDefs, fetchTilesetDefs, saveMapCatalogFile, LevelConflictError } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import type {
@@ -1651,7 +1653,6 @@ import type {
   ObstacleType,
   PlacedUnit,
   TerrainType,
-  TileSheet,
   UnitType,
   VictoryCondition,
   Zone,
@@ -1682,12 +1683,13 @@ import {
 } from '@/game/maps/mapConfig'
 import {
   DEFAULT_TILE_PRESETS,
+  type DefaultGroundName,
   drawAutoTiledTerrain,
-  TILE_SHEET_NAMES,
-  getSheetImage,
+  getTilesetImage,
   getSheetTileSize,
+  initTilesetDefs,
   isTerrainTilesetReady,
-  onSheetReady,
+  onTilesetReady,
 } from '@/game/rendering/terrainTileset'
 import { getBuildingSprite, getRecipeShopStyleSprite, listRecipeShopStyles, getNeutralShopStyleSprite, listNeutralShopStyles } from '@/game/rendering/buildingSprites'
 import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
@@ -1742,7 +1744,11 @@ const brushSize = ref<1 | 3 | 5 | 7>(1)
 const selectedTerrain = ref<TerrainType>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
-const selectedTileSheet = ref<TileSheet>('tileset')
+const selectedTileSheet = ref<string>('tileset')
+// Populated on mount from GET /catalog/tilesets — the list of tileset ids the
+// "Tile Sheet" dropdown iterates. Data-driven (Tileset Editor plan); no more
+// hardcoded TILE_SHEET_NAMES constant.
+const tilesetIds = ref<string[]>([])
 
 // All unit types known to the catalog, populated by fetchUnitDefs. Buckets are
 // keyed by the unit's `faction` string and built dynamically — adding a new
@@ -1750,7 +1756,7 @@ const selectedTileSheet = ref<TileSheet>('tileset')
 // faction appear in the editor on next load with zero code changes here.
 const unitDefsByFaction = ref<Record<string, Array<{ type: UnitType; label: string }>>>({})
 
-const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
+const selectedTileCoord = ref<{ col: number; row: number } | null>(null)
 const selectedSpawnTownhallId = ref('')
 const spawnPointFillOrder = ref(0)
 const spawnPointPlayerLabel = ref('')
@@ -2629,24 +2635,20 @@ const editWaveNumber = computed(() => {
     ?? 1
 })
 
-const defaultGroundName = computed<'grass' | 'dirt'>(() => {
+const defaultGroundName = computed<DefaultGroundName>(() => {
   const current = model.value.defaultTile
-  if (!current) return 'grass'
-  for (const name of ['grass', 'dirt'] as const) {
-    const preset = DEFAULT_TILE_PRESETS[name]
-    if (
-      current.sheet === preset.sheet &&
-      current.sx === preset.sx &&
-      current.sy === preset.sy
-    ) {
-      return name
+  if (current) {
+    // Match on the sheet alone — the stored col/row is just a representative;
+    // the ground fill scatters randomized variants from the whole sheet.
+    for (const name of ['grass', 'dirt', 'snow', 'corrupt'] as const) {
+      if (DEFAULT_TILE_PRESETS[name].tileset === current.tileset) return name
     }
   }
   return 'grass'
 })
 
 function onDefaultGroundChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value as 'grass' | 'dirt'
+  const value = (event.target as HTMLSelectElement).value as DefaultGroundName
   model.value = { ...model.value, defaultTile: { ...DEFAULT_TILE_PRESETS[value] } }
 }
 
@@ -3396,9 +3398,9 @@ function paintAtScreen(screenX: number, screenY: number) {
     let next = model.value
     for (const c of cells) {
       next = setTilePaint(next, c.x, c.y, {
-        sheet: selectedTileSheet.value,
-        sx: selectedTileCoord.value.sx,
-        sy: selectedTileCoord.value.sy,
+        tileset: selectedTileSheet.value,
+        col: selectedTileCoord.value.col,
+        row: selectedTileCoord.value.row,
       })
     }
     model.value = next
@@ -4437,9 +4439,9 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
 function renderTilePicker() {
   const canvasEl = tilePickerCanvas.value
   if (!canvasEl) return
-  const img = getSheetImage(selectedTileSheet.value)
+  const img = getTilesetImage(selectedTileSheet.value)
   if (!img) {
-    onSheetReady(selectedTileSheet.value, renderTilePicker)
+    onTilesetReady(selectedTileSheet.value, renderTilePicker)
     return
   }
 
@@ -4456,11 +4458,11 @@ function renderTilePicker() {
 
   // Highlight the selected tile, if any.
   if (selectedTileCoord.value) {
-    const { sx, sy } = selectedTileCoord.value
+    const { col, row } = selectedTileCoord.value
     const tileSize = getSheetTileSize(selectedTileSheet.value)
     ctx.strokeStyle = '#facc15'
     ctx.lineWidth = 2
-    ctx.strokeRect(sx * scale, sy * scale, tileSize * scale, tileSize * scale)
+    ctx.strokeRect(col * tileSize * scale, row * tileSize * scale, tileSize * scale, tileSize * scale)
   }
 }
 
@@ -4474,9 +4476,9 @@ function onTilePickerClick(event: MouseEvent) {
   const py = (event.clientY - rect.top) * cssToPx
   const scale = TILE_PICKER_SCALE
   const tileSize = getSheetTileSize(selectedTileSheet.value)
-  const sx = Math.floor(px / (tileSize * scale)) * tileSize
-  const sy = Math.floor(py / (tileSize * scale)) * tileSize
-  selectedTileCoord.value = { sx, sy }
+  const col = Math.floor(px / (tileSize * scale))
+  const row = Math.floor(py / (tileSize * scale))
+  selectedTileCoord.value = { col, row }
   renderTilePicker()
 }
 
@@ -4867,6 +4869,10 @@ onMounted(() => {
     })
     .catch(() => {})
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
+  void fetchTilesetDefs().then((defs) => {
+    initTilesetDefs(defs)
+    tilesetIds.value = defs.map((d) => d.id)
+  }).catch(() => {})
   void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
   void fetchLists().then((defs) => { lists.value = defs }).catch(() => {})
   void fetchUnitDefs()

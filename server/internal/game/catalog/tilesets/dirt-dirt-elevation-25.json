@@ -1,0 +1,13 @@
+{
+  "id": "dirt-dirt-elevation-25",
+  "name": "Dirt (elevation)",
+  "image": "dirt-dirt-elevation-25.png",
+  "cols": 4,
+  "rows": 4,
+  "offsetX": 0,
+  "offsetY": 0,
+  "tileWidth": 160,
+  "tileHeight": 160,
+  "spacingX": 0,
+  "spacingY": 0
+}

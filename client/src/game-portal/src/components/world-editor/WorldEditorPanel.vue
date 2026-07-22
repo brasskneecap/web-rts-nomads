@@ -649,6 +649,19 @@
           Paint
         </button>
         <div v-if="openSection === 'paint'" class="editor-section__body">
+          <!-- Default Ground is a map-wide setting (the base terrain the whole
+               map is filled with), so it sits above the tool picker as the
+               first option, independent of the selected tool. -->
+          <div class="control-group">
+            <label for="default-ground">Default Ground</label>
+            <select id="default-ground" :value="defaultGroundName" @change="onDefaultGroundChange">
+              <option value="grass">Grass</option>
+              <option value="dirt">Dirt</option>
+              <option value="snow">Snow</option>
+              <option value="corrupt">Corrupt</option>
+            </select>
+          </div>
+
           <!-- The active tool IS the mode: pick a brush and clicks paint; pick
                Select to click placed things and edit/move them. No separate
                paint on/off toggle. -->
@@ -676,7 +689,18 @@
             Select mode — click a building, unit or spawn to edit it. Pick a brush above to paint.
           </p>
 
-          <div v-if="brushMode === 'terrain' || brushMode === 'tile' || brushMode === 'obstacle' || brushMode === 'erase'" class="control-group">
+          <div v-if="brushMode === 'tile'" class="control-group">
+            <label for="terrain-type">Terrain Type</label>
+            <select id="terrain-type" v-model="selectedTerrain" :disabled="!paintModeEnabled">
+              <option value="grass">Grass</option>
+              <option value="dirt">Dirt</option>
+              <option value="snow">Snow</option>
+              <option value="corrupt">Corrupt</option>
+            </select>
+            <span class="field-hint">Paints randomized tiles of this terrain type (0-elevation sheet).</span>
+          </div>
+
+          <div v-if="brushMode === 'tile' || brushMode === 'obstacle' || brushMode === 'erase'" class="control-group">
             <label for="brush-size">Brush Size</label>
             <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
               <option :value="1">1 × 1</option>
@@ -686,38 +710,28 @@
             </select>
           </div>
 
-          <div v-if="brushMode === 'terrain' || brushMode === 'tile'" class="control-group">
-            <label for="default-ground">Default Ground</label>
-            <select id="default-ground" :value="defaultGroundName" @change="onDefaultGroundChange">
-              <option value="grass">Grass</option>
-              <option value="dirt">Dirt</option>
-            </select>
-          </div>
-
-          <div v-if="brushMode === 'terrain'" class="control-group">
-            <label for="terrain-type">Terrain Type</label>
-            <select id="terrain-type" v-model="selectedTerrain" :disabled="!paintModeEnabled">
-              <option value="grass">Grass</option>
-              <option value="dirt">Dirt</option>
-            </select>
-          </div>
-
-          <div v-if="brushMode === 'tile'" class="control-group">
+          <div v-if="brushMode === 'tileset'" class="control-group">
             <label for="tile-sheet">Tile Sheet</label>
             <select id="tile-sheet" v-model="selectedTileSheet" :disabled="!paintModeEnabled">
-              <option v-for="sheet in TILE_SHEET_NAMES" :key="sheet" :value="sheet">
-                {{ sheet }}
+              <option v-for="sheet in tilesetIds" :key="sheet" :value="sheet">
+                {{ tilesetLabel(sheet) }}
               </option>
             </select>
+
             <div class="tile-picker-hint">
-              {{ selectedTileCoord
-                ? `Selected: (${selectedTileCoord.sx}, ${selectedTileCoord.sy}) — right-click a cell to erase`
-                : 'Click a tile below to select it' }}
+              {{ selectedTileRegion
+                ? (selectedTileRegion.w === 1 && selectedTileRegion.h === 1
+                    ? `Selected tile (${selectedTileRegion.col}, ${selectedTileRegion.row})`
+                    : `Selected ${selectedTileRegion.w}×${selectedTileRegion.h} section`)
+                : 'Click a tile — or drag to select a section — then paint' }}
             </div>
             <canvas
               ref="tilePickerCanvas"
               class="tile-picker"
-              @click="onTilePickerClick"
+              @pointerdown="onTilePickerPointerDown"
+              @pointermove="onTilePickerPointerMove"
+              @pointerup="onTilePickerPointerUp"
+              @pointerleave="onTilePickerPointerUp"
             />
           </div>
 
@@ -1619,6 +1633,7 @@
       <ProjectileEditorPanel v-else-if="activeScreen === 'projectiles'" />
       <PerkEditorPanel v-else-if="activeScreen === 'perks'" />
       <CampaignEditorPanel v-else-if="activeScreen === 'campaigns'" />
+      <TilesetEditorPanel v-else-if="activeScreen === 'tilesets'" />
     </section>
   </div>
 </template>
@@ -1627,7 +1642,7 @@
 import type { ListDef } from '@/game/maps/listDefs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchLists, fetchUnitDefs, fetchItemDefs, fetchPerkDefs, saveMapCatalogFile, LevelConflictError } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchLists, fetchUnitDefs, fetchItemDefs, fetchPerkDefs, fetchTilesetDefs, saveMapCatalogFile, LevelConflictError } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
@@ -1640,6 +1655,7 @@ import EffectEditorPanel from '@/components/EffectEditorPanel.vue'
 import ProjectileEditorPanel from '@/components/ProjectileEditorPanel.vue'
 import PerkEditorPanel from '@/components/PerkEditorPanel.vue'
 import CampaignEditorPanel from '@/components/CampaignEditorPanel.vue'
+import TilesetEditorPanel from '@/components/TilesetEditorPanel.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
 import InGameHud from '@/components/InGameHud.vue'
 import { usePlaytest } from './usePlaytest'
@@ -1657,8 +1673,6 @@ import type {
   NeutralSpawn,
   ObstacleType,
   PlacedUnit,
-  TerrainType,
-  TileSheet,
   UnitType,
   VictoryCondition,
   Zone,
@@ -1690,12 +1704,14 @@ import {
 } from '@/game/maps/mapConfig'
 import {
   DEFAULT_TILE_PRESETS,
+  type DefaultGroundName,
   drawAutoTiledTerrain,
-  TILE_SHEET_NAMES,
-  getSheetImage,
-  getSheetTileSize,
+  getTilesetImage,
+  getTilesetDef,
+  getSheetVariantPool,
+  initTilesetDefs,
   isTerrainTilesetReady,
-  onSheetReady,
+  onTilesetReady,
 } from '@/game/rendering/terrainTileset'
 import { getBuildingSprite, getRecipeShopStyleSprite, listRecipeShopStyles, getNeutralShopStyleSprite, listNeutralShopStyles } from '@/game/rendering/buildingSprites'
 import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
@@ -1729,7 +1745,10 @@ let minimapTerrainSurface: HTMLCanvasElement | null = null
 let minimapStaticDirty = true
 let minimapDragging = false
 
-const TILE_PICKER_SCALE = 2
+// Display size (px) of each tile cell in the brush picker's clean grid. The
+// picker extracts every authored tile and lays them out at this size regardless
+// of the source sheet's native tile resolution.
+const TILE_PICKER_CELL = 44
 // The active tool. 'select' is navigate/edit (click placed things to open their
 // popups); every other value is a paint brush. There is no separate paint
 // on/off toggle any more — choosing a brush IS arming it, and 'select' is the
@@ -1738,6 +1757,7 @@ type BrushMode =
   | 'select'
   | 'terrain'
   | 'tile'
+  | 'tileset'
   | 'obstacle'
   | 'building'
   | 'enemy-spawn'
@@ -1746,12 +1766,14 @@ type BrushMode =
   | 'erase'
 const brushMode = ref<BrushMode>('select')
 // Tool buttons rendered in the Paint section. Order = display order.
-// NOTE: 'terrain' is intentionally omitted from the picker for now (kept in the
-// BrushMode type + paint handlers so it can be re-added by dropping a row back
-// in here). Ground painting is done with the Tile brush.
+// 'tile'    paints a randomized flat terrain type (grass/dirt/snow/corrupt).
+// 'tileset' paints specific tiles/sections picked from a tileset sheet.
+// NOTE: the legacy 'terrain' Wang mode is kept in the BrushMode type + paint
+// handlers but omitted from the picker.
 const BRUSH_TOOLS: ReadonlyArray<{ id: BrushMode; label: string; glyph: string }> = [
   { id: 'select', label: 'Select', glyph: '⊹' },
   { id: 'tile', label: 'Tile', glyph: '▧' },
+  { id: 'tileset', label: 'Tileset', glyph: '▦' },
   { id: 'obstacle', label: 'Obstacle', glyph: '⬢' },
   { id: 'building', label: 'Building', glyph: '⌂' },
   { id: 'enemy-spawn', label: 'Enemy', glyph: '☠' },
@@ -1780,10 +1802,23 @@ const linkPanelOpen = ref(false)
 // Live cell→zoneId index, rebuilt on every zone mutation. Avoids O(N×M) scans.
 let zoneCellIndex = buildZoneCellIndex(model.value.zones ?? [])
 const brushSize = ref<1 | 3 | 5 | 7>(1)
-const selectedTerrain = ref<TerrainType>('grass')
+// 'tile' brush: the flat terrain type (grass/dirt/snow/corrupt) whose randomized
+// variants are scattered across the brush.
+const selectedTerrain = ref<DefaultGroundName>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
-const selectedTileSheet = ref<TileSheet>('tileset')
+const selectedTileSheet = ref<string>('tileset')
+// Populated on mount from GET /catalog/tilesets — the list of tileset ids the
+// "Tile Sheet" dropdown iterates. Data-driven (Tileset Editor plan); no more
+// hardcoded TILE_SHEET_NAMES constant.
+const tilesetIds = ref<string[]>([])
+
+// Friendly label for the "Tile Sheet" dropdown — the def's authored name (e.g.
+// "Grass (flat)") rather than the raw id, falling back to the id if the def
+// hasn't loaded yet.
+function tilesetLabel(id: string): string {
+  return getTilesetDef(id)?.name ?? id
+}
 
 // All unit types known to the catalog, populated by fetchUnitDefs. Buckets are
 // keyed by the unit's `faction` string and built dynamically — adding a new
@@ -1791,7 +1826,19 @@ const selectedTileSheet = ref<TileSheet>('tileset')
 // faction appear in the editor on next load with zero code changes here.
 const unitDefsByFaction = ref<Record<string, Array<{ type: UnitType; label: string }>>>({})
 
-const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
+// In 'specific' paint mode, the picker selects a rectangular REGION of tiles
+// (col/row = top-left, w/h = size). A plain click is a 1×1 region; drag to
+// grow it. Painting stamps that whole block onto the map at the cursor anchor,
+// so a multi-tile section (e.g. a cliff formation) is placed as a unit.
+const selectedTileRegion = ref<{ col: number; row: number; w: number; h: number } | null>(null)
+
+
+function cellVariant(cx: number, cy: number, n: number): number {
+  let h = Math.imul(cx | 0, 374761393) + Math.imul(cy | 0, 668265263)
+  h = Math.imul(h ^ (h >>> 13), 1274126177)
+  return ((h ^ (h >>> 16)) >>> 0) % n
+}
+
 const selectedSpawnTownhallId = ref('')
 const spawnPointFillOrder = ref(0)
 const spawnPointPlayerLabel = ref('')
@@ -2058,7 +2105,7 @@ function backToLanding() {
 // full-height screens rather than opening modals: 'map' is the paint canvas +
 // controls, the others each own the whole area under the toolbar so the
 // catalog editors have room for their lists and forms.
-type EditorScreen = 'map' | 'items' | 'unit-types' | 'abilities' | 'effects' | 'projectiles' | 'perks' | 'campaigns'
+type EditorScreen = 'map' | 'items' | 'unit-types' | 'abilities' | 'effects' | 'projectiles' | 'perks' | 'campaigns' | 'tilesets'
 const activeScreen = ref<EditorScreen>('map')
 const router = useRouter()
 
@@ -2077,6 +2124,7 @@ function onToolbarSelect(id: string) {
     case 'projectiles':
     case 'perks':
     case 'campaigns':
+    case 'tilesets':
       activeScreen.value = id
       break
     case 'play':
@@ -3011,24 +3059,20 @@ const editWaveNumber = computed(() => {
     ?? 1
 })
 
-const defaultGroundName = computed<'grass' | 'dirt'>(() => {
+const defaultGroundName = computed<DefaultGroundName>(() => {
   const current = model.value.defaultTile
-  if (!current) return 'grass'
-  for (const name of ['grass', 'dirt'] as const) {
-    const preset = DEFAULT_TILE_PRESETS[name]
-    if (
-      current.sheet === preset.sheet &&
-      current.sx === preset.sx &&
-      current.sy === preset.sy
-    ) {
-      return name
+  if (current) {
+    // Match on the sheet alone — the stored col/row is just a representative;
+    // the ground fill scatters randomized variants from the whole sheet.
+    for (const name of ['grass', 'dirt', 'snow', 'corrupt'] as const) {
+      if (DEFAULT_TILE_PRESETS[name].tileset === current.tileset) return name
     }
   }
   return 'grass'
 })
 
 function onDefaultGroundChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value as 'grass' | 'dirt'
+  const value = (event.target as HTMLSelectElement).value as DefaultGroundName
   model.value = { ...model.value, defaultTile: { ...DEFAULT_TILE_PRESETS[value] } }
 }
 
@@ -3696,24 +3740,44 @@ function paintAtScreen(screenX: number, screenY: number) {
     return
   }
 
-  if (activeBrushMode.value === 'terrain') {
+  if (activeBrushMode.value === 'tile') {
+    // Randomized terrain-type painting: scatter the selected flat sheet's
+    // variants into tiles[], one deterministic variant per cell (so a large
+    // brush reads as varied and repaints land the same pattern). Only ever
+    // uses the flat 0-elevation terrain sheets.
+    const sheet = DEFAULT_TILE_PRESETS[selectedTerrain.value].tileset
+    const pool = getSheetVariantPool(sheet)
     let next = model.value
     for (const c of cells) {
-      next = setTerrainTile(next, c.x, c.y, selectedTerrain.value)
+      const coord = pool
+        ? pool[cellVariant(c.x, c.y, pool.length)]
+        : DEFAULT_TILE_PRESETS[selectedTerrain.value]
+      next = setTilePaint(next, c.x, c.y, { tileset: sheet, col: coord.col, row: coord.row })
     }
     model.value = next
     return
   }
 
-  if (activeBrushMode.value === 'tile') {
-    if (!selectedTileCoord.value) return
+  if (activeBrushMode.value === 'tileset') {
+    // Stamp the selected region as a block anchored at the cursor cell
+    // (top-left). A 1×1 selection paints a single tile; a larger section (e.g.
+    // a cliff formation) is placed as a unit, preserving tile layout. Brush
+    // size doesn't apply here — the region defines the footprint.
+    const region = selectedTileRegion.value
+    if (!region) return
+    const { gridCols, gridRows } = model.value
     let next = model.value
-    for (const c of cells) {
-      next = setTilePaint(next, c.x, c.y, {
-        sheet: selectedTileSheet.value,
-        sx: selectedTileCoord.value.sx,
-        sy: selectedTileCoord.value.sy,
-      })
+    for (let dy = 0; dy < region.h; dy++) {
+      for (let dx = 0; dx < region.w; dx++) {
+        const mx = cell.x + dx
+        const my = cell.y + dy
+        if (mx < 0 || my < 0 || mx >= gridCols || my >= gridRows) continue
+        next = setTilePaint(next, mx, my, {
+          tileset: selectedTileSheet.value,
+          col: region.col + dx,
+          row: region.row + dy,
+        })
+      }
     }
     model.value = next
     return
@@ -3879,8 +3943,13 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
-  // Right-click in Tile brush mode: erase only painted tiles under the brush.
-  if (event.button === 2 && paintModeEnabled.value && brushMode.value === 'tile') {
+  // Right-click in the Tile/Tileset brushes: erase only painted tiles under the
+  // brush.
+  if (
+    event.button === 2 &&
+    paintModeEnabled.value &&
+    (brushMode.value === 'tile' || brushMode.value === 'tileset')
+  ) {
     event.preventDefault()
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) {
@@ -4774,47 +4843,113 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
 function renderTilePicker() {
   const canvasEl = tilePickerCanvas.value
   if (!canvasEl) return
-  const img = getSheetImage(selectedTileSheet.value)
-  if (!img) {
-    onSheetReady(selectedTileSheet.value, renderTilePicker)
+  const def = getTilesetDef(selectedTileSheet.value)
+  const img = getTilesetImage(selectedTileSheet.value)
+  if (!def || !img) {
+    onTilesetReady(selectedTileSheet.value, renderTilePicker)
     return
   }
 
-  const scale = TILE_PICKER_SCALE
-  canvasEl.width = img.naturalWidth * scale
-  canvasEl.height = img.naturalHeight * scale
+  // Show ONLY the authored tiles — extract each cell using the def's slice
+  // geometry (offset + spacing) and lay them out edge-to-edge in a clean
+  // cols×rows grid. This drops the source PNG's margins/gutters entirely, so
+  // clicks and the selection highlight land exactly on a whole tile.
+  const dt = TILE_PICKER_CELL
+  canvasEl.width = def.cols * dt
+  canvasEl.height = def.rows * dt
 
   const ctx = canvasEl.getContext('2d')
   if (!ctx) return
 
-  ctx.imageSmoothingEnabled = false
+  // Smooth only when downscaling a hi-res tile; keep pixel-art sheets crisp.
+  ctx.imageSmoothingEnabled = def.tileWidth > dt
   ctx.clearRect(0, 0, canvasEl.width, canvasEl.height)
-  ctx.drawImage(img, 0, 0, canvasEl.width, canvasEl.height)
+  for (let row = 0; row < def.rows; row++) {
+    for (let col = 0; col < def.cols; col++) {
+      const sx = def.offsetX + col * (def.tileWidth + def.spacingX)
+      const sy = def.offsetY + row * (def.tileHeight + def.spacingY)
+      ctx.drawImage(
+        img,
+        sx, sy, def.tileWidth, def.tileHeight,
+        col * dt, row * dt, dt, dt,
+      )
+    }
+  }
 
-  // Highlight the selected tile, if any.
-  if (selectedTileCoord.value) {
-    const { sx, sy } = selectedTileCoord.value
-    const tileSize = getSheetTileSize(selectedTileSheet.value)
+  // Faint grid so tile boundaries are always readable.
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)'
+  ctx.lineWidth = 1
+  for (let c = 1; c < def.cols; c++) {
+    ctx.beginPath()
+    ctx.moveTo(c * dt + 0.5, 0)
+    ctx.lineTo(c * dt + 0.5, canvasEl.height)
+    ctx.stroke()
+  }
+  for (let r = 1; r < def.rows; r++) {
+    ctx.beginPath()
+    ctx.moveTo(0, r * dt + 0.5)
+    ctx.lineTo(canvasEl.width, r * dt + 0.5)
+    ctx.stroke()
+  }
+
+  // Highlight the selected region — the full block of cells, inset so the
+  // stroke sits inside the tiles rather than straddling the neighbours.
+  if (selectedTileRegion.value) {
+    const { col, row, w, h } = selectedTileRegion.value
     ctx.strokeStyle = '#facc15'
     ctx.lineWidth = 2
-    ctx.strokeRect(sx * scale, sy * scale, tileSize * scale, tileSize * scale)
+    ctx.strokeRect(col * dt + 1, row * dt + 1, w * dt - 2, h * dt - 2)
   }
 }
 
-function onTilePickerClick(event: MouseEvent) {
+// Anchor cell where the current picker drag-select started (null when not
+// dragging). Not reactive — only the resulting region drives rendering.
+let pickerDragAnchor: { col: number; row: number } | null = null
+
+// Converts a pointer event to a clamped (col, row) in the picker's clean grid.
+function pickerCellAt(event: PointerEvent): { col: number; row: number } | null {
   const canvasEl = tilePickerCanvas.value
-  if (!canvasEl) return
+  const def = getTilesetDef(selectedTileSheet.value)
+  if (!canvasEl || !def) return null
   const rect = canvasEl.getBoundingClientRect()
+  if (rect.width <= 0) return null
   // CSS size may differ from canvas pixel size; convert through the ratio.
   const cssToPx = canvasEl.width / rect.width
-  const px = (event.clientX - rect.left) * cssToPx
-  const py = (event.clientY - rect.top) * cssToPx
-  const scale = TILE_PICKER_SCALE
-  const tileSize = getSheetTileSize(selectedTileSheet.value)
-  const sx = Math.floor(px / (tileSize * scale)) * tileSize
-  const sy = Math.floor(py / (tileSize * scale)) * tileSize
-  selectedTileCoord.value = { sx, sy }
+  const dt = TILE_PICKER_CELL
+  const col = Math.min(def.cols - 1, Math.max(0, Math.floor(((event.clientX - rect.left) * cssToPx) / dt)))
+  const row = Math.min(def.rows - 1, Math.max(0, Math.floor(((event.clientY - rect.top) * cssToPx) / dt)))
+  return { col, row }
+}
+
+// Bounding-box region spanning the two corner cells (inclusive).
+function pickerRegionFrom(a: { col: number; row: number }, b: { col: number; row: number }) {
+  return {
+    col: Math.min(a.col, b.col),
+    row: Math.min(a.row, b.row),
+    w: Math.abs(a.col - b.col) + 1,
+    h: Math.abs(a.row - b.row) + 1,
+  }
+}
+
+function onTilePickerPointerDown(event: PointerEvent) {
+  const cell = pickerCellAt(event)
+  if (!cell) return
+  ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
+  pickerDragAnchor = cell
+  selectedTileRegion.value = { col: cell.col, row: cell.row, w: 1, h: 1 }
   renderTilePicker()
+}
+
+function onTilePickerPointerMove(event: PointerEvent) {
+  if (!pickerDragAnchor) return
+  const cell = pickerCellAt(event)
+  if (!cell) return
+  selectedTileRegion.value = pickerRegionFrom(pickerDragAnchor, cell)
+  renderTilePicker()
+}
+
+function onTilePickerPointerUp() {
+  pickerDragAnchor = null
 }
 
 function drawMapBounds(ctx: CanvasRenderingContext2D) {
@@ -5168,21 +5303,22 @@ function drawZones(ctx: CanvasRenderingContext2D) {
 }
 
 // Re-render the tile picker whenever it becomes visible or the sheet changes.
-// Wait a tick so the v-if'd canvas is mounted before we try to draw.
+// Wait a tick so the v-if'd canvas is mounted before we try to draw. The
+// picker only exists in the Tileset brush.
 watch(
   [brushMode, selectedTileSheet],
   async () => {
-    if (brushMode.value !== 'tile') return
+    if (brushMode.value !== 'tileset') return
     await new Promise((resolve) => requestAnimationFrame(resolve))
     renderTilePicker()
   },
   { immediate: true },
 )
 
-// Clear the selected tile coord when switching sheets — coords aren't portable
+// Clear the selected region when switching sheets — coords aren't portable
 // across sheets (different tile sizes, different content).
 watch(selectedTileSheet, () => {
-  selectedTileCoord.value = null
+  selectedTileRegion.value = null
 })
 
 onMounted(() => {
@@ -5203,6 +5339,10 @@ onMounted(() => {
     })
     .catch(() => {})
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
+  void fetchTilesetDefs().then((defs) => {
+    initTilesetDefs(defs)
+    tilesetIds.value = defs.map((d) => d.id)
+  }).catch(() => {})
   void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
   void fetchLists().then((defs) => { lists.value = defs }).catch(() => {})
   void fetchItemDefs().then((items) => { itemDefsList.value = items }).catch(() => {})

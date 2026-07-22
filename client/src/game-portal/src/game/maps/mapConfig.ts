@@ -284,9 +284,9 @@ function dedupeTiles(
     unique.set(`${tile.x}:${tile.y}`, {
       x: tile.x,
       y: tile.y,
-      sheet: tile.sheet,
-      sx: tile.sx,
-      sy: tile.sy,
+      tileset: tile.tileset,
+      col: tile.col,
+      row: tile.row,
     })
   }
 

@@ -40,19 +40,37 @@ export type TerrainTile = GridCoord & {
   terrain: TerrainType
 }
 
-export type TileSheet =
-  | 'tileset'
-  | 'grass-grass-25'
-  | 'dirt-dirt-25'
-  | 'grass-dirt-0'
+// deprecated: kept for migration only — do not import after the tileset-def
+// migration (Tileset Editor plan). New code uses TilesetDef.id (a plain
+// string) instead of this closed union.
+export type TileSheet = 'tileset'
 
 export type TileCoord = {
-  sheet: TileSheet
-  sx: number
-  sy: number
+  tileset: string
+  col: number
+  row: number
 }
 
 export type TileInstance = GridCoord & TileCoord
+
+/** Server-authored tileset definition, catalog-fetched. Mirrors the Go
+ *  tileset def struct. `image` is the sheet's asset path/key; `cols`/`rows`
+ *  give the grid dimensions, `offsetX`/`offsetY` the pixel origin of tile
+ *  (0,0) within the sheet, and `tileWidth`/`tileHeight`/`spacingX`/`spacingY`
+ *  the per-tile pixel geometry used to resolve a (col,row) to a source rect. */
+export interface TilesetDef {
+  id: string
+  name: string
+  image: string
+  cols: number
+  rows: number
+  offsetX: number
+  offsetY: number
+  tileWidth: number
+  tileHeight: number
+  spacingX: number
+  spacingY: number
+}
 
 export type ObstacleTile = GridCoord & {
   obstacle: ObstacleType

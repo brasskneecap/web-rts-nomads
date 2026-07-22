@@ -25,9 +25,9 @@ func terrainTileEntry() MapCatalogEntry {
 				{GridCoord: protocol.GridCoord{X: 3, Y: 3}, Terrain: "dirt"},
 			},
 			Tiles: []protocol.TileInstance{
-				{GridCoord: protocol.GridCoord{X: 1, Y: 1}, TileCoord: protocol.TileCoord{Sheet: "tileset", SX: 64, SY: 32}},
-				{GridCoord: protocol.GridCoord{X: 2, Y: 1}, TileCoord: protocol.TileCoord{Sheet: "tileset", SX: 64, SY: 32}},
-				{GridCoord: protocol.GridCoord{X: 5, Y: 5}, TileCoord: protocol.TileCoord{Sheet: "tileset", SX: 64, SY: 64}},
+				{GridCoord: protocol.GridCoord{X: 1, Y: 1}, TileCoord: protocol.TileCoord{Tileset: "tileset", Col: 2, Row: 1}},
+				{GridCoord: protocol.GridCoord{X: 2, Y: 1}, TileCoord: protocol.TileCoord{Tileset: "tileset", Col: 2, Row: 1}},
+				{GridCoord: protocol.GridCoord{X: 5, Y: 5}, TileCoord: protocol.TileCoord{Tileset: "tileset", Col: 2, Row: 2}},
 			},
 			Obstacles: []protocol.ObstacleTile{},
 			Buildings: []protocol.BuildingTile{},
@@ -47,15 +47,15 @@ func TestTerrainTile_MarshalGrouped(t *testing.T) {
 	if !strings.Contains(s, `"terrain":{"dirt":[[3,3]],"grass":[[1,1],[2,1]]}`) {
 		t.Errorf("terrain not grouped as expected: %s", s)
 	}
-	// Tiles: array of groups, each distinct (sheet,sx,sy) once, with locations.
-	if !strings.Contains(s, `"sheet":"tileset","sx":64,"sy":32,"locations":[[1,1],[2,1]]`) {
-		t.Errorf("tile group (64,32) missing/incorrect: %s", s)
+	// Tiles: array of groups, each distinct (tileset,col,row) once, with locations.
+	if !strings.Contains(s, `"tileset":"tileset","col":2,"row":1,"locations":[[1,1],[2,1]]`) {
+		t.Errorf("tile group (col2,row1) missing/incorrect: %s", s)
 	}
-	if strings.Count(s, `"sx":64,"sy":32`) != 1 {
-		t.Errorf("tile (64,32) metadata should appear once: %s", s)
+	if strings.Count(s, `"col":2,"row":1`) != 1 {
+		t.Errorf("tile (col2,row1) metadata should appear once: %s", s)
 	}
 	// No per-tile x/y objects remain in the tiles section.
-	if strings.Contains(s, `{"x":1,"y":1,"sheet"`) {
+	if strings.Contains(s, `{"x":1,"y":1,"tileset"`) {
 		t.Errorf("tiles must not contain flat per-cell entries: %s", s)
 	}
 }
@@ -119,7 +119,7 @@ func TestTerrainTile_LegacyArraysLoad(t *testing.T) {
 	if len(entry.Map.Terrain) != 2 {
 		t.Errorf("legacy terrain: want 2, got %d", len(entry.Map.Terrain))
 	}
-	if len(entry.Map.Tiles) != 1 || entry.Map.Tiles[0].Sheet != "tileset" {
+	if len(entry.Map.Tiles) != 1 || entry.Map.Tiles[0].Tileset != "tileset" || entry.Map.Tiles[0].Col != 2 || entry.Map.Tiles[0].Row != 1 {
 		t.Errorf("legacy tiles wrong: %+v", entry.Map.Tiles)
 	}
 }

@@ -1,0 +1,13 @@
+{
+  "id": "corrupt-corrupt-elevation-25",
+  "name": "Corrupt (elevation)",
+  "image": "corrupt-corrupt-elevation-25.png",
+  "cols": 4,
+  "rows": 4,
+  "offsetX": 0,
+  "offsetY": 0,
+  "tileWidth": 160,
+  "tileHeight": 160,
+  "spacingX": 0,
+  "spacingY": 0
+}

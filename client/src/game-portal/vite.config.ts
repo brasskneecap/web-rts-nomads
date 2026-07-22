@@ -68,6 +68,8 @@ export default defineConfig(({ mode }) => ({
       '/perks': { target: GO_SERVER, changeOrigin: true },
       '/matches': { target: GO_SERVER, changeOrigin: true },
       '/lobbies': { target: GO_SERVER, changeOrigin: true },
+      '/tilesets': { target: GO_SERVER, changeOrigin: true },
+      '/tiles': { target: GO_SERVER, changeOrigin: true },
     },
   },
   test: {
