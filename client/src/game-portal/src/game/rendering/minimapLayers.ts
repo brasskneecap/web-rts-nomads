@@ -39,6 +39,7 @@ export type MinimapMapInput = Pick<
   | 'neutralSpawns'
   | 'elevation'
   | 'cliffTileset'
+  | 'ramps'
 >
 
 // Builds an offscreen full-map-resolution canvas containing the rendered
@@ -51,7 +52,7 @@ export type MinimapMapInput = Pick<
 // gracefully degrades by painting category-color cells directly into the
 // minimap rect.
 export function buildTerrainSurface(mapConfig: MinimapMapInput): HTMLCanvasElement | null {
-  const { gridCols, gridRows, cellSize, terrain, tiles, defaultTile, elevation, cliffTileset } = mapConfig
+  const { gridCols, gridRows, cellSize, terrain, tiles, defaultTile, elevation, cliffTileset, ramps } = mapConfig
   const mapWidth = gridCols * cellSize
   const mapHeight = gridRows * cellSize
   if (mapWidth <= 0 || mapHeight <= 0) return null
@@ -73,6 +74,7 @@ export function buildTerrainSurface(mapConfig: MinimapMapInput): HTMLCanvasEleme
       tiles,
       elevation,
       cliffTileset,
+      ramps,
     })
   } else {
     cctx.fillStyle = DEFAULT_GRASS_COLOR

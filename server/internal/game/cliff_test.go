@@ -14,6 +14,12 @@ func rectRaised(x0, y0, x1, y1 int) func(x, y int) bool {
 	}
 }
 
+// noRamp is an `isRamp` predicate that is never true, for tests that don't
+// exercise ramp behavior.
+func noRamp(x, y int) bool {
+	return false
+}
+
 func TestCliffTileAt_SolidRectangle_PicksExpectedSlots(t *testing.T) {
 	// Solid 4x4 raised rectangle: x in [2,5], y in [2,5].
 	raised := rectRaised(2, 2, 5, 5)
@@ -44,7 +50,7 @@ func TestCliffTileAt_SolidRectangle_PicksExpectedSlots(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			col, row, ok := cliffTileAt(raised, tt.x, tt.y)
+			col, row, ok := cliffTileAt(raised, noRamp, tt.x, tt.y)
 			if !ok {
 				t.Fatalf("cliffTileAt(%d,%d) ok=false, want true", tt.x, tt.y)
 			}
@@ -64,14 +70,14 @@ func TestCliffCellBlocks_SolidRectangle_WallsAndCornersBlockInteriorDoesNot(t *t
 		{2, 3}, {2, 4}, {5, 3}, {5, 4}, // W/E walls
 	}
 	for _, c := range blocking {
-		if !cliffCellBlocks(raised, c.x, c.y) {
+		if !cliffCellBlocks(raised, noRamp, c.x, c.y) {
 			t.Errorf("cliffCellBlocks(%d,%d) = false, want true (wall/outer corner)", c.x, c.y)
 		}
 	}
 
 	interior := []struct{ x, y int }{{3, 3}, {4, 3}, {3, 4}, {4, 4}}
 	for _, c := range interior {
-		if cliffCellBlocks(raised, c.x, c.y) {
+		if cliffCellBlocks(raised, noRamp, c.x, c.y) {
 			t.Errorf("cliffCellBlocks(%d,%d) = true, want false (flat interior)", c.x, c.y)
 		}
 	}
@@ -97,7 +103,7 @@ func TestCliffTileAt_LShape_ConcaveCorner_PicksInnerSlotAndDoesNotBlock(t *testi
 		t.Fatalf("setup error: (3,4) expected raised (concave corner cell)")
 	}
 
-	col, row, ok := cliffTileAt(raised, 3, 4)
+	col, row, ok := cliffTileAt(raised, noRamp, 3, 4)
 	if !ok {
 		t.Fatalf("cliffTileAt(3,4) ok=false, want true")
 	}
@@ -105,7 +111,7 @@ func TestCliffTileAt_LShape_ConcaveCorner_PicksInnerSlotAndDoesNotBlock(t *testi
 		t.Errorf("cliffTileAt(3,4) = (%d,%d), want NEi (%d,%d)", col, row, cliffInnerNE.Col, cliffInnerNE.Row)
 	}
 
-	if cliffCellBlocks(raised, 3, 4) {
+	if cliffCellBlocks(raised, noRamp, 3, 4) {
 		t.Errorf("cliffCellBlocks(3,4) = true, want false (inner corner is walkable plateau top)")
 	}
 }
@@ -113,10 +119,10 @@ func TestCliffTileAt_LShape_ConcaveCorner_PicksInnerSlotAndDoesNotBlock(t *testi
 func TestCliffTileAt_NonRaisedCell_ReturnsNotOK(t *testing.T) {
 	raised := rectRaised(2, 2, 5, 5)
 
-	if _, _, ok := cliffTileAt(raised, 0, 0); ok {
+	if _, _, ok := cliffTileAt(raised, noRamp, 0, 0); ok {
 		t.Errorf("cliffTileAt(0,0) ok=true, want false (not raised)")
 	}
-	if cliffCellBlocks(raised, 0, 0) {
+	if cliffCellBlocks(raised, noRamp, 0, 0) {
 		t.Errorf("cliffCellBlocks(0,0) = true, want false (not raised)")
 	}
 }
@@ -130,5 +136,58 @@ func TestRaisedSetFromElevation_PredicateMatchesCells(t *testing.T) {
 	}
 	if raised(0, 0) {
 		t.Errorf("expected non-authored cell to not be raised")
+	}
+}
+
+// TestCliffTileAt_RampOnWallCell_RendersFlatAndDoesNotBlock builds a solid
+// raised rectangle with one S-wall cell marked as a ramp, and asserts the
+// ramp cell renders as the FLAT slot and does not block, while the rest of
+// the S wall (and other walls) keep their normal wall slot and still block.
+func TestCliffTileAt_RampOnWallCell_RendersFlatAndDoesNotBlock(t *testing.T) {
+	raised := rectRaised(2, 2, 5, 5)
+	isRamp := rampPredicate(rampSetFromRamps([]protocol.GridCoord{{X: 3, Y: 5}}))
+
+	// The ramp cell: FLAT slot, does not block.
+	col, row, ok := cliffTileAt(raised, isRamp, 3, 5)
+	if !ok {
+		t.Fatalf("cliffTileAt(3,5) ok=false, want true")
+	}
+	if col != cliffFlat.Col || row != cliffFlat.Row {
+		t.Errorf("cliffTileAt(3,5) = (%d,%d), want FLAT (%d,%d)", col, row, cliffFlat.Col, cliffFlat.Row)
+	}
+	if cliffCellBlocks(raised, isRamp, 3, 5) {
+		t.Errorf("cliffCellBlocks(3,5) = true, want false (ramp cell is walkable)")
+	}
+
+	// The other S-wall cell is untouched: still the wall slot, still blocks.
+	col, row, ok = cliffTileAt(raised, isRamp, 4, 5)
+	if !ok {
+		t.Fatalf("cliffTileAt(4,5) ok=false, want true")
+	}
+	if col != cliffWallS.Col || row != cliffWallS.Row {
+		t.Errorf("cliffTileAt(4,5) = (%d,%d), want wall S (%d,%d)", col, row, cliffWallS.Col, cliffWallS.Row)
+	}
+	if !cliffCellBlocks(raised, isRamp, 4, 5) {
+		t.Errorf("cliffCellBlocks(4,5) = false, want true (non-ramp wall cell still blocks)")
+	}
+
+	// A different wall (N) is also untouched.
+	if !cliffCellBlocks(raised, isRamp, 3, 2) {
+		t.Errorf("cliffCellBlocks(3,2) = false, want true (N wall unaffected by unrelated ramp)")
+	}
+}
+
+// TestCliffTileAt_RampOnNonRaisedCell_IsInert asserts a ramp mark on a cell
+// that is not itself raised has no effect: cliffTileAt still reports
+// ok=false and cliffCellBlocks still reports false, exactly as with no ramp.
+func TestCliffTileAt_RampOnNonRaisedCell_IsInert(t *testing.T) {
+	raised := rectRaised(2, 2, 5, 5)
+	isRamp := rampPredicate(rampSetFromRamps([]protocol.GridCoord{{X: 0, Y: 0}}))
+
+	if _, _, ok := cliffTileAt(raised, isRamp, 0, 0); ok {
+		t.Errorf("cliffTileAt(0,0) ok=true, want false (ramp mark on non-raised cell is inert)")
+	}
+	if cliffCellBlocks(raised, isRamp, 0, 0) {
+		t.Errorf("cliffCellBlocks(0,0) = true, want false (ramp mark on non-raised cell is inert)")
 	}
 }

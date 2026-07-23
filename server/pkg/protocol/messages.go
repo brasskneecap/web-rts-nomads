@@ -323,6 +323,12 @@ type MapConfig struct {
 	// "grass-cliff") used to render Elevation cells. Absent on maps without
 	// cliffs.
 	CliffTileset string `json:"cliffTileset,omitempty"`
+	// Ramps lists raised (Elevation) cells that are walkable openings through
+	// a cliff wall: they render as the flat plateau-top tile instead of a
+	// wall/corner slot and never block movement. A ramp cell that is not
+	// itself in Elevation is inert. See server/internal/game/cliff.go
+	// (cliffTileAt / cliffCellBlocks) for the derivation.
+	Ramps []GridCoord `json:"ramps,omitempty"`
 	// Campaign, when set, tags this map as a campaign level. Its presence
 	// makes the map (a) hidden from the Custom Game lobby map list, and (b)
 	// contribute one level to the CampaignDef tree at startup / catalog-read

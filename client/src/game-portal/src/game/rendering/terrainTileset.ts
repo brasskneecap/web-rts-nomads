@@ -1,5 +1,5 @@
 import type { GridCoord, TerrainTile, TerrainType, TileCoord, TileInstance, TilesetDef } from '../network/protocol'
-import { cliffCellBlocks, cliffTileAt, raisedPredicate } from './cliffAutotile'
+import { cliffCellBlocks, cliffTileAt, raisedPredicate, rampPredicate } from './cliffAutotile'
 
 export type { TileCoord }
 
@@ -248,6 +248,7 @@ export interface AutoTiledTerrainSpec {
   tiles?: ReadonlyArray<TileInstance>
   elevation?: ReadonlyArray<GridCoord>
   cliffTileset?: string
+  ramps?: ReadonlyArray<GridCoord>
 }
 
 // Renders the full ground layer with Wang 2-corner auto-tiling. Used by both
@@ -318,9 +319,10 @@ export function drawAutoTiledTerrain(
   // returns null for non-raised cells, so ground shows through there.
   if (spec.cliffTileset && spec.elevation && spec.elevation.length > 0) {
     const raised = raisedPredicate(spec.elevation)
+    const isRamp = rampPredicate(spec.ramps)
     for (let cy = 0; cy < gridRows; cy++) {
       for (let cx = 0; cx < gridCols; cx++) {
-        const c = cliffTileAt(raised, spec.cliffTileset, cx, cy)
+        const c = cliffTileAt(raised, spec.cliffTileset, cx, cy, isRamp)
         if (c) drawTerrainTile(ctx, c, cx * cellSize, cy * cellSize, cellSize)
       }
     }
@@ -416,7 +418,8 @@ export function isTerrainCellBlocked(
   // addTerrainBlocks — keep the two in sync.
   if (spec.cliffTileset && spec.elevation && spec.elevation.length > 0) {
     const raised = raisedPredicate(spec.elevation)
-    if (cliffCellBlocks(raised, x, y)) return true
+    const isRamp = rampPredicate(spec.ramps)
+    if (cliffCellBlocks(raised, x, y, isRamp)) return true
   }
 
   const groundCoord = spec.defaultTile ?? GROUND_TILE_COORDS

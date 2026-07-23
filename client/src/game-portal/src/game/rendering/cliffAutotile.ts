@@ -72,26 +72,38 @@ function pickCliffSlot(
   return CLIFF_FLAT
 }
 
+// Default ramp predicate for callers that don't pass one — no cell is ever a
+// ramp, matching pre-ramp behavior exactly.
+const NO_RAMPS = () => false
+
 // Returns the cliff atlas tile for (x,y), or null when the cell isn't
-// raised (a non-raised cell has no cliff tile).
+// raised (a non-raised cell has no cliff tile). A raised cell marked as a
+// ramp (isRamp) always renders as the flat plateau-top tile — RAMPS are a
+// walkable opening in the cliff wall, never a wall/corner slot, regardless
+// of what neighbor-based picking would otherwise choose.
 export function cliffTileAt(
   raised: (x: number, y: number) => boolean,
   cliffTileset: string,
   x: number,
   y: number,
+  isRamp: (x: number, y: number) => boolean = NO_RAMPS,
 ): TileCoord | null {
   if (!raised(x, y)) return null
+  if (isRamp(x, y)) return { tileset: cliffTileset, ...CLIFF_FLAT }
   const slot = pickCliffSlot(raised, x, y)
   return { tileset: cliffTileset, col: slot.col, row: slot.row }
 }
 
-// True iff (x,y) is raised AND its picked slot is a wall or outer corner.
+// True iff (x,y) is raised AND its picked slot is a wall or outer corner. A
+// ramp cell never blocks, even if it would otherwise pick a wall/corner slot.
 export function cliffCellBlocks(
   raised: (x: number, y: number) => boolean,
   x: number,
   y: number,
+  isRamp: (x: number, y: number) => boolean = NO_RAMPS,
 ): boolean {
   if (!raised(x, y)) return false
+  if (isRamp(x, y)) return false
   const slot = pickCliffSlot(raised, x, y)
   return BLOCKING_SLOTS.has(slot)
 }
@@ -102,6 +114,18 @@ export function raisedPredicate(
 ): (x: number, y: number) => boolean {
   const set = new Set<string>()
   for (const cell of elevation ?? []) {
+    set.add(`${cell.x},${cell.y}`)
+  }
+  return (x: number, y: number) => set.has(`${x},${y}`)
+}
+
+// Builds an O(1) ramp-cell lookup from a sparse ramps list. Mirrors
+// raisedPredicate.
+export function rampPredicate(
+  ramps: ReadonlyArray<GridCoord> | undefined,
+): (x: number, y: number) => boolean {
+  const set = new Set<string>()
+  for (const cell of ramps ?? []) {
     set.add(`${cell.x},${cell.y}`)
   }
   return (x: number, y: number) => set.has(`${x},${y}`)

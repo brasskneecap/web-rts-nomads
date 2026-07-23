@@ -16,6 +16,7 @@ import {
   cliffCellBlocks,
   cliffTileAt,
   raisedPredicate,
+  rampPredicate,
 } from './cliffAutotile'
 
 const CLIFF_TILESET = 'grass-cliff'
@@ -159,6 +160,70 @@ describe('cliffAutotile', () => {
         ...CLIFF_INNER_SW,
       })
       expect(cliffCellBlocks(raised, 1, 1)).toBe(false)
+    })
+  })
+
+  describe('ramp cell', () => {
+    // Same 5x5 raised rectangle as above; mark the north-wall cell (2,0) as
+    // a ramp.
+    const cells: Array<[number, number]> = []
+    for (let y = 0; y <= 4; y++) {
+      for (let x = 0; x <= 4; x++) cells.push([x, y])
+    }
+    const raised = raisedFromCells(cells)
+    const isRamp = (x: number, y: number) => x === 2 && y === 0
+
+    it('renders the ramp cell as FLAT instead of its wall slot', () => {
+      expect(cliffTileAt(raised, CLIFF_TILESET, 2, 0, isRamp)).toEqual({
+        tileset: CLIFF_TILESET,
+        ...CLIFF_FLAT,
+      })
+    })
+
+    it('does not block the ramp cell', () => {
+      expect(cliffCellBlocks(raised, 2, 0, isRamp)).toBe(false)
+    })
+
+    it('leaves other wall cells unchanged', () => {
+      expect(cliffTileAt(raised, CLIFF_TILESET, 2, 4, isRamp)).toEqual({
+        tileset: CLIFF_TILESET,
+        ...CLIFF_WALL_S,
+      })
+      expect(cliffCellBlocks(raised, 2, 4, isRamp)).toBe(true)
+
+      expect(cliffTileAt(raised, CLIFF_TILESET, 0, 2, isRamp)).toEqual({
+        tileset: CLIFF_TILESET,
+        ...CLIFF_WALL_W,
+      })
+      expect(cliffCellBlocks(raised, 0, 2, isRamp)).toBe(true)
+
+      expect(cliffTileAt(raised, CLIFF_TILESET, 0, 0, isRamp)).toEqual({
+        tileset: CLIFF_TILESET,
+        ...CLIFF_OUTER_NW,
+      })
+      expect(cliffCellBlocks(raised, 0, 0, isRamp)).toBe(true)
+    })
+
+    it('is a no-op when isRamp is omitted (default false)', () => {
+      expect(cliffTileAt(raised, CLIFF_TILESET, 2, 0)).toEqual({
+        tileset: CLIFF_TILESET,
+        ...CLIFF_WALL_N,
+      })
+      expect(cliffCellBlocks(raised, 2, 0)).toBe(true)
+    })
+  })
+
+  describe('rampPredicate', () => {
+    it('builds a lookup matching the ramps list', () => {
+      const isRamp = rampPredicate([{ x: 1, y: 2 }, { x: 3, y: 4 }])
+      expect(isRamp(1, 2)).toBe(true)
+      expect(isRamp(3, 4)).toBe(true)
+      expect(isRamp(0, 0)).toBe(false)
+    })
+
+    it('returns an always-false predicate for undefined ramps', () => {
+      const isRamp = rampPredicate(undefined)
+      expect(isRamp(0, 0)).toBe(false)
     })
   })
 

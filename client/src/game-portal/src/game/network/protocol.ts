@@ -391,6 +391,14 @@ export type MapConfig = {
    *  auto-tiled cliff faces/edges. Only meaningful when `elevation` is
    *  non-empty. */
   cliffTileset?: string
+  /** Raised edge cells marked as walkable ramps: a ramp cell renders as the
+   *  flat plateau-top cliff tile (not a wall) and never blocks, so units
+   *  cross plateau<->ground through it. Optional — absent/empty is backward
+   *  compatible with pre-ramp maps. Only meaningful on cells that are also
+   *  in `elevation`; marking a non-raised cell is inert. The client and
+   *  server derive the same ramp behavior from this set (see
+   *  game/rendering/cliffAutotile.ts and the server's mirror). */
+  ramps?: GridCoord[]
 }
 
 /** Wire shape of the "this map is a campaign level" tag.

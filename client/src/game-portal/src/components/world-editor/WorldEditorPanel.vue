@@ -742,7 +742,23 @@
                 {{ tilesetLabel(sheet) }}
               </option>
             </select>
-            <span class="field-hint">Left-drag to raise a plateau, right-drag to lower.</span>
+
+            <div class="cliff-mode-toggle" role="group" aria-label="Cliff sub-tool">
+              <button
+                type="button"
+                class="cliff-mode-toggle__btn"
+                :class="{ 'cliff-mode-toggle__btn--on': cliffMode === 'raise' }"
+                @click="cliffMode = 'raise'"
+              >Raise</button>
+              <button
+                type="button"
+                class="cliff-mode-toggle__btn"
+                :class="{ 'cliff-mode-toggle__btn--on': cliffMode === 'ramp' }"
+                @click="cliffMode = 'ramp'"
+              >Ramp</button>
+            </div>
+            <span v-if="cliffMode === 'raise'" class="field-hint">Left-drag to raise a plateau, right-drag to lower.</span>
+            <span v-else class="field-hint">Left-drag a raised cliff edge to add ramps, right-drag to remove.</span>
           </div>
 
           <div v-if="brushMode === 'obstacle'" class="control-group">
@@ -1703,11 +1719,13 @@ import {
   DEFAULT_GRASS_COLOR,
   MAP_EDITOR_PRESETS,
   addElevationCells,
+  addRampCells,
   createEditorMapConfig,
   getBuildingColor,
   getObstacleColor,
   getTerrainColor,
   removeElevationCells,
+  removeRampCells,
   resizeMapConfig,
   setBuildingTile,
   setObstacleTile,
@@ -1837,6 +1855,10 @@ function tilesetLabel(id: string): string {
 // 'cliff' brush: which cliff atlas newly-raised cells are tagged with. Only
 // tileset ids ending in `-cliff` are valid cliff atlases.
 const selectedCliffTileset = ref<string>('grass-cliff')
+// 'cliff' brush sub-mode: 'raise' paints/lowers the plateau (model.elevation);
+// 'ramp' toggles walkable openings in the cliff wall (model.ramps). Both
+// share the Cliff brush's tileset picker and brush-size control.
+const cliffMode = ref<'raise' | 'ramp'>('raise')
 const cliffTilesetIds = computed(() => tilesetIds.value.filter((id) => id.endsWith('-cliff')))
 // Once the catalog loads (or reloads), snap the selection onto an available
 // cliff sheet if the current one isn't (or is no longer) valid.
@@ -2249,6 +2271,11 @@ let isMiddleMouseDown = false
 let isSpaceHeld = false
 let isSpacePanning = false
 let isPainting = false
+// True while a right-button drag stroke is active in the Cliff brush
+// (continuous lower / remove-ramp, mirroring the left-drag raise/add-ramp
+// stroke). Only ever set for brushMode 'cliff' — right-click in every other
+// brush stays the existing single-shot mousedown action.
+let isRightPainting = false
 let lastMouseX = 0
 let lastMouseY = 0
 let lastPaintKey = ''
@@ -3710,6 +3737,28 @@ function getBrushCells(cx: number, cy: number, size: number): Array<{ x: number;
   return cells
 }
 
+// Right-button stroke for the Cliff brush: lowers the plateau (raise mode)
+// or removes ramps (ramp mode) at the current cell. Mirrors paintAtScreen's
+// same-cell dedupe via lastPaintKey so drag-move doesn't re-fire per frame,
+// but uses its own key namespace so it can't collide with a concurrent
+// left-drag key (the two buttons are never both driving a stroke at once,
+// but keeping the namespaces distinct is cheap and avoids any doubt).
+function paintCliffLowerAtScreen(screenX: number, screenY: number) {
+  const cell = getGridCellAtScreen(screenX, screenY)
+  if (!cell) return
+
+  const paintKey = `${cell.x}:${cell.y}:cliff-lower:${cliffMode.value}:${brushSize.value}`
+  if (paintKey === lastPaintKey) return
+  lastPaintKey = paintKey
+
+  const cells = getBrushCells(cell.x, cell.y, brushSize.value)
+  if (cliffMode.value === 'ramp') {
+    model.value = removeRampCells(model.value, cells)
+  } else {
+    model.value = removeElevationCells(model.value, cells)
+  }
+}
+
 function paintAtScreen(screenX: number, screenY: number) {
   selectedEditBuildingId.value = null
   selectedEditPlacedUnitId.value = null
@@ -3766,9 +3815,10 @@ function paintAtScreen(screenX: number, screenY: number) {
         }
       }
     }
-    // General Erase also clears raised elevation under the brush, so it
-    // erases cliffs consistent with terrain/tiles/obstacles.
-    next = removeElevationCells(next, cells)
+    // General Erase also clears raised elevation (and any ramps on those
+    // cells) under the brush, so it erases cliffs consistent with
+    // terrain/tiles/obstacles.
+    next = removeRampCells(removeElevationCells(next, cells), cells)
     model.value = { ...next, placedUnits: placedUnits.value }
     return
   }
@@ -3817,10 +3867,17 @@ function paintAtScreen(screenX: number, screenY: number) {
   }
 
   if (activeBrushMode.value === 'cliff') {
-    // Raise a plateau: add the brush cells to model.elevation and stamp the
-    // active cliff atlas. The renderer + walkability derive cliff faces from
-    // model.elevation reactively — we never compute cliff tiles here.
-    model.value = addElevationCells(model.value, cells, selectedCliffTileset.value)
+    if (cliffMode.value === 'ramp') {
+      // Add ramp cells: the renderer + walkability derive the flat/walkable
+      // ramp behavior from model.ramps reactively — we never compute cliff
+      // tiles here. Marking a non-raised cell is inert (no validation needed).
+      model.value = addRampCells(model.value, cells)
+    } else {
+      // Raise a plateau: add the brush cells to model.elevation and stamp the
+      // active cliff atlas. The renderer + walkability derive cliff faces from
+      // model.elevation reactively — we never compute cliff tiles here.
+      model.value = addElevationCells(model.value, cells, selectedCliffTileset.value)
+    }
     return
   }
 
@@ -3984,28 +4041,38 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
+  // Right-click in the Cliff brush starts a continuous lower / remove-ramp
+  // drag stroke (mirrors the left-drag raise/add-ramp stroke) — see
+  // onMouseMove/onMouseUp for the drag continuation and commit.
+  if (event.button === 2 && paintModeEnabled.value && brushMode.value === 'cliff') {
+    event.preventDefault()
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      isRightPainting = true
+      lastPaintKey = ''
+      beginPaintAction()
+      paintCliffLowerAtScreen(screen.x, screen.y)
+    }
+    return
+  }
+
   // Right-click in the Tile/Tileset brushes: erase only painted tiles under
-  // the brush. Right-click in the Cliff brush lowers the plateau instead
-  // (removes the brush cells from model.elevation) — tile/tileset erase
-  // behavior is left untouched for those modes.
+  // the brush. Single-shot (unchanged) — only the Cliff brush needs
+  // continuous right-drag.
   if (
     event.button === 2 &&
     paintModeEnabled.value &&
-    (brushMode.value === 'tile' || brushMode.value === 'tileset' || brushMode.value === 'cliff')
+    (brushMode.value === 'tile' || brushMode.value === 'tileset')
   ) {
     event.preventDefault()
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) {
       beginPaintAction()
-      if (brushMode.value === 'cliff') {
-        model.value = removeElevationCells(model.value, getBrushCells(cell.x, cell.y, brushSize.value))
-      } else {
-        let next = model.value
-        for (const c of getBrushCells(cell.x, cell.y, brushSize.value)) {
-          next = setTilePaint(next, c.x, c.y, null)
-        }
-        model.value = next
+      let next = model.value
+      for (const c of getBrushCells(cell.x, cell.y, brushSize.value)) {
+        next = setTilePaint(next, c.x, c.y, null)
       }
+      model.value = next
       commitPaintAction()
     }
     return
@@ -4195,6 +4262,24 @@ function onMouseMove(event: MouseEvent) {
     return
   }
 
+  // Cliff brush right-drag: continuous lower (raise mode) / remove-ramp
+  // (ramp mode) while the right button is held, mirroring how left-drag
+  // raises/adds ramps continuously. `event.buttons` (not `event.button`,
+  // which is only meaningful on down/up events) is the live bitmask of
+  // currently-held buttons, bit 1 (value 2) is the right button — this is
+  // the fallback signal if a mouseup is ever missed (e.g. focus loss while
+  // dragging outside the window), so the stroke doesn't stay open forever.
+  if (isRightPainting) {
+    if (!(event.buttons & 2)) {
+      isRightPainting = false
+      lastPaintKey = ''
+      commitPaintAction()
+    } else {
+      paintCliffLowerAtScreen(screen.x, screen.y)
+    }
+    return
+  }
+
   // Zone draw drag: add cells while holding the mouse button, independent of paint mode.
   if (isPainting && zoneSubMode.value === 'draw' && selectedZoneId.value) {
     const cell = getGridCellAtScreen(screen.x, screen.y)
@@ -4229,6 +4314,16 @@ function onMouseMove(event: MouseEvent) {
 function onMouseUp(event: MouseEvent) {
   if (event.button === 1) {
     isMiddleMouseDown = false
+    return
+  }
+
+  // Close out a Cliff brush right-drag stroke (see onMouseDown/onMouseMove).
+  if (event.button === 2) {
+    if (isRightPainting) {
+      isRightPainting = false
+      lastPaintKey = ''
+      commitPaintAction()
+    }
     return
   }
 
@@ -4658,6 +4753,7 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
       tiles: model.value.tiles,
       elevation: model.value.elevation,
       cliffTileset: model.value.cliffTileset,
+      ramps: model.value.ramps,
     })
   } else {
     ctx.fillStyle = DEFAULT_GRASS_COLOR
@@ -5720,6 +5816,36 @@ onBeforeUnmount(() => {
   font-size: 0.76rem;
   color: #94a3b8;
   line-height: 1.4;
+}
+
+.cliff-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cliff-mode-toggle__btn {
+  padding: 6px 4px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.cliff-mode-toggle__btn:hover {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.cliff-mode-toggle__btn--on {
+  color: #0b1220;
+  background: #e7c88a;
+  border-color: #f2d79a;
+  box-shadow: 0 0 0 1px rgba(231, 200, 138, 0.5), 0 6px 16px rgba(231, 200, 138, 0.22);
 }
 
 .undo-bar {

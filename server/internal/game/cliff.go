@@ -42,15 +42,22 @@ func cliffSlotBlocks(slot cliffSlot) bool {
 }
 
 // cliffTileAt derives the cliff atlas slot for cell (x, y) given a `raised`
-// predicate. Returns ok=false when (x, y) is not itself raised — non-raised
-// cells have no cliff tile.
+// predicate and an `isRamp` predicate. Returns ok=false when (x, y) is not
+// itself raised — non-raised cells have no cliff tile (a ramp mark on a
+// non-raised cell is inert). A raised cell marked as a ramp always picks the
+// FLAT slot, overriding the normal wall/corner derivation, so it renders as
+// plateau-top and (via cliffCellBlocks) never blocks.
 //
 // Y increases downward (screen coords): N = y-1, S = y+1. See the package
 // doc comment on the CANONICAL CLIFF AUTO-TILE SPEC for the derivation this
 // mirrors 1:1; the client mirrors the same rule set.
-func cliffTileAt(raised func(x, y int) bool, x, y int) (col int, row int, ok bool) {
+func cliffTileAt(raised func(x, y int) bool, isRamp func(x, y int) bool, x, y int) (col int, row int, ok bool) {
 	if !raised(x, y) {
 		return 0, 0, false
+	}
+
+	if isRamp(x, y) {
+		return cliffFlat.Col, cliffFlat.Row, true
 	}
 
 	n := raised(x, y-1)
@@ -96,10 +103,16 @@ func cliffTileAt(raised func(x, y int) bool, x, y int) (col int, row int, ok boo
 }
 
 // cliffCellBlocks reports whether (x, y) is raised and its picked cliff slot
-// blocks movement (a wall or outer corner). The flat plateau top and the
-// four inner corners are walkable.
-func cliffCellBlocks(raised func(x, y int) bool, x, y int) bool {
-	col, row, ok := cliffTileAt(raised, x, y)
+// blocks movement (a wall or outer corner). The flat plateau top, the four
+// inner corners, and ramp cells are walkable.
+func cliffCellBlocks(raised func(x, y int) bool, isRamp func(x, y int) bool, x, y int) bool {
+	if !raised(x, y) {
+		return false
+	}
+	if isRamp(x, y) {
+		return false
+	}
+	col, row, ok := cliffTileAt(raised, isRamp, x, y)
 	if !ok {
 		return false
 	}
@@ -120,6 +133,26 @@ func raisedSetFromElevation(cells []protocol.GridCoord) map[[2]int]bool {
 // raisedPredicate returns a `raised(x, y) bool` closure backed by a set
 // built with raisedSetFromElevation.
 func raisedPredicate(set map[[2]int]bool) func(x, y int) bool {
+	return func(x, y int) bool {
+		return set[[2]int{x, y}]
+	}
+}
+
+// rampSetFromRamps builds a lookup set from a map's authored Ramps cells,
+// for use as the backing store of an `isRamp` predicate closure passed to
+// cliffTileAt / cliffCellBlocks. A ramp cell only has an effect where the
+// same cell is also present in the raised set — see cliffTileAt.
+func rampSetFromRamps(cells []protocol.GridCoord) map[[2]int]bool {
+	set := make(map[[2]int]bool, len(cells))
+	for _, c := range cells {
+		set[[2]int{c.X, c.Y}] = true
+	}
+	return set
+}
+
+// rampPredicate returns an `isRamp(x, y) bool` closure backed by a set built
+// with rampSetFromRamps. Shares the raisedPredicate closure style.
+func rampPredicate(set map[[2]int]bool) func(x, y int) bool {
 	return func(x, y int) bool {
 		return set[[2]int{x, y}]
 	}

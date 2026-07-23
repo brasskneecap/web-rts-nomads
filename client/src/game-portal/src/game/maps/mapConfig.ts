@@ -56,6 +56,7 @@ export function createEditorMapConfig(
     zones: existing?.zones,
     elevation: existing?.elevation,
     cliffTileset: existing?.cliffTileset,
+    ramps: existing?.ramps,
   })
 }
 
@@ -86,6 +87,7 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     zones: clampZones(map.zones ?? [], gridCols, gridRows),
     elevation: dedupeElevation(map.elevation ?? [], gridCols, gridRows),
     cliffTileset: map.cliffTileset,
+    ramps: dedupeRamps(map.ramps ?? [], gridCols, gridRows),
   }
 }
 
@@ -206,6 +208,26 @@ export function removeElevationCells(map: MapConfig, cells: GridCoord[]): MapCon
   return sanitizeMapConfig({
     ...map,
     elevation: (map.elevation ?? []).filter((c) => !drop.has(`${c.x}:${c.y}`)),
+  })
+}
+
+// Adds cells to the ramp set (dedupe + bounds-clamp handled by
+// sanitizeMapConfig/dedupeRamps). Marking a non-raised cell is inert — the
+// auto-tiler only consults ramps on cells that are also in `elevation` — so
+// no cross-check against elevation is needed here.
+export function addRampCells(map: MapConfig, cells: GridCoord[]): MapConfig {
+  return sanitizeMapConfig({
+    ...map,
+    ramps: [...(map.ramps ?? []), ...cells],
+  })
+}
+
+// Removes cells from the ramp set (mirrors removeElevationCells).
+export function removeRampCells(map: MapConfig, cells: GridCoord[]): MapConfig {
+  const drop = new Set(cells.map((c) => `${c.x}:${c.y}`))
+  return sanitizeMapConfig({
+    ...map,
+    ramps: (map.ramps ?? []).filter((c) => !drop.has(`${c.x}:${c.y}`)),
   })
 }
 
@@ -386,6 +408,24 @@ function dedupeBuildings(
 // undefined when empty so unraised maps stay byte-identical to pre-elevation
 // maps (matches the tiles/terrain/zones "absent when empty" convention).
 function dedupeElevation(
+  cells: GridCoord[],
+  gridCols: number,
+  gridRows: number,
+): GridCoord[] | undefined {
+  const unique = new Map<string, GridCoord>()
+
+  for (const cell of cells) {
+    if (!isWithinGrid(cell.x, cell.y, gridCols, gridRows)) continue
+    unique.set(`${cell.x}:${cell.y}`, { x: cell.x, y: cell.y })
+  }
+
+  const result = Array.from(unique.values()).sort(sortTiles)
+  return result.length > 0 ? result : undefined
+}
+
+// Dedupes ramp cells by (x,y) and drops out-of-bounds ones. Returns
+// undefined when empty, mirroring dedupeElevation.
+function dedupeRamps(
   cells: GridCoord[],
   gridCols: number,
   gridRows: number,

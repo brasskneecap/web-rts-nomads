@@ -153,9 +153,10 @@ func addTerrainBlocks(blocked map[gridPoint]bool, cfg *protocol.MapConfig) {
 	// stay walkable. See cliff.go for the derivation.
 	if len(cfg.Elevation) > 0 {
 		raised := raisedPredicate(raisedSetFromElevation(cfg.Elevation))
+		isRamp := rampPredicate(rampSetFromRamps(cfg.Ramps))
 		for y := 0; y < gridRows; y++ {
 			for x := 0; x < gridCols; x++ {
-				if cliffCellBlocks(raised, x, y) {
+				if cliffCellBlocks(raised, isRamp, x, y) {
 					blocked[gridPoint{X: x, Y: y}] = true
 				}
 			}
