@@ -147,6 +147,20 @@ func addTerrainBlocks(blocked map[gridPoint]bool, cfg *protocol.MapConfig) {
 			}
 		}
 	}
+
+	// Cliff auto-tiling (additive): raised cells whose picked slot is a wall
+	// or outer corner block movement; the flat plateau top and inner corners
+	// stay walkable. See cliff.go for the derivation.
+	if len(cfg.Elevation) > 0 {
+		raised := raisedPredicate(raisedSetFromElevation(cfg.Elevation))
+		for y := 0; y < gridRows; y++ {
+			for x := 0; x < gridCols; x++ {
+				if cliffCellBlocks(raised, x, y) {
+					blocked[gridPoint{X: x, Y: y}] = true
+				}
+			}
+		}
+	}
 }
 
 // isWalkableGroundTile reports whether a tiles[] override renders a flat,

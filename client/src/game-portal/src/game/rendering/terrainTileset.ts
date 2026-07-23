@@ -1,4 +1,5 @@
-import type { TerrainTile, TerrainType, TileCoord, TileInstance, TilesetDef } from '../network/protocol'
+import type { GridCoord, TerrainTile, TerrainType, TileCoord, TileInstance, TilesetDef } from '../network/protocol'
+import { cliffCellBlocks, cliffTileAt, raisedPredicate } from './cliffAutotile'
 
 export type { TileCoord }
 
@@ -245,6 +246,8 @@ export interface AutoTiledTerrainSpec {
   defaultTile?: TileCoord
   terrain: ReadonlyArray<TerrainTile>
   tiles?: ReadonlyArray<TileInstance>
+  elevation?: ReadonlyArray<GridCoord>
+  cliffTileset?: string
 }
 
 // Renders the full ground layer with Wang 2-corner auto-tiling. Used by both
@@ -306,6 +309,19 @@ export function drawAutoTiledTerrain(
       const coords = TERRAIN_TILE_COORDS[tile.terrain]
       if (coords) {
         drawTerrainTile(ctx, coords, tile.x * cellSize, tile.y * cellSize, cellSize)
+      }
+    }
+  }
+
+  // Cliff pass (ELEVATION plateaus): drawn after ground, before tiles[]
+  // overrides so explicitly-painted tiles still win on top. cliffTileAt
+  // returns null for non-raised cells, so ground shows through there.
+  if (spec.cliffTileset && spec.elevation && spec.elevation.length > 0) {
+    const raised = raisedPredicate(spec.elevation)
+    for (let cy = 0; cy < gridRows; cy++) {
+      for (let cx = 0; cx < gridCols; cx++) {
+        const c = cliffTileAt(raised, spec.cliffTileset, cx, cy)
+        if (c) drawTerrainTile(ctx, c, cx * cellSize, cy * cellSize, cellSize)
       }
     }
   }
@@ -393,6 +409,14 @@ export function isTerrainCellBlocked(
         return !isWalkableGroundTile({ tileset: t.tileset, col: t.col, row: t.row })
       }
     }
+  }
+
+  // ELEVATION cliff faces/outer-corners block build placement; the flat
+  // plateau top and inner corners do not. Mirrors the server's
+  // addTerrainBlocks — keep the two in sync.
+  if (spec.cliffTileset && spec.elevation && spec.elevation.length > 0) {
+    const raised = raisedPredicate(spec.elevation)
+    if (cliffCellBlocks(raised, x, y)) return true
   }
 
   const groundCoord = spec.defaultTile ?? GROUND_TILE_COORDS

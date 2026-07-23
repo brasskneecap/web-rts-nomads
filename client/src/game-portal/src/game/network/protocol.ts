@@ -382,6 +382,15 @@ export type MapConfig = {
   /** Authored map zones (capture points, presence zones, etc.). Optional —
    *  maps without zones behave identically to pre-zone maps. */
   zones?: Zone[]
+  /** Cells raised into a single-level plateau (cliff auto-tiling). Optional —
+   *  absent/empty is backward compatible with pre-elevation maps. The client
+   *  and server derive the same cliff tile + walkability per cell from this
+   *  set (see game/rendering/cliffAutotile.ts and the server's mirror). */
+  elevation?: GridCoord[]
+  /** Cliff atlas tileset id (e.g. `grass-cliff`) used to render raised cells'
+   *  auto-tiled cliff faces/edges. Only meaningful when `elevation` is
+   *  non-empty. */
+  cliffTileset?: string
 }
 
 /** Wire shape of the "this map is a campaign level" tag.

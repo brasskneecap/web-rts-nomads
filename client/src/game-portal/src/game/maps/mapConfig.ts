@@ -1,6 +1,7 @@
 import type {
   BuildingTile,
   BuildingType,
+  GridCoord,
   JsonObject,
   MapConfig,
   NeutralSpawn,
@@ -53,6 +54,8 @@ export function createEditorMapConfig(
     waveConfig: existing?.waveConfig,
     campaign: existing?.campaign,
     zones: existing?.zones,
+    elevation: existing?.elevation,
+    cliffTileset: existing?.cliffTileset,
   })
 }
 
@@ -81,6 +84,8 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     neutralSpawns: clampNeutralSpawns(map.neutralSpawns ?? [], gridCols, gridRows),
     campaign: map.campaign,
     zones: clampZones(map.zones ?? [], gridCols, gridRows),
+    elevation: dedupeElevation(map.elevation ?? [], gridCols, gridRows),
+    cliffTileset: map.cliffTileset,
   }
 }
 
@@ -175,6 +180,33 @@ function createObstacleTile(obstacle: ObstacleType, x: number, y: number): Obsta
     ...resourceFields,
     ...(maxHp > 0 ? { maxHp, hp: maxHp } : {}),
   }
+}
+
+// Adds cells to the raised-elevation set (dedupe + bounds-clamp handled by
+// sanitizeMapConfig/dedupeElevation). Also stamps `cliffTileset` so the
+// renderer's auto-tiler knows which atlas to draw the derived cliff faces
+// from — painting always writes the currently selected cliff sheet.
+export function addElevationCells(
+  map: MapConfig,
+  cells: GridCoord[],
+  cliffTileset: string,
+): MapConfig {
+  return sanitizeMapConfig({
+    ...map,
+    elevation: [...(map.elevation ?? []), ...cells],
+    cliffTileset,
+  })
+}
+
+// Removes cells from the raised-elevation set ("lower" the plateau).
+// `cliffTileset` is left untouched — an emptied elevation set with a stale
+// cliffTileset is harmless (nothing renders without raised cells).
+export function removeElevationCells(map: MapConfig, cells: GridCoord[]): MapConfig {
+  const drop = new Set(cells.map((c) => `${c.x}:${c.y}`))
+  return sanitizeMapConfig({
+    ...map,
+    elevation: (map.elevation ?? []).filter((c) => !drop.has(`${c.x}:${c.y}`)),
+  })
 }
 
 export function setBuildingTile(
@@ -348,6 +380,25 @@ function dedupeBuildings(
   }
 
   return normalized.sort(sortTiles)
+}
+
+// Dedupes raised cells by (x,y) and drops out-of-bounds ones. Returns
+// undefined when empty so unraised maps stay byte-identical to pre-elevation
+// maps (matches the tiles/terrain/zones "absent when empty" convention).
+function dedupeElevation(
+  cells: GridCoord[],
+  gridCols: number,
+  gridRows: number,
+): GridCoord[] | undefined {
+  const unique = new Map<string, GridCoord>()
+
+  for (const cell of cells) {
+    if (!isWithinGrid(cell.x, cell.y, gridCols, gridRows)) continue
+    unique.set(`${cell.x}:${cell.y}`, { x: cell.x, y: cell.y })
+  }
+
+  const result = Array.from(unique.values()).sort(sortTiles)
+  return result.length > 0 ? result : undefined
 }
 
 function sortTiles(a: { x: number; y: number }, b: { x: number; y: number }) {

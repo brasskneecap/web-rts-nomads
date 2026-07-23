@@ -732,11 +732,11 @@ export class CanvasRenderer {
   // blitting avoids the per-tile drawImage seams that appear at non-integer
   // zoom/camera positions.
   private ensureTerrainCache() {
-    const { cellSize, terrain, tiles, defaultTile, gridCols, gridRows } = this.state.mapConfig
+    const { cellSize, terrain, tiles, defaultTile, gridCols, gridRows, elevation, cliffTileset } = this.state.mapConfig
     const tilesetReady = isTerrainTilesetReady()
     const mapWidth = this.state.mapWidth
     const mapHeight = this.state.mapHeight
-    const key: unknown[] = [tilesetReady, cellSize, gridCols, gridRows, mapWidth, mapHeight, defaultTile, tiles, terrain]
+    const key: unknown[] = [tilesetReady, cellSize, gridCols, gridRows, mapWidth, mapHeight, defaultTile, tiles, terrain, elevation, cliffTileset]
 
     if (this.terrainCache && this.terrainCacheKey.length === key.length && key.every((v, i) => v === this.terrainCacheKey[i])) {
       return
@@ -761,6 +761,8 @@ export class CanvasRenderer {
         defaultTile,
         terrain,
         tiles,
+        elevation,
+        cliffTileset,
       })
     } else {
       cctx.fillStyle = DEFAULT_GRASS_COLOR

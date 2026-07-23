@@ -700,7 +700,7 @@
             <span class="field-hint">Paints randomized tiles of this terrain type (0-elevation sheet).</span>
           </div>
 
-          <div v-if="brushMode === 'tile' || brushMode === 'obstacle' || brushMode === 'erase'" class="control-group">
+          <div v-if="brushMode === 'tile' || brushMode === 'obstacle' || brushMode === 'erase' || brushMode === 'cliff'" class="control-group">
             <label for="brush-size">Brush Size</label>
             <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
               <option :value="1">1 × 1</option>
@@ -733,6 +733,16 @@
               @pointerup="onTilePickerPointerUp"
               @pointerleave="onTilePickerPointerUp"
             />
+          </div>
+
+          <div v-if="brushMode === 'cliff'" class="control-group">
+            <label for="cliff-tileset">Cliff Tileset</label>
+            <select id="cliff-tileset" v-model="selectedCliffTileset" :disabled="!paintModeEnabled">
+              <option v-for="sheet in cliffTilesetIds" :key="sheet" :value="sheet">
+                {{ tilesetLabel(sheet) }}
+              </option>
+            </select>
+            <span class="field-hint">Left-drag to raise a plateau, right-drag to lower.</span>
           </div>
 
           <div v-if="brushMode === 'obstacle'" class="control-group">
@@ -1692,10 +1702,12 @@ import { buildTerrainSurface, drawMinimapBase, drawMinimapPOIs } from '@/game/re
 import {
   DEFAULT_GRASS_COLOR,
   MAP_EDITOR_PRESETS,
+  addElevationCells,
   createEditorMapConfig,
   getBuildingColor,
   getObstacleColor,
   getTerrainColor,
+  removeElevationCells,
   resizeMapConfig,
   setBuildingTile,
   setObstacleTile,
@@ -1758,6 +1770,7 @@ type BrushMode =
   | 'terrain'
   | 'tile'
   | 'tileset'
+  | 'cliff'
   | 'obstacle'
   | 'building'
   | 'enemy-spawn'
@@ -1774,6 +1787,7 @@ const BRUSH_TOOLS: ReadonlyArray<{ id: BrushMode; label: string; glyph: string }
   { id: 'select', label: 'Select', glyph: '⊹' },
   { id: 'tile', label: 'Tile', glyph: '▧' },
   { id: 'tileset', label: 'Tileset', glyph: '▦' },
+  { id: 'cliff', label: 'Cliff', glyph: '⛰' },
   { id: 'obstacle', label: 'Obstacle', glyph: '⬢' },
   { id: 'building', label: 'Building', glyph: '⌂' },
   { id: 'enemy-spawn', label: 'Enemy', glyph: '☠' },
@@ -1819,6 +1833,22 @@ const tilesetIds = ref<string[]>([])
 function tilesetLabel(id: string): string {
   return getTilesetDef(id)?.name ?? id
 }
+
+// 'cliff' brush: which cliff atlas newly-raised cells are tagged with. Only
+// tileset ids ending in `-cliff` are valid cliff atlases.
+const selectedCliffTileset = ref<string>('grass-cliff')
+const cliffTilesetIds = computed(() => tilesetIds.value.filter((id) => id.endsWith('-cliff')))
+// Once the catalog loads (or reloads), snap the selection onto an available
+// cliff sheet if the current one isn't (or is no longer) valid.
+watch(
+  cliffTilesetIds,
+  (ids) => {
+    if (ids.length > 0 && !ids.includes(selectedCliffTileset.value)) {
+      selectedCliffTileset.value = ids[0]
+    }
+  },
+  { immediate: true },
+)
 
 // All unit types known to the catalog, populated by fetchUnitDefs. Buckets are
 // keyed by the unit's `faction` string and built dynamically — adding a new
@@ -3736,6 +3766,9 @@ function paintAtScreen(screenX: number, screenY: number) {
         }
       }
     }
+    // General Erase also clears raised elevation under the brush, so it
+    // erases cliffs consistent with terrain/tiles/obstacles.
+    next = removeElevationCells(next, cells)
     model.value = { ...next, placedUnits: placedUnits.value }
     return
   }
@@ -3780,6 +3813,14 @@ function paintAtScreen(screenX: number, screenY: number) {
       }
     }
     model.value = next
+    return
+  }
+
+  if (activeBrushMode.value === 'cliff') {
+    // Raise a plateau: add the brush cells to model.elevation and stamp the
+    // active cliff atlas. The renderer + walkability derive cliff faces from
+    // model.elevation reactively — we never compute cliff tiles here.
+    model.value = addElevationCells(model.value, cells, selectedCliffTileset.value)
     return
   }
 
@@ -3943,22 +3984,28 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
-  // Right-click in the Tile/Tileset brushes: erase only painted tiles under the
-  // brush.
+  // Right-click in the Tile/Tileset brushes: erase only painted tiles under
+  // the brush. Right-click in the Cliff brush lowers the plateau instead
+  // (removes the brush cells from model.elevation) — tile/tileset erase
+  // behavior is left untouched for those modes.
   if (
     event.button === 2 &&
     paintModeEnabled.value &&
-    (brushMode.value === 'tile' || brushMode.value === 'tileset')
+    (brushMode.value === 'tile' || brushMode.value === 'tileset' || brushMode.value === 'cliff')
   ) {
     event.preventDefault()
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) {
       beginPaintAction()
-      let next = model.value
-      for (const c of getBrushCells(cell.x, cell.y, brushSize.value)) {
-        next = setTilePaint(next, c.x, c.y, null)
+      if (brushMode.value === 'cliff') {
+        model.value = removeElevationCells(model.value, getBrushCells(cell.x, cell.y, brushSize.value))
+      } else {
+        let next = model.value
+        for (const c of getBrushCells(cell.x, cell.y, brushSize.value)) {
+          next = setTilePaint(next, c.x, c.y, null)
+        }
+        model.value = next
       }
-      model.value = next
       commitPaintAction()
     }
     return
@@ -4609,6 +4656,8 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
       defaultTile: model.value.defaultTile,
       terrain: model.value.terrain,
       tiles: model.value.tiles,
+      elevation: model.value.elevation,
+      cliffTileset: model.value.cliffTileset,
     })
   } else {
     ctx.fillStyle = DEFAULT_GRASS_COLOR

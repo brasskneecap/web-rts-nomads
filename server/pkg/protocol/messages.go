@@ -314,6 +314,15 @@ type MapConfig struct {
 	// (build-gate never fires, no zone snapshots). See the Zone type.
 	Zones      []Zone      `json:"zones,omitempty"`
 	WaveConfig *WaveConfig `json:"waveConfig,omitempty"`
+	// Elevation lists the cells raised into a single-level plateau for cliff
+	// auto-tiling. Absent/empty on maps without cliffs. See
+	// server/internal/game/cliff.go (cliffTileAt / cliffCellBlocks) for the
+	// derived per-cell tile + walkability; the client mirrors the same spec.
+	Elevation []GridCoord `json:"elevation,omitempty"`
+	// CliffTileset is the tileset id of the 4x4 cliff atlas (e.g.
+	// "grass-cliff") used to render Elevation cells. Absent on maps without
+	// cliffs.
+	CliffTileset string `json:"cliffTileset,omitempty"`
 	// Campaign, when set, tags this map as a campaign level. Its presence
 	// makes the map (a) hidden from the Custom Game lobby map list, and (b)
 	// contribute one level to the CampaignDef tree at startup / catalog-read
