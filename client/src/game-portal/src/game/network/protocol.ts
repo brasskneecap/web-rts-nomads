@@ -387,9 +387,9 @@ export type MapConfig = {
    *  and server derive the same cliff tile + walkability per cell from this
    *  set (see game/rendering/cliffAutotile.ts and the server's mirror). */
   elevation?: GridCoord[]
-  /** Cliff atlas tileset id (e.g. `grass-cliff`) used to render raised cells'
-   *  auto-tiled cliff faces/edges. Only meaningful when `elevation` is
-   *  non-empty. */
+  /** Cliff atlas tileset id (a `*-elevation-25` Wang sheet, e.g.
+   *  `grass-grass-elevation-25`) used to auto-tile raised cells' cliff
+   *  faces/edges. Only meaningful when `elevation` is non-empty. */
   cliffTileset?: string
   /** Raised edge cells marked as walkable ramps: a ramp cell renders as the
    *  flat plateau-top cliff tile (not a wall) and never blocks, so units
