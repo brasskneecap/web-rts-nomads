@@ -689,7 +689,7 @@
             Select mode — click a building, unit or spawn to edit it. Pick a brush above to paint.
           </p>
 
-          <div v-if="brushMode === 'tile'" class="control-group">
+          <div v-if="brushMode === 'tile' || brushMode === 'cliff'" class="control-group">
             <label for="terrain-type">Terrain Type</label>
             <select id="terrain-type" v-model="selectedTerrain" :disabled="!paintModeEnabled">
               <option value="grass">Grass</option>
@@ -697,10 +697,16 @@
               <option value="snow">Snow</option>
               <option value="corrupt">Corrupt</option>
             </select>
-            <span class="field-hint">Paints randomized tiles of this terrain type (0-elevation sheet).</span>
+
+            <span v-if="brushMode === 'tile'" class="field-hint">
+              Left-drag: paint terrain. Right-click: erase.
+            </span>
+            <span v-else class="field-hint">
+              Left-drag: raise a plateau. Right-drag: lower.
+            </span>
           </div>
 
-          <div v-if="brushMode === 'tile' || brushMode === 'obstacle' || brushMode === 'erase'" class="control-group">
+          <div v-if="brushMode === 'tile' || brushMode === 'cliff' || brushMode === 'obstacle' || brushMode === 'erase'" class="control-group">
             <label for="brush-size">Brush Size</label>
             <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
               <option :value="1">1 × 1</option>
@@ -1692,10 +1698,13 @@ import { buildTerrainSurface, drawMinimapBase, drawMinimapPOIs } from '@/game/re
 import {
   DEFAULT_GRASS_COLOR,
   MAP_EDITOR_PRESETS,
+  addElevationCells,
   createEditorMapConfig,
   getBuildingColor,
   getObstacleColor,
   getTerrainColor,
+  removeElevationCells,
+  removeRampCells,
   resizeMapConfig,
   setBuildingTile,
   setObstacleTile,
@@ -1758,6 +1767,7 @@ type BrushMode =
   | 'terrain'
   | 'tile'
   | 'tileset'
+  | 'cliff'
   | 'obstacle'
   | 'building'
   | 'enemy-spawn'
@@ -1766,14 +1776,20 @@ type BrushMode =
   | 'erase'
 const brushMode = ref<BrushMode>('select')
 // Tool buttons rendered in the Paint section. Order = display order.
-// 'tile'    paints a randomized flat terrain type (grass/dirt/snow/corrupt).
+// 'tile'    left-drag paints a randomized flat terrain type (grass/dirt/snow/
+//           corrupt); right-click erases painted tiles under the brush
+//           (single-shot, same as 'tileset').
 // 'tileset' paints specific tiles/sections picked from a tileset sheet.
+// 'cliff'   dedicated elevation tool: left-drag raises a plateau, right-drag
+//           continuously lowers it (see activeCliffTileset). Uses the same
+//           Terrain Type as 'tile' so the cliff art auto-matches.
 // NOTE: the legacy 'terrain' Wang mode is kept in the BrushMode type + paint
 // handlers but omitted from the picker.
 const BRUSH_TOOLS: ReadonlyArray<{ id: BrushMode; label: string; glyph: string }> = [
   { id: 'select', label: 'Select', glyph: '⊹' },
   { id: 'tile', label: 'Tile', glyph: '▧' },
   { id: 'tileset', label: 'Tileset', glyph: '▦' },
+  { id: 'cliff', label: 'Elevation', glyph: '⛰' },
   { id: 'obstacle', label: 'Obstacle', glyph: '⬢' },
   { id: 'building', label: 'Building', glyph: '⌂' },
   { id: 'enemy-spawn', label: 'Enemy', glyph: '☠' },
@@ -1819,6 +1835,14 @@ const tilesetIds = ref<string[]>([])
 function tilesetLabel(id: string): string {
   return getTilesetDef(id)?.name ?? id
 }
+
+// The cliff atlas newly-raised cells are tagged with, derived from the
+// selected Terrain Type: the flat `-0` sheet's `-25` sibling is its cliff
+// atlas (Wang layout) — e.g. grass-grass-elevation-0 -> grass-grass-elevation-25.
+// See cliffAutotile.ts.
+const activeCliffTileset = computed(() =>
+  DEFAULT_TILE_PRESETS[selectedTerrain.value].tileset.replace(/-0$/, '-25'),
+)
 
 // All unit types known to the catalog, populated by fetchUnitDefs. Buckets are
 // keyed by the unit's `faction` string and built dynamically — adding a new
@@ -2219,6 +2243,11 @@ let isMiddleMouseDown = false
 let isSpaceHeld = false
 let isSpacePanning = false
 let isPainting = false
+// True while a right-button drag stroke is active in the Elevation brush
+// (continuous lower paint, independent of the left-drag raise stroke). Only
+// ever set for brushMode 'cliff' — right-click in every other brush stays
+// the existing single-shot mousedown action.
+let isRightPainting = false
 let lastMouseX = 0
 let lastMouseY = 0
 let lastPaintKey = ''
@@ -3680,6 +3709,21 @@ function getBrushCells(cx: number, cy: number, size: number): Array<{ x: number;
   return cells
 }
 
+// Right-button stroke for the Elevation (cliff) brush: lowers elevation
+// continuously along the drag. Uses its own lastPaintKey namespace so
+// drag-move doesn't re-fire per frame.
+function paintElevationLowerAtScreen(screenX: number, screenY: number) {
+  const cell = getGridCellAtScreen(screenX, screenY)
+  if (!cell) return
+
+  const paintKey = `${cell.x}:${cell.y}:elevation-lower:${brushSize.value}`
+  if (paintKey === lastPaintKey) return
+  lastPaintKey = paintKey
+
+  const cells = getBrushCells(cell.x, cell.y, brushSize.value)
+  model.value = removeElevationCells(model.value, cells)
+}
+
 function paintAtScreen(screenX: number, screenY: number) {
   selectedEditBuildingId.value = null
   selectedEditPlacedUnitId.value = null
@@ -3736,6 +3780,10 @@ function paintAtScreen(screenX: number, screenY: number) {
         }
       }
     }
+    // General Erase also clears raised elevation (and any ramps on those
+    // cells) under the brush, so it erases cliffs consistent with
+    // terrain/tiles/obstacles.
+    next = removeRampCells(removeElevationCells(next, cells), cells)
     model.value = { ...next, placedUnits: placedUnits.value }
     return
   }
@@ -3755,6 +3803,14 @@ function paintAtScreen(screenX: number, screenY: number) {
       next = setTilePaint(next, c.x, c.y, { tileset: sheet, col: coord.col, row: coord.row })
     }
     model.value = next
+    return
+  }
+
+  if (activeBrushMode.value === 'cliff') {
+    // Left-drag raises a plateau under the brush, tagged with the active
+    // Terrain Type's cliff atlas (activeCliffTileset). Lowering is handled
+    // by the right-drag stroke (paintElevationLowerAtScreen).
+    model.value = addElevationCells(model.value, cells, activeCliffTileset.value)
     return
   }
 
@@ -3943,13 +3999,25 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
-  // Right-click in the Tile/Tileset brushes: erase only painted tiles under the
-  // brush.
-  if (
-    event.button === 2 &&
-    paintModeEnabled.value &&
-    (brushMode.value === 'tile' || brushMode.value === 'tileset')
-  ) {
+  // Right-click in the Elevation (cliff) brush starts a continuous lower
+  // drag stroke (see paintElevationLowerAtScreen) — see onMouseMove/onMouseUp
+  // for the drag continuation and commit.
+  if (event.button === 2 && paintModeEnabled.value && brushMode.value === 'cliff') {
+    event.preventDefault()
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      isRightPainting = true
+      lastPaintKey = ''
+      beginPaintAction()
+      paintElevationLowerAtScreen(screen.x, screen.y)
+    }
+    return
+  }
+
+  // Right-click in the Tile / Tileset brush: erase only painted tiles under
+  // the brush. Single-shot — only the Elevation brush needs continuous
+  // right-drag (lowering).
+  if (event.button === 2 && paintModeEnabled.value && (brushMode.value === 'tile' || brushMode.value === 'tileset')) {
     event.preventDefault()
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) {
@@ -4148,6 +4216,23 @@ function onMouseMove(event: MouseEvent) {
     return
   }
 
+  // Elevation brush right-drag: continuous lower stroke while the right
+  // button is held. `event.buttons` (not `event.button`, which is only
+  // meaningful on down/up events) is the live bitmask of currently-held
+  // buttons, bit 1 (value 2) is the right button — this is the fallback
+  // signal if a mouseup is ever missed (e.g. focus loss while dragging
+  // outside the window), so the stroke doesn't stay open forever.
+  if (isRightPainting) {
+    if (!(event.buttons & 2)) {
+      isRightPainting = false
+      lastPaintKey = ''
+      commitPaintAction()
+    } else {
+      paintElevationLowerAtScreen(screen.x, screen.y)
+    }
+    return
+  }
+
   // Zone draw drag: add cells while holding the mouse button, independent of paint mode.
   if (isPainting && zoneSubMode.value === 'draw' && selectedZoneId.value) {
     const cell = getGridCellAtScreen(screen.x, screen.y)
@@ -4182,6 +4267,16 @@ function onMouseMove(event: MouseEvent) {
 function onMouseUp(event: MouseEvent) {
   if (event.button === 1) {
     isMiddleMouseDown = false
+    return
+  }
+
+  // Close out an Elevation brush lower right-drag stroke (see onMouseDown/onMouseMove).
+  if (event.button === 2) {
+    if (isRightPainting) {
+      isRightPainting = false
+      lastPaintKey = ''
+      commitPaintAction()
+    }
     return
   }
 
@@ -4609,6 +4704,9 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
       defaultTile: model.value.defaultTile,
       terrain: model.value.terrain,
       tiles: model.value.tiles,
+      elevation: model.value.elevation,
+      cliffTileset: model.value.cliffTileset,
+      ramps: model.value.ramps,
     })
   } else {
     ctx.fillStyle = DEFAULT_GRASS_COLOR

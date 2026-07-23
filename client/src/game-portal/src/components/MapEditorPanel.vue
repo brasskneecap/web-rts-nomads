@@ -4205,6 +4205,9 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
       defaultTile: model.value.defaultTile,
       terrain: model.value.terrain,
       tiles: model.value.tiles,
+      elevation: model.value.elevation,
+      cliffTileset: model.value.cliffTileset,
+      ramps: model.value.ramps,
     })
   } else {
     ctx.fillStyle = DEFAULT_GRASS_COLOR
