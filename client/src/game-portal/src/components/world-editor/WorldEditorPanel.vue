@@ -697,10 +697,30 @@
               <option value="snow">Snow</option>
               <option value="corrupt">Corrupt</option>
             </select>
-            <span class="field-hint">Paints randomized tiles of this terrain type (0-elevation sheet).</span>
+
+            <div class="cliff-mode-toggle" role="group" aria-label="Elevation mode">
+              <button
+                type="button"
+                class="cliff-mode-toggle__btn"
+                :class="{ 'cliff-mode-toggle__btn--on': cliffMode === 'raise' }"
+                @click="cliffMode = 'raise'"
+              >Raise</button>
+              <button
+                type="button"
+                class="cliff-mode-toggle__btn"
+                :class="{ 'cliff-mode-toggle__btn--on': cliffMode === 'ramp' }"
+                @click="cliffMode = 'ramp'"
+              >Ramp</button>
+            </div>
+            <span v-if="cliffMode === 'raise'" class="field-hint">
+              Left-drag: paint terrain. Right-drag: raise cliffs (Ctrl+right: lower).
+            </span>
+            <span v-else class="field-hint">
+              Left-drag: paint terrain. Right-drag: add ramp (Ctrl+right: remove).
+            </span>
           </div>
 
-          <div v-if="brushMode === 'tile' || brushMode === 'obstacle' || brushMode === 'erase' || brushMode === 'cliff'" class="control-group">
+          <div v-if="brushMode === 'tile' || brushMode === 'obstacle' || brushMode === 'erase'" class="control-group">
             <label for="brush-size">Brush Size</label>
             <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
               <option :value="1">1 × 1</option>
@@ -733,32 +753,6 @@
               @pointerup="onTilePickerPointerUp"
               @pointerleave="onTilePickerPointerUp"
             />
-          </div>
-
-          <div v-if="brushMode === 'cliff'" class="control-group">
-            <label for="cliff-tileset">Cliff Tileset</label>
-            <select id="cliff-tileset" v-model="selectedCliffTileset" :disabled="!paintModeEnabled">
-              <option v-for="sheet in cliffTilesetIds" :key="sheet" :value="sheet">
-                {{ tilesetLabel(sheet) }}
-              </option>
-            </select>
-
-            <div class="cliff-mode-toggle" role="group" aria-label="Cliff sub-tool">
-              <button
-                type="button"
-                class="cliff-mode-toggle__btn"
-                :class="{ 'cliff-mode-toggle__btn--on': cliffMode === 'raise' }"
-                @click="cliffMode = 'raise'"
-              >Raise</button>
-              <button
-                type="button"
-                class="cliff-mode-toggle__btn"
-                :class="{ 'cliff-mode-toggle__btn--on': cliffMode === 'ramp' }"
-                @click="cliffMode = 'ramp'"
-              >Ramp</button>
-            </div>
-            <span v-if="cliffMode === 'raise'" class="field-hint">Left-drag to raise a plateau, right-drag to lower.</span>
-            <span v-else class="field-hint">Left-drag a raised cliff edge to add ramps, right-drag to remove.</span>
           </div>
 
           <div v-if="brushMode === 'obstacle'" class="control-group">
@@ -1788,7 +1782,6 @@ type BrushMode =
   | 'terrain'
   | 'tile'
   | 'tileset'
-  | 'cliff'
   | 'obstacle'
   | 'building'
   | 'enemy-spawn'
@@ -1797,7 +1790,10 @@ type BrushMode =
   | 'erase'
 const brushMode = ref<BrushMode>('select')
 // Tool buttons rendered in the Paint section. Order = display order.
-// 'tile'    paints a randomized flat terrain type (grass/dirt/snow/corrupt).
+// 'tile'    left-drag paints a randomized flat terrain type (grass/dirt/snow/
+//           corrupt); right-drag raises/ramps cliffs on the same brush (see
+//           the Elevation Mode toggle + activeCliffTileset) — the former
+//           standalone 'cliff' tool is folded into this one.
 // 'tileset' paints specific tiles/sections picked from a tileset sheet.
 // NOTE: the legacy 'terrain' Wang mode is kept in the BrushMode type + paint
 // handlers but omitted from the picker.
@@ -1805,7 +1801,6 @@ const BRUSH_TOOLS: ReadonlyArray<{ id: BrushMode; label: string; glyph: string }
   { id: 'select', label: 'Select', glyph: '⊹' },
   { id: 'tile', label: 'Tile', glyph: '▧' },
   { id: 'tileset', label: 'Tileset', glyph: '▦' },
-  { id: 'cliff', label: 'Cliff', glyph: '⛰' },
   { id: 'obstacle', label: 'Obstacle', glyph: '⬢' },
   { id: 'building', label: 'Building', glyph: '⌂' },
   { id: 'enemy-spawn', label: 'Enemy', glyph: '☠' },
@@ -1852,26 +1847,17 @@ function tilesetLabel(id: string): string {
   return getTilesetDef(id)?.name ?? id
 }
 
-// 'cliff' brush: which cliff atlas newly-raised cells are tagged with. Only
-// tileset ids ending in `-cliff` are valid cliff atlases.
-const selectedCliffTileset = ref<string>('grass-grass-elevation-25')
-// 'cliff' brush sub-mode: 'raise' paints/lowers the plateau (model.elevation);
-// 'ramp' toggles walkable openings in the cliff wall (model.ramps). Both
-// share the Cliff brush's tileset picker and brush-size control.
+// 'tile' brush right-drag sub-mode: 'raise' raises/lowers the plateau
+// (model.elevation); 'ramp' toggles walkable openings in the cliff wall
+// (model.ramps). Both share the Terrain Type sheet (see activeCliffTileset)
+// and the brush's Brush Size control.
 const cliffMode = ref<'raise' | 'ramp'>('raise')
-// The *-elevation-25 sheets ARE the cliff atlases (Wang layout) — the cliff
-// brush auto-tiles them directly. See cliffAutotile.ts.
-const cliffTilesetIds = computed(() => tilesetIds.value.filter((id) => id.endsWith('-elevation-25')))
-// Once the catalog loads (or reloads), snap the selection onto an available
-// cliff sheet if the current one isn't (or is no longer) valid.
-watch(
-  cliffTilesetIds,
-  (ids) => {
-    if (ids.length > 0 && !ids.includes(selectedCliffTileset.value)) {
-      selectedCliffTileset.value = ids[0]
-    }
-  },
-  { immediate: true },
+// The cliff atlas newly-raised cells are tagged with, derived from the
+// selected Terrain Type: the flat `-0` sheet's `-25` sibling is its cliff
+// atlas (Wang layout) — e.g. grass-grass-elevation-0 -> grass-grass-elevation-25.
+// See cliffAutotile.ts.
+const activeCliffTileset = computed(() =>
+  DEFAULT_TILE_PRESETS[selectedTerrain.value].tileset.replace(/-0$/, '-25'),
 )
 
 // All unit types known to the catalog, populated by fetchUnitDefs. Buckets are
@@ -2273,11 +2259,15 @@ let isMiddleMouseDown = false
 let isSpaceHeld = false
 let isSpacePanning = false
 let isPainting = false
-// True while a right-button drag stroke is active in the Cliff brush
-// (continuous lower / remove-ramp, mirroring the left-drag raise/add-ramp
-// stroke). Only ever set for brushMode 'cliff' — right-click in every other
+// True while a right-button drag stroke is active in the Tile brush
+// (continuous elevation/ramp paint, independent of the left-drag flat-terrain
+// stroke). Only ever set for brushMode 'tile' — right-click in every other
 // brush stays the existing single-shot mousedown action.
 let isRightPainting = false
+// Ctrl state captured at the start of the current right-drag stroke (see
+// onMouseDown), fixing the stroke's direction (raise/add vs lower/remove)
+// for its whole duration even if the key is pressed/released mid-drag.
+let rightPaintCtrl = false
 let lastMouseX = 0
 let lastMouseY = 0
 let lastPaintKey = ''
@@ -3739,25 +3729,33 @@ function getBrushCells(cx: number, cy: number, size: number): Array<{ x: number;
   return cells
 }
 
-// Right-button stroke for the Cliff brush: lowers the plateau (raise mode)
-// or removes ramps (ramp mode) at the current cell. Mirrors paintAtScreen's
-// same-cell dedupe via lastPaintKey so drag-move doesn't re-fire per frame,
-// but uses its own key namespace so it can't collide with a concurrent
-// left-drag key (the two buttons are never both driving a stroke at once,
-// but keeping the namespaces distinct is cheap and avoids any doubt).
-function paintCliffLowerAtScreen(screenX: number, screenY: number) {
+// Right-button stroke for the Tile brush: applies elevation (Raise mode) or
+// ramps (Ramp mode) continuously along the drag, per the Elevation Mode
+// toggle (cliffMode). Direction is fixed for the whole stroke by the ctrlKey
+// state captured at mousedown (see onMouseDown), so releasing/pressing Ctrl
+// mid-drag can't flip a stroke halfway through: Raise mode not-ctrl raises /
+// ctrl lowers; Ramp mode not-ctrl adds / ctrl removes. The raised cliff atlas
+// is always the active Terrain Type's cliff sheet (activeCliffTileset).
+// Mirrors paintAtScreen's same-cell dedupe via lastPaintKey so drag-move
+// doesn't re-fire per frame, but uses its own key namespace so it can't
+// collide with a concurrent left-drag key (the two buttons are never both
+// driving a stroke at once, but keeping the namespaces distinct is cheap and
+// avoids any doubt).
+function paintElevationAtScreen(screenX: number, screenY: number, isCtrl: boolean) {
   const cell = getGridCellAtScreen(screenX, screenY)
   if (!cell) return
 
-  const paintKey = `${cell.x}:${cell.y}:cliff-lower:${cliffMode.value}:${brushSize.value}`
+  const paintKey = `${cell.x}:${cell.y}:elevation:${cliffMode.value}:${isCtrl}:${brushSize.value}`
   if (paintKey === lastPaintKey) return
   lastPaintKey = paintKey
 
   const cells = getBrushCells(cell.x, cell.y, brushSize.value)
   if (cliffMode.value === 'ramp') {
-    model.value = removeRampCells(model.value, cells)
+    model.value = isCtrl ? removeRampCells(model.value, cells) : addRampCells(model.value, cells)
   } else {
-    model.value = removeElevationCells(model.value, cells)
+    model.value = isCtrl
+      ? removeElevationCells(model.value, cells)
+      : addElevationCells(model.value, cells, activeCliffTileset.value)
   }
 }
 
@@ -3865,21 +3863,6 @@ function paintAtScreen(screenX: number, screenY: number) {
       }
     }
     model.value = next
-    return
-  }
-
-  if (activeBrushMode.value === 'cliff') {
-    if (cliffMode.value === 'ramp') {
-      // Add ramp cells: the renderer + walkability derive the flat/walkable
-      // ramp behavior from model.ramps reactively — we never compute cliff
-      // tiles here. Marking a non-raised cell is inert (no validation needed).
-      model.value = addRampCells(model.value, cells)
-    } else {
-      // Raise a plateau: add the brush cells to model.elevation and stamp the
-      // active cliff atlas. The renderer + walkability derive cliff faces from
-      // model.elevation reactively — we never compute cliff tiles here.
-      model.value = addElevationCells(model.value, cells, selectedCliffTileset.value)
-    }
     return
   }
 
@@ -4043,29 +4026,28 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
-  // Right-click in the Cliff brush starts a continuous lower / remove-ramp
-  // drag stroke (mirrors the left-drag raise/add-ramp stroke) — see
-  // onMouseMove/onMouseUp for the drag continuation and commit.
-  if (event.button === 2 && paintModeEnabled.value && brushMode.value === 'cliff') {
+  // Right-click in the Tile brush starts a continuous elevation/ramp drag
+  // stroke (raise/add-ramp by default, lower/remove-ramp with Ctrl held —
+  // see paintElevationAtScreen) — see onMouseMove/onMouseUp for the drag
+  // continuation and commit. The Ctrl state at this moment fixes the
+  // stroke's direction for its whole duration.
+  if (event.button === 2 && paintModeEnabled.value && brushMode.value === 'tile') {
     event.preventDefault()
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) {
       isRightPainting = true
+      rightPaintCtrl = event.ctrlKey
       lastPaintKey = ''
       beginPaintAction()
-      paintCliffLowerAtScreen(screen.x, screen.y)
+      paintElevationAtScreen(screen.x, screen.y, rightPaintCtrl)
     }
     return
   }
 
-  // Right-click in the Tile/Tileset brushes: erase only painted tiles under
-  // the brush. Single-shot (unchanged) — only the Cliff brush needs
-  // continuous right-drag.
-  if (
-    event.button === 2 &&
-    paintModeEnabled.value &&
-    (brushMode.value === 'tile' || brushMode.value === 'tileset')
-  ) {
+  // Right-click in the Tileset brush: erase only painted tiles under the
+  // brush. Single-shot (unchanged) — only the Tile brush needs continuous
+  // right-drag (elevation/ramps).
+  if (event.button === 2 && paintModeEnabled.value && brushMode.value === 'tileset') {
     event.preventDefault()
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) {
@@ -4264,20 +4246,20 @@ function onMouseMove(event: MouseEvent) {
     return
   }
 
-  // Cliff brush right-drag: continuous lower (raise mode) / remove-ramp
-  // (ramp mode) while the right button is held, mirroring how left-drag
-  // raises/adds ramps continuously. `event.buttons` (not `event.button`,
-  // which is only meaningful on down/up events) is the live bitmask of
-  // currently-held buttons, bit 1 (value 2) is the right button — this is
-  // the fallback signal if a mouseup is ever missed (e.g. focus loss while
-  // dragging outside the window), so the stroke doesn't stay open forever.
+  // Tile brush right-drag: continuous elevation/ramp paint while the right
+  // button is held, direction fixed by rightPaintCtrl captured at mousedown.
+  // `event.buttons` (not `event.button`, which is only meaningful on
+  // down/up events) is the live bitmask of currently-held buttons, bit 1
+  // (value 2) is the right button — this is the fallback signal if a
+  // mouseup is ever missed (e.g. focus loss while dragging outside the
+  // window), so the stroke doesn't stay open forever.
   if (isRightPainting) {
     if (!(event.buttons & 2)) {
       isRightPainting = false
       lastPaintKey = ''
       commitPaintAction()
     } else {
-      paintCliffLowerAtScreen(screen.x, screen.y)
+      paintElevationAtScreen(screen.x, screen.y, rightPaintCtrl)
     }
     return
   }
@@ -4319,7 +4301,7 @@ function onMouseUp(event: MouseEvent) {
     return
   }
 
-  // Close out a Cliff brush right-drag stroke (see onMouseDown/onMouseMove).
+  // Close out a Tile brush elevation right-drag stroke (see onMouseDown/onMouseMove).
   if (event.button === 2) {
     if (isRightPainting) {
       isRightPainting = false
