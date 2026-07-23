@@ -1,86 +1,56 @@
-import type { GridCoord, TileCoord } from '../network/protocol'
+import type { GridCoord, TileCoord } from '@/game/network/protocol'
 
-// Cliff auto-tiling (ELEVATION plateaus). A raised cell picks a slot out of a
-// 4x4 cliff atlas (e.g. `grass-cliff`) based on which of its 8 neighbors are
-// also raised — walls/outer-corners on the plateau boundary block movement,
-// the flat top and inner corners are walkable. The server implements the
-// identical pick/block logic; keep the two in exact sync.
+// Cliff auto-tiling. The *-elevation-25 sheets are proper Wang cliff atlases:
+// their 16 tiles use the SAME corner-based (marching-squares) layout as the
+// base grass/dirt sheet (see WANG_GRASS_DIRT_COORDS in terrainTileset.ts). So a
+// cliff is just a Wang overlay over an "elevation" grid — each cell's tile is
+// chosen by which of its 4 corners lie inside the raised plateau, which makes
+// faces, lips and corners connect seamlessly and recompute across neighbours.
 //
-// Y increases DOWNWARD (screen coords): N = y-1, S = y+1.
+// Keep this table identical to WANG_GRASS_DIRT_COORDS (col/row per mask). The
+// mask bits are corners: bit0=TL, bit1=TR, bit2=BL, bit3=BR.
+const WANG_LAYOUT: ReadonlyArray<{ col: number; row: number }> = [
+  { col: 0, row: 3 }, // 0  ----
+  { col: 3, row: 3 }, // 1  T---
+  { col: 0, row: 2 }, // 2  -T--
+  { col: 1, row: 2 }, // 3  TT--
+  { col: 0, row: 0 }, // 4  --B-
+  { col: 3, row: 2 }, // 5  T-B-
+  { col: 2, row: 3 }, // 6  -TB-
+  { col: 3, row: 1 }, // 7  TTB-
+  { col: 1, row: 3 }, // 8  ---B
+  { col: 0, row: 1 }, // 9  T--B
+  { col: 1, row: 0 }, // 10 -T-B
+  { col: 2, row: 2 }, // 11 TT-B
+  { col: 3, row: 0 }, // 12 --BB
+  { col: 2, row: 0 }, // 13 T-BB
+  { col: 1, row: 1 }, // 14 -TBB
+  { col: 2, row: 1 }, // 15 TTBB (full interior)
+]
 
-export type CliffSlot = { col: number; row: number }
+const NO_RAMPS = () => false
 
-export const CLIFF_FLAT: CliffSlot = { col: 1, row: 1 }
-
-export const CLIFF_WALL_N: CliffSlot = { col: 1, row: 0 }
-export const CLIFF_WALL_S: CliffSlot = { col: 1, row: 2 }
-export const CLIFF_WALL_W: CliffSlot = { col: 0, row: 1 }
-export const CLIFF_WALL_E: CliffSlot = { col: 2, row: 1 }
-
-export const CLIFF_OUTER_NW: CliffSlot = { col: 0, row: 0 }
-export const CLIFF_OUTER_NE: CliffSlot = { col: 2, row: 0 }
-export const CLIFF_OUTER_SW: CliffSlot = { col: 0, row: 2 }
-export const CLIFF_OUTER_SE: CliffSlot = { col: 2, row: 2 }
-
-export const CLIFF_INNER_NE: CliffSlot = { col: 3, row: 1 }
-export const CLIFF_INNER_NW: CliffSlot = { col: 3, row: 2 }
-export const CLIFF_INNER_SW: CliffSlot = { col: 2, row: 3 }
-export const CLIFF_INNER_SE: CliffSlot = { col: 3, row: 3 }
-
-// Slots whose picked tile blocks movement: walls (boundary faces) and outer
-// corners. FLAT and the four inner corners are walkable plateau top.
-const BLOCKING_SLOTS: ReadonlySet<CliffSlot> = new Set([
-  CLIFF_WALL_N,
-  CLIFF_WALL_S,
-  CLIFF_WALL_W,
-  CLIFF_WALL_E,
-  CLIFF_OUTER_NW,
-  CLIFF_OUTER_NE,
-  CLIFF_OUTER_SW,
-  CLIFF_OUTER_SE,
-])
-
-// Picks the cliff slot for a raised cell per the canonical pick order (first
-// match wins). `raised` must return false for any coordinate outside the
-// map's bounds — out-of-bounds is "not raised", same as an unraised cell.
-function pickCliffSlot(
+// The Wang mask for cell (x,y): a corner is "inside" when ANY of the 4 cells
+// touching it is raised — the raised region expands half a cell into its
+// border, exactly matching the grass/dirt overlay auto-tiler (computeWangMask).
+export function cliffWangMask(
   raised: (x: number, y: number) => boolean,
   x: number,
   y: number,
-): CliffSlot {
-  const n = raised(x, y - 1)
-  const s = raised(x, y + 1)
-  const w = raised(x - 1, y)
-  const e = raised(x + 1, y)
-  const ne = raised(x + 1, y - 1)
-  const nw = raised(x - 1, y - 1)
-  const se = raised(x + 1, y + 1)
-  const sw = raised(x - 1, y + 1)
-
-  if (!w && !n) return CLIFF_OUTER_NW
-  if (!e && !n) return CLIFF_OUTER_NE
-  if (!w && !s) return CLIFF_OUTER_SW
-  if (!e && !s) return CLIFF_OUTER_SE
-  if (!n) return CLIFF_WALL_N
-  if (!s) return CLIFF_WALL_S
-  if (!w) return CLIFF_WALL_W
-  if (!e) return CLIFF_WALL_E
-  if (!ne) return CLIFF_INNER_NE
-  if (!nw) return CLIFF_INNER_NW
-  if (!se) return CLIFF_INNER_SE
-  if (!sw) return CLIFF_INNER_SW
-  return CLIFF_FLAT
+): number {
+  const any = (cells: ReadonlyArray<readonly [number, number]>): boolean =>
+    cells.some(([cx, cy]) => raised(cx, cy))
+  let mask = 0
+  if (any([[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]])) mask |= 1 // TL
+  if (any([[x, y - 1], [x + 1, y - 1], [x, y], [x + 1, y]])) mask |= 2 // TR
+  if (any([[x - 1, y], [x, y], [x - 1, y + 1], [x, y + 1]])) mask |= 4 // BL
+  if (any([[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]])) mask |= 8 // BR
+  return mask
 }
 
-// Default ramp predicate for callers that don't pass one — no cell is ever a
-// ramp, matching pre-ramp behavior exactly.
-const NO_RAMPS = () => false
-
-// Returns the cliff atlas tile for (x,y), or null when the cell isn't
-// raised (a non-raised cell has no cliff tile). A raised cell marked as a
-// ramp (isRamp) always renders as the flat plateau-top tile — RAMPS are a
-// walkable opening in the cliff wall, never a wall/corner slot, regardless
-// of what neighbor-based picking would otherwise choose.
+// The cliff tile at (x,y), or null when the cell is entirely outside the
+// plateau (mask 0 → ground shows through). A ramp renders the full-interior
+// tile (mask 15) — a flat, walkable opening in the wall.
 export function cliffTileAt(
   raised: (x: number, y: number) => boolean,
   cliffTileset: string,
@@ -88,45 +58,38 @@ export function cliffTileAt(
   y: number,
   isRamp: (x: number, y: number) => boolean = NO_RAMPS,
 ): TileCoord | null {
-  if (!raised(x, y)) return null
-  if (isRamp(x, y)) return { tileset: cliffTileset, ...CLIFF_FLAT }
-  const slot = pickCliffSlot(raised, x, y)
+  const mask = cliffWangMask(raised, x, y)
+  if (mask === 0) return null
+  const slot = isRamp(x, y) ? WANG_LAYOUT[15] : WANG_LAYOUT[mask]
   return { tileset: cliffTileset, col: slot.col, row: slot.row }
 }
 
-// True iff (x,y) is raised AND its picked slot is a wall or outer corner. A
-// ramp cell never blocks, even if it would otherwise pick a wall/corner slot.
+// A cell blocks movement when it renders a cliff TRANSITION (a face/edge/
+// corner): mask is neither 0 (ground) nor 15 (flat plateau top). Ramps are
+// always walkable.
 export function cliffCellBlocks(
   raised: (x: number, y: number) => boolean,
   x: number,
   y: number,
   isRamp: (x: number, y: number) => boolean = NO_RAMPS,
 ): boolean {
-  if (!raised(x, y)) return false
   if (isRamp(x, y)) return false
-  const slot = pickCliffSlot(raised, x, y)
-  return BLOCKING_SLOTS.has(slot)
+  const mask = cliffWangMask(raised, x, y)
+  return mask !== 0 && mask !== 15
 }
 
-// Builds an O(1) raised-cell lookup from a sparse elevation list.
 export function raisedPredicate(
   elevation: ReadonlyArray<GridCoord> | undefined,
 ): (x: number, y: number) => boolean {
   const set = new Set<string>()
-  for (const cell of elevation ?? []) {
-    set.add(`${cell.x},${cell.y}`)
-  }
-  return (x: number, y: number) => set.has(`${x},${y}`)
+  for (const c of elevation ?? []) set.add(`${c.x},${c.y}`)
+  return (x, y) => set.has(`${x},${y}`)
 }
 
-// Builds an O(1) ramp-cell lookup from a sparse ramps list. Mirrors
-// raisedPredicate.
 export function rampPredicate(
   ramps: ReadonlyArray<GridCoord> | undefined,
 ): (x: number, y: number) => boolean {
   const set = new Set<string>()
-  for (const cell of ramps ?? []) {
-    set.add(`${cell.x},${cell.y}`)
-  }
-  return (x: number, y: number) => set.has(`${x},${y}`)
+  for (const c of ramps ?? []) set.add(`${c.x},${c.y}`)
+  return (x, y) => set.has(`${x},${y}`)
 }

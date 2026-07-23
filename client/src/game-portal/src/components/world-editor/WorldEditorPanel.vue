@@ -1854,12 +1854,14 @@ function tilesetLabel(id: string): string {
 
 // 'cliff' brush: which cliff atlas newly-raised cells are tagged with. Only
 // tileset ids ending in `-cliff` are valid cliff atlases.
-const selectedCliffTileset = ref<string>('grass-cliff')
+const selectedCliffTileset = ref<string>('grass-grass-elevation-25')
 // 'cliff' brush sub-mode: 'raise' paints/lowers the plateau (model.elevation);
 // 'ramp' toggles walkable openings in the cliff wall (model.ramps). Both
 // share the Cliff brush's tileset picker and brush-size control.
 const cliffMode = ref<'raise' | 'ramp'>('raise')
-const cliffTilesetIds = computed(() => tilesetIds.value.filter((id) => id.endsWith('-cliff')))
+// The *-elevation-25 sheets ARE the cliff atlases (Wang layout) — the cliff
+// brush auto-tiles them directly. See cliffAutotile.ts.
+const cliffTilesetIds = computed(() => tilesetIds.value.filter((id) => id.endsWith('-elevation-25')))
 // Once the catalog loads (or reloads), snap the selection onto an available
 // cliff sheet if the current one isn't (or is no longer) valid.
 watch(
