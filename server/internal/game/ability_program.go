@@ -54,10 +54,10 @@ const (
 	// projectile position / channel caster+target), so collapsing the four
 	// names into one loses nothing. A validator rule (walkTrigger) still
 	// requires timing.tickInterval on any on_tick trigger.
-	TriggerOnTick         TriggerType = "on_tick"
-	TriggerOnZoneEnter    TriggerType = "on_zone_enter"
-	TriggerOnZoneExit     TriggerType = "on_zone_exit"
-	TriggerOnStatusExpire TriggerType = "on_status_expire"
+	TriggerOnTick           TriggerType = "on_tick"
+	TriggerOnZoneEnter      TriggerType = "on_zone_enter"
+	TriggerOnZoneExit       TriggerType = "on_zone_exit"
+	TriggerOnStatusExpire   TriggerType = "on_status_expire"
 	TriggerOnDamageDealt    TriggerType = "on_damage_dealt"
 	TriggerOnUnitDeath      TriggerType = "on_unit_death"
 	TriggerOnActionComplete TriggerType = "on_action_complete"
@@ -113,7 +113,7 @@ const (
 	// container's expiry clears it, same as change_stat/apply_mark.
 	ActionApplyColorOverlay ActionType = "apply_color_overlay"
 	ActionRemoveStatus      ActionType = "remove_status"
-	ActionCreateZone   ActionType = "create_zone"
+	ActionCreateZone        ActionType = "create_zone"
 	// ActionLaunchProjectile also covers arcane_orb's moving pull+DoT vortex
 	// shape (TravelMode "direction" + TickInterval > 0 — see
 	// launchProjectileConfig's doc comment, ability_compile.go): a formerly
@@ -156,13 +156,24 @@ const (
 	// migration (Phase 2) can retire the perk-driven placement path
 	// without reimplementing trap placement/geometry. See
 	// placeTrapConfig (ability_exec_place_trap.go) for the config shape.
-	ActionPlaceTrap         ActionType = "place_trap"
+	ActionPlaceTrap ActionType = "place_trap"
 	// ActionConsumeZone ends the zone the current execution is running inside,
 	// immediately. It is the "one-shot zone" primitive: a zone that should fire
 	// once and vanish (a pressure-plate trap detonating, a ward being spent)
 	// authors its effect then consumes itself, rather than needing a special
 	// zone kind. No-op outside a zone-driven execution.
-	ActionConsumeZone       ActionType = "consume_zone"
+	ActionConsumeZone ActionType = "consume_zone"
+	// ActionSetZoneVisual changes the VISUAL of the zone the current execution
+	// is running inside — a trap shows an idle object until a victim steps in,
+	// then an on_zone_enter set_zone_visual reacts. Two modes (config.persist):
+	//   - play once (default): plays the chosen animation at the zone center a
+	//     single time (the explosion fires and finishes) — pair with consume_zone
+	//     for step-on-it → blast → gone.
+	//   - persist: permanently swaps ctx.currentZone.Sprite so the zone SHOWS the
+	//     new animation for the rest of its life (idle → raised spikes that stay).
+	// Operates on ctx.currentZone; no-op outside a zone-driven execution. The
+	// animation is an animation-ref scheme (same picker as create_zone's visual).
+	ActionSetZoneVisual     ActionType = "set_zone_visual"
 	ActionMoveUnit          ActionType = "move_unit"
 	ActionApplyForce        ActionType = "apply_force"
 	ActionModifyResource    ActionType = "modify_resource"
@@ -372,6 +383,7 @@ type DamageTriggerScope struct {
 //   - StepMode "" / "number" (default): Start + Step*k   — additive.
 //   - StepMode "percent": Start * (1 + Step/100)^k        — multiplicative,
 //     compounding by Step% each iteration (Step -10 ⇒ ×0.9 per iteration).
+//
 // The value is rounded to the nearest integer (loop vars are discrete — damage,
 // counts — and feed integer config fields). Name is a single lowercase letter
 // "a".."z"; body number fields reference it by that letter. maxLoopVars caps the
@@ -543,12 +555,12 @@ type PresentationInstanceDef struct {
 // TargetQueryDef describes how an action gathers, filters, orders, and
 // limits its candidate targets.
 type TargetQueryDef struct {
-	Source               TargetSource     `json:"source"`
-	Origin               TargetOrigin     `json:"origin,omitempty"`
-	OriginRef            *ContextRef      `json:"originRef,omitempty"`
-	Relations            []TargetRelation `json:"relations,omitempty"`
-	Filters              []TargetFilter   `json:"filters,omitempty"`
-	Radius               float64          `json:"radius,omitempty"`
+	Source    TargetSource     `json:"source"`
+	Origin    TargetOrigin     `json:"origin,omitempty"`
+	OriginRef *ContextRef      `json:"originRef,omitempty"`
+	Relations []TargetRelation `json:"relations,omitempty"`
+	Filters   []TargetFilter   `json:"filters,omitempty"`
+	Radius    float64          `json:"radius,omitempty"`
 	// RadiusRef names a runtime value to use as this query's radius INSTEAD of
 	// the static Radius above: a CONTEXT SCALAR (so a zone's live radius can widen
 	// the area a query covers) or a bound context scalar such as "zone_radius",
@@ -559,12 +571,12 @@ type TargetQueryDef struct {
 	// reference that way. Mirrors deal_damage's amountRef precedent. Ignored
 	// when the named value is not bound, so the static Radius stays the
 	// fallback.
-	RadiusRef            string           `json:"radiusRef,omitempty"`
-	MinCount             int              `json:"minCount,omitempty"`
-	MaxCount             int              `json:"maxCount,omitempty"`
-	Ordering             TargetOrdering   `json:"ordering,omitempty"`
-	IncludeInitialTarget bool             `json:"includeInitialTarget,omitempty"`
-	ExcludeSource        bool             `json:"excludeSource,omitempty"`
+	RadiusRef            string         `json:"radiusRef,omitempty"`
+	MinCount             int            `json:"minCount,omitempty"`
+	MaxCount             int            `json:"maxCount,omitempty"`
+	Ordering             TargetOrdering `json:"ordering,omitempty"`
+	IncludeInitialTarget bool           `json:"includeInitialTarget,omitempty"`
+	ExcludeSource        bool           `json:"excludeSource,omitempty"`
 	// ExcludeCurrentEvent drops the "current_event" unit (ctx.CurrentEventUnitID
 	// — the unit a trigger's event centers on, e.g. the enemy a projectile just
 	// hit) from this query's results, the same way ExcludeSource drops the

@@ -127,6 +127,7 @@ const CATEGORY_BY_TYPE: Record<string, string> = {
   play_sound: 'Presentation',
   change_render_layer: 'Presentation',
   camera_shake: 'Presentation',
+  set_zone_visual: 'Presentation',
 }
 
 // Fixed display order. "Other" is always last and only appears when it has

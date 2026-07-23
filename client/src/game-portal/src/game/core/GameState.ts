@@ -73,10 +73,7 @@ export type EffectiveTrapSnapshot = {
   slowMultiplier?: number
   markMultiplier?: number
   markDuration?: number
-  barbedFieldRampPerSec?: number
-  barbedFieldMaxBonusDPS?: number
   lastingFlamesBurnDuration?: number
-  aftershockDelaySeconds?: number
 }
 
 export type Unit = {

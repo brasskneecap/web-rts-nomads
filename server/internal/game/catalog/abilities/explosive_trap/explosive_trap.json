@@ -10,10 +10,12 @@
     "trap"
   ],
   "category": "offensive",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
-  "icon": "perk-explosive-trap",
+  "icon": "object:explosive_trap#1",
   "casterAnimation": "Attacking",
   "schemaVersion": 2,
   "program": {
@@ -40,6 +42,8 @@
               "radius": 100,
               "duration": 20,
               "tickInterval": 1,
+              "count": 1,
+              "spreadDistance": 50,
               "sprite": "explosive_trap",
               "triggers": [
                 {
@@ -62,21 +66,56 @@
                       }
                     },
                     {
-                      "id": "blast",
-                      "type": "deal_damage",
-                      "input": {
-                        "targets": {
-                          "key": "caught_in_blast"
-                        }
-                      },
+                      "id": "a1",
+                      "type": "set_zone_visual",
+                      "disabled": false,
                       "config": {
-                        "amount": 75,
-                        "type": "fire"
+                        "animation": "object:explosive_trap@exploding"
                       }
                     },
                     {
                       "id": "spent",
                       "type": "consume_zone"
+                    },
+                    {
+                      "id": "detonations",
+                      "type": "loop",
+                      "config": {
+                        "iterations": 1,
+                        "body": [
+                          {
+                            "id": "detonate",
+                            "type": "play_presentation",
+                            "config": {
+                              "asset": "effect:explosion",
+                              "position": {
+                                "key": "zone_center"
+                              },
+                              "duration": 0.8
+                            }
+                          },
+                          {
+                            "id": "blast",
+                            "type": "deal_damage",
+                            "input": {
+                              "targets": {
+                                "key": "caught_in_blast"
+                              }
+                            },
+                            "config": {
+                              "amount": 75,
+                              "type": "fire"
+                            }
+                          },
+                          {
+                            "id": "fuse",
+                            "type": "wait",
+                            "config": {
+                              "seconds": 1
+                            }
+                          }
+                        ]
+                      }
                     }
                   ]
                 }

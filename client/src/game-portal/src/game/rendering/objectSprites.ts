@@ -115,3 +115,25 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
 export function getObjectSpriteSet(key: string): ObjectSpriteSet | null {
   return sprites.get(key.toLowerCase()) ?? null
 }
+
+// listObjectSpriteKeys returns every registered object sprite-set id (one per
+// assets/objects/<key>/sprites.json), sorted. This is what lets the ability
+// editor's create_zone "Visible Sprite" field be a real picker instead of a
+// free-text box — the sprite ids are a pure client-asset concept (the server
+// passes the string straight through to the zone snapshot and never validates
+// it), so the authoritative list lives here, not behind a /catalog endpoint.
+export function listObjectSpriteKeys(): string[] {
+  return [...sprites.keys()].sort()
+}
+
+// listObjectAnimationStates returns the animation state names a given object
+// sprite-set defines (e.g. ['idle', 'electrified'] for caltrops), 'idle' first.
+// The animation picker's Objects tab uses this so an author can choose WHICH
+// animation of an object to show, not just the object. Empty for an unknown key.
+export function listObjectAnimationStates(key: string): string[] {
+  const set = sprites.get(key.toLowerCase())
+  if (!set) return []
+  const states = [...set.animations.keys()]
+  states.sort((a, b) => (a === 'idle' ? -1 : b === 'idle' ? 1 : a.localeCompare(b)))
+  return states
+}

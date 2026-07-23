@@ -111,22 +111,27 @@ var wiredPerkIDs = map[string]struct{}{
 	// so their ids are no longer perks at all. rapid_deployment is also gone
 	// from this set — it became a data perk (AbilityModifier.CooldownMult on the
 	// four trap abilities) and is now wired purely via perkHasTypedBehavior.
+	// explosive_chain is likewise a data perk now — an abilityFields row adds to
+	// explosive_trap's Detonation zone maxTicks (one extra blast per +1) — wired
+	// purely via perkHasTypedBehavior, so it is not listed here either.
 	"extended_setup":    {},
 	"wider_nets":        {},
 	"amplified_effects": {},
-	"explosive_chain":   {},
-	"barbed_field":      {},
-	// exposed_weakness / lasting_flames are has_perk-GATED perks: their whole
-	// behavior is a conditional inside the relevant trap ability's program
-	// (marker_trap adds a damageDealt/Weaken status; fire_pit switches to
-	// burn-as-debuff). They carry no typed PerkDef data of their own, so
-	// perkHasTypedBehavior can't see them — this hand-maintained entry is the
-	// ONLY thing that keeps the editor from labelling them inert.
+	// barbed_field / exposed_weakness / lasting_flames are has_perk-GATED perks:
+	// their whole behavior is a conditional inside the relevant trap ability's
+	// program (caltrops applies a Barbed stacking-DoT status; marker_trap adds a
+	// damageDealt/Weaken status; fire_pit switches to burn-as-debuff). They carry
+	// no typed PerkDef data of their own, so perkHasTypedBehavior can't see them —
+	// this hand-maintained entry is the ONLY thing that keeps the editor from
+	// labelling them inert.
+	"barbed_field":         {},
 	"exposed_weakness":     {},
 	"lasting_flames":       {},
 	"ascendant_infusion":   {},
 	"overload_protocol":    {},
-	"increased_deployment": {}, // trap.go
+	// increased_deployment is a data perk now — abilityFields rows add to each
+	// trap's create_zone `count` (one placement deploys several) — wired via
+	// perkHasTypedBehavior, so it is not listed here.
 
 	// ─── acolyte / cleric (perks_cleric.go, perks.go, perks_icons.go) ────
 	"sanctuary":            {}, // perks_icons.go (owner buff-icon case arm); projectile-damage-reduction effect itself is now data-driven via PerkDef.Auras (perk_aura_stat_cache.go) + the src.Kind=="projectile" gate at perks_defense.go's fold site — see perkHasTypedBehavior
@@ -169,7 +174,8 @@ var wiredPerkIDs = map[string]struct{}{
 // perkHasTypedBehavior reports whether def carries data the generic engine
 // executes with no perk-specific Go — the data-driven half of "wired" (see
 // this file's top-of-file doc comment). True when any of StatModifiers /
-// AbilityModifiers / AbilityRiders / GrantsAbilities / Auras is non-empty.
+// AbilityModifiers / AbilityFields / AbilityStats / AbilityRiders /
+// GrantsAbilities / Auras is non-empty.
 // Auras counts here even though zealous_march (the only shipped perk using
 // it today) also keeps a hand-maintained wiredPerkIDs entry for its
 // buff-icon case arm — a FUTURE aura-only perk with no icon/Go case would
@@ -187,6 +193,8 @@ func perkHasTypedBehavior(def PerkDef) bool {
 	}
 	return len(def.StatModifiers) > 0 ||
 		len(def.AbilityModifiers) > 0 ||
+		len(def.AbilityFields) > 0 ||
+		len(def.AbilityStats) > 0 ||
 		len(def.AbilityRiders) > 0 ||
 		len(def.GrantsAbilities) > 0 ||
 		auras

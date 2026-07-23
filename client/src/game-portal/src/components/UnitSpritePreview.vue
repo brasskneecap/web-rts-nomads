@@ -103,6 +103,84 @@
             </div>
           </div>
         </div>
+
+        <!-- Anchors & bounds authoring: draw + drag the render box, foot anchor,
+             selection ring, and ground shadow directly on the sprite. -->
+        <div class="sprite-preview__origin">
+          <button
+            type="button"
+            class="sprite-preview__origin-toggle"
+            :class="{ 'is-active': showGizmos }"
+            data-test="unit-preview-gizmos-toggle"
+            @click="showGizmos = !showGizmos"
+          >
+            Anchors &amp; bounds {{ showGizmos ? '▾' : '▸' }}
+          </button>
+
+          <div v-if="showGizmos" class="sprite-preview__origin-body">
+            <p class="sprite-preview__hint">
+              Drag the coloured handles on the sprite: the <strong>gold</strong> foot anchor,
+              the <strong>blue</strong> selection ring (centre + right edge), and the
+              <strong>violet</strong> ground shadow (centre + right edge). Grey dashed = the
+              read-only render box.
+            </p>
+
+            <div class="sprite-preview__gizmo-layers">
+              <label><input type="checkbox" v-model="gizmoLayers.renderBox" /> Render box</label>
+              <label><input type="checkbox" v-model="gizmoLayers.foot" /> Foot anchor</label>
+              <label><input type="checkbox" v-model="gizmoLayers.ring" /> Selection ring</label>
+              <label><input type="checkbox" v-model="gizmoLayers.shadow" /> Shadow</label>
+            </div>
+
+            <div class="sprite-preview__gizmo-group">
+              <span class="sprite-preview__gizmo-title">Footprint / anchor</span>
+              <div class="sprite-preview__origin-inputs">
+                <label>Half width
+                  <input type="number" :value="Math.round(bounds.halfWidth)"
+                    @input="setBound('halfWidth', ($event.target as HTMLInputElement).value)" /></label>
+                <label>Top
+                  <input type="number" :value="Math.round(bounds.top)"
+                    @input="setBound('top', ($event.target as HTMLInputElement).value)" /></label>
+                <label>Bottom
+                  <input type="number" :value="Math.round(bounds.bottom)"
+                    @input="setBound('bottom', ($event.target as HTMLInputElement).value)" /></label>
+                <label>Ring X
+                  <input type="number" :value="Math.round(bounds.ringOffsetX ?? 0)"
+                    @input="setBound('ringOffsetX', ($event.target as HTMLInputElement).value)" /></label>
+                <label>Ring Y
+                  <input type="number" :value="Math.round(bounds.ringOffsetY ?? 0)"
+                    @input="setBound('ringOffsetY', ($event.target as HTMLInputElement).value)" /></label>
+              </div>
+            </div>
+
+            <div class="sprite-preview__gizmo-group">
+              <span class="sprite-preview__gizmo-title">
+                <label class="sprite-preview__gizmo-enable">
+                  <input type="checkbox" :checked="shadowEnabled"
+                    @change="setShadowEnabled(($event.target as HTMLInputElement).checked)" />
+                  Ground shadow
+                </label>
+              </span>
+              <div v-if="shadowEnabled && effShadow" class="sprite-preview__origin-inputs">
+                <label>Off X
+                  <input type="number" :value="Math.round(effShadow.offsetX)"
+                    @input="setShadowNum('offsetX', ($event.target as HTMLInputElement).value)" /></label>
+                <label>Off Y
+                  <input type="number" :value="Math.round(effShadow.offsetY)"
+                    @input="setShadowNum('offsetY', ($event.target as HTMLInputElement).value)" /></label>
+                <label>Radius X
+                  <input type="number" :value="round1(effShadow.radiusX)"
+                    @input="setShadowNum('radiusX', ($event.target as HTMLInputElement).value)" /></label>
+                <label>Radius Y
+                  <input type="number" :value="round1(effShadow.radiusY)"
+                    @input="setShadowNum('radiusY', ($event.target as HTMLInputElement).value)" /></label>
+                <label>Opacity
+                  <input type="number" min="0" max="1" step="0.05" :value="round1(effShadow.opacity)"
+                    @input="setShadowNum('opacity', ($event.target as HTMLInputElement).value)" /></label>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </template>
 
@@ -115,16 +193,24 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
-  getUnitFrame, getUnitSpriteSet, UNIT_DIRECTIONS,
+  getSpritePaddingFrac, getUnitFrame, getUnitSpriteSet, UNIT_DIRECTIONS, UNIT_SPRITE_SCALE,
   type UnitDirection, type UnitSpriteSet,
 } from '@/game/rendering/unitSprites'
 import { channelLoopFrameIndex } from '@/game/rendering/unitAnimation'
 import { channelTickPhase, type ChannelAbilityInfo } from '@/game/units/channelPreview'
-import { getUnitBoundsFor, type UnitAttackOrigin, type UnitOriginPoint } from '@/game/maps/unitDefs'
+import {
+  getUnitBoundsFor,
+  type UnitAttackOrigin, type UnitBounds, type UnitOriginPoint, type UnitShadow,
+} from '@/game/maps/unitDefs'
+import { resolveUnitShadow } from '@/game/maps/unitShadow'
 import {
   canvasToOrigin, deriveDefaultOrigin, originToCanvas, resolveFacingOrigin, unitAnchorCanvas,
   type PreviewDrawGeometry,
 } from '@/game/units/attackOriginPreviewMath'
+import {
+  applyGizmoDrag, drawGizmos, hitTestGizmo,
+  type GizmoContext, type GizmoHandle, type GizmoOptions,
+} from '@/game/units/spriteGizmos'
 import { drawProjectileForVariant } from '@/game/rendering/projectileSprites'
 import type { ProjectileSnapshot } from '@/game/network/protocol'
 
@@ -145,8 +231,18 @@ const props = defineProps<{
   // origin). Both are undefined for units that don't channel.
   channelLoop?: { start: number; end: number }
   channelAbility?: ChannelAbilityInfo | null
+  // Authored bounds/shadow from the editor form (partial — missing fields fall
+  // back to catalog/defaults for display). Editing the anchors/bounds overlay
+  // emits patches back through update:bounds / update:shadow.
+  bounds?: Partial<UnitBounds>
+  shadow?: UnitShadow
+  flyer?: boolean
 }>()
-const emit = defineEmits<{ 'update:attackOrigin': [UnitAttackOrigin | undefined] }>()
+const emit = defineEmits<{
+  'update:attackOrigin': [UnitAttackOrigin | undefined]
+  'update:bounds': [Partial<UnitBounds> | undefined]
+  'update:shadow': [UnitShadow | undefined]
+}>()
 
 // Fixed on-screen box (px) the canvas draws into. The sprite is fit inside at
 // the largest integer scale that keeps pixel art crisp — no fractional scaling
@@ -181,7 +277,70 @@ const hoveringOrigin = ref(false)
 // placed the sprite, or the crosshair and the sprite drift apart.
 const lastGeometry = ref<PreviewDrawGeometry | null>(null)
 
-const bounds = computed(() => getUnitBoundsFor({ path: props.pathKey, unitType: props.unitKey }))
+// Effective bounds for display = the authored form values (props.bounds) layered
+// over the catalog/default resolution, so the overlay reflects unsaved edits
+// live. Editing emits patches back onto the authored block only (below).
+const bounds = computed<UnitBounds>(() => {
+  const fallback = getUnitBoundsFor({ path: props.pathKey, unitType: props.unitKey })
+  return props.bounds ? { ...fallback, ...props.bounds } : fallback
+})
+
+// --- Anchors & bounds authoring (render box / foot anchor / selection ring / shadow) ---
+// A debug overlay that draws — and lets you drag — the same geometry the game
+// renderer uses, so aligning logic to the art is visual instead of guess-edited
+// JSON. Off by default; nothing existing changes until it's toggled on.
+const showGizmos = ref(false)
+const gizmoLayers = ref<GizmoOptions>({ renderBox: true, foot: true, ring: true, shadow: true })
+const activeHandle = ref<GizmoHandle | null>(null)
+const draggingHandle = ref<GizmoHandle | null>(null)
+
+// The sprite's transparent-bottom lift (1x px) — the exact term the renderer's
+// ring/shadow math subtracts. 0 until art has loaded.
+const ringLift = computed(() => {
+  const s = set.value
+  return s ? s.size.height * UNIT_SPRITE_SCALE * getSpritePaddingFrac(s).bottom : 0
+})
+
+const gizmoContext = computed<GizmoContext | null>(() => {
+  const geo = lastGeometry.value
+  if (!geo) return null
+  return { geo, bounds: bounds.value, shadow: props.shadow, flyer: props.flyer, ringLift: ringLift.value }
+})
+
+// Emit patches onto the AUTHORED block only (props.bounds/props.shadow), leaving
+// unedited fields to fall back to catalog/defaults — keeps the saved def lean.
+function emitBoundsPatch(patch: Partial<UnitBounds>) {
+  emit('update:bounds', { ...(props.bounds ?? {}), ...patch } as Partial<UnitBounds>)
+}
+function emitShadowPatch(patch: Partial<UnitShadow>) {
+  emit('update:shadow', { ...(props.shadow ?? {}), ...patch })
+}
+function applyGizmo(handle: GizmoHandle, pt: { x: number; y: number }) {
+  const c = gizmoContext.value
+  if (!c) return
+  const res = applyGizmoDrag(handle, pt, c)
+  if (res.bounds) emitBoundsPatch(res.bounds)
+  if (res.shadow) emitShadowPatch(res.shadow)
+}
+
+// Numeric-input setters mirror the drag edits for precise/keyboard adjustment.
+function setBound(key: 'halfWidth' | 'top' | 'bottom' | 'ringOffsetX' | 'ringOffsetY', raw: string) {
+  const n = Number(raw)
+  if (!Number.isNaN(n)) emitBoundsPatch({ [key]: n })
+}
+function setShadowNum(key: 'radiusX' | 'radiusY' | 'opacity' | 'offsetX' | 'offsetY', raw: string) {
+  const n = Number(raw)
+  if (!Number.isNaN(n)) emitShadowPatch({ [key]: n })
+}
+function setShadowEnabled(enabled: boolean) {
+  emitShadowPatch({ enabled })
+}
+
+// Resolved shadow (concrete defaults filled in) for the numeric inputs, so the
+// author sees the values actually in effect. null when the shadow is disabled.
+const effShadow = computed(() => resolveUnitShadow(props.shadow, bounds.value, props.flyer))
+const shadowEnabled = computed(() => props.shadow?.enabled !== false)
+const round1 = (n: number) => Math.round(n * 10) / 10
 
 // The point projectiles leave an unauthored unit's body today (see
 // deriveDefaultOrigin's doc comment). null while art hasn't loaded yet.
@@ -264,10 +423,23 @@ function applyCanvasPoint(pt: { x: number; y: number }, geo: PreviewDrawGeometry
 }
 
 function onCanvasMouseDown(e: MouseEvent) {
-  if (!showAttackOrigin.value) return
   const geo = lastGeometry.value
   const pt = canvasPointFromEvent(e)
   if (!geo || !pt) return
+  // Anchors/bounds gizmos take priority over the attack-origin crosshair when a
+  // handle is grabbed, so the two overlays never fight for the same drag.
+  if (showGizmos.value && gizmoContext.value) {
+    const handle = hitTestGizmo(pt, gizmoContext.value, gizmoLayers.value)
+    if (handle) {
+      draggingHandle.value = handle
+      activeHandle.value = handle
+      applyGizmo(handle, pt)
+      window.addEventListener('mousemove', onWindowMouseMove)
+      window.addEventListener('mouseup', onWindowMouseUp)
+      return
+    }
+  }
+  if (!showAttackOrigin.value) return
   isDraggingOrigin.value = true
   applyCanvasPoint(pt, geo)
   window.addEventListener('mousemove', onWindowMouseMove)
@@ -275,10 +447,14 @@ function onCanvasMouseDown(e: MouseEvent) {
 }
 
 function onWindowMouseMove(e: MouseEvent) {
-  if (!isDraggingOrigin.value) return
   const geo = lastGeometry.value
   const pt = canvasPointFromEvent(e)
   if (!geo || !pt) return
+  if (draggingHandle.value) {
+    applyGizmo(draggingHandle.value, pt)
+    return
+  }
+  if (!isDraggingOrigin.value) return
   applyCanvasPoint(pt, geo)
 }
 
@@ -289,6 +465,7 @@ function stopDragListeners() {
 
 function onWindowMouseUp() {
   isDraggingOrigin.value = false
+  draggingHandle.value = null
   stopDragListeners()
 }
 
@@ -297,10 +474,16 @@ function onWindowMouseUp() {
 // (banned project-wide; see AI_RULES.md).
 const HOVER_RADIUS_CANVAS_PX = 10
 function onCanvasMouseMove(e: MouseEvent) {
-  if (isDraggingOrigin.value) return
+  if (isDraggingOrigin.value || draggingHandle.value) return
+  const pt = canvasPointFromEvent(e)
+  // Gizmo hover highlight (which handle would be grabbed).
+  activeHandle.value =
+    showGizmos.value && gizmoContext.value && pt
+      ? hitTestGizmo(pt, gizmoContext.value, gizmoLayers.value)
+      : null
+  // Attack-origin crosshair hover (unchanged).
   if (!showAttackOrigin.value) { hoveringOrigin.value = false; return }
   const geo = lastGeometry.value
-  const pt = canvasPointFromEvent(e)
   if (!geo || !pt) { hoveringOrigin.value = false; return }
   const anchor = unitAnchorCanvas(geo, bounds.value)
   const originPt = originToCanvas(currentOrigin.value, anchor, geo.scale)
@@ -308,6 +491,7 @@ function onCanvasMouseMove(e: MouseEvent) {
 }
 function onCanvasMouseLeave() {
   hoveringOrigin.value = false
+  if (!draggingHandle.value) activeHandle.value = null
 }
 
 // --- Fire-test projectile (preview-only ghost tween; never touches
@@ -592,6 +776,7 @@ function drawMain(now: number) {
   if (showAttackOrigin.value || channelActive.value) drawAttackOriginOverlay(ctx, geo)
   if (channelActive.value) drawChannelBeam(ctx, geo, now)
   if (fireTestActive.value) drawFireTestGhost(ctx, geo, now)
+  if (showGizmos.value && gizmoContext.value) drawGizmos(ctx, gizmoContext.value, gizmoLayers.value, activeHandle.value)
 }
 
 // Draws the channel beam: a faint line from the attack origin along the current
@@ -843,5 +1028,37 @@ function drawChannelBeam(ctx: CanvasRenderingContext2D, geo: PreviewDrawGeometry
 .sprite-preview__origin-inputs button:hover {
   border-color: rgba(215, 187, 132, 0.85);
   background: rgba(215, 187, 132, 0.26);
+}
+
+.sprite-preview__gizmo-layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.sprite-preview__gizmo-layers label,
+.sprite-preview__gizmo-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 0.74rem;
+}
+
+.sprite-preview__gizmo-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.sprite-preview__gizmo-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.72);
 }
 </style>

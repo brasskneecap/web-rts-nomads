@@ -67,9 +67,13 @@
   "bounds": {
     "halfWidth": 20,
     "top": -72,
-    "bottom": 36,
-    "ringOffsetX": 0,
-    "ringOffsetY": -15
+    "bottom": 31,
+    "ringOffsetX": -1,
+    "ringOffsetY": 4
+  },
+  "shadow": {
+    "offsetX": 2,
+    "offsetY": 1
   },
   "visionRange": 400,
   "maxMana": 50,

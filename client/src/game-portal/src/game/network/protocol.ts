@@ -1267,10 +1267,7 @@ export type UnitSnapshot = {
     slowMultiplier?: number
     markMultiplier?: number
     markDuration?: number
-    barbedFieldRampPerSec?: number
-    barbedFieldMaxBonusDPS?: number
     lastingFlamesBurnDuration?: number
-    aftershockDelaySeconds?: number
   }
 }
 
@@ -1401,6 +1398,12 @@ export type TrapSnapshot = {
    * aftershock). Absent on all other ticks. Client renders a one-frame burst.
    */
   triggered?: boolean
+  /**
+   * Draw this visual in the above-units pass (in front of units) instead of on
+   * the ground beneath them. Set by transient VFX decals (an explosion
+   * presentation); absent for ground-layer object sprites.
+   */
+  aboveUnits?: boolean
 }
 
 export type GameOverSnapshot = {

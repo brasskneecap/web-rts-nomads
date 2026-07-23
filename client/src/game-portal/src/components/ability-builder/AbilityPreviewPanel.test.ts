@@ -95,7 +95,7 @@ function makeBuilderStub() {
     // rather than only that an empty list renders nothing.
     catalogs: shallowRef({
       effects: [], projectiles: [], damageTypes: [], categories: [],
-      autoCastSelectors: [], unitTypes: [],
+      autoCastSelectors: [], unitTypes: [], objectSprites: [],
       perks: [
         { id: 'lasting_flames', label: 'Lasting Flames', path: 'trapper' },
         { id: 'zealous_march', label: 'Zealous March', path: 'cleric' },

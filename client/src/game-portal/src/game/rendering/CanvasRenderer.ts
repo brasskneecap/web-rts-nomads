@@ -38,7 +38,7 @@ import {
   drawAutoTiledTerrain,
   isTerrainTilesetReady,
 } from './terrainTileset'
-import { getResolvedAttackOriginFor, getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
+import { getResolvedAttackOriginFor, getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, getUnitShadowFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
 import { resolveUnitShadow, SHADOW_LIGHT_DX, SHADOW_LIGHT_DY, SHADOW_LIGHT_SHIFT } from '../maps/unitShadow'
 import type { BannerSnapshot, BeamSnapshot, BuildingTile, CorpseSnapshot, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone, ZoneSnapshot } from '../network/protocol'
@@ -58,6 +58,7 @@ import { getObjectSpriteSet } from './objectSprites'
 import { getEffectSprite } from './effectSprites'
 import { overlayFrameIndex, spriteRectOverlayRect, unitSpriteRect } from './effectPlacement'
 import { getBeamSprite } from './beamSprites'
+import { parseAnimationRef, resolveAnimationFrames, oneShotDecalFrame } from './animationRef'
 import { getResourceIconImage } from './resourceSprites'
 import { getActionIconImage } from './actionIconSprites'
 import { getItemAssetImage } from './itemAssets'
@@ -283,6 +284,11 @@ export class CanvasRenderer {
   private lastSeenTraps = new Map<string, TrapSnapshot>()
   private fadingOutTraps = new Map<string, { snapshot: TrapSnapshot; startedAt: number }>()
   private readonly TRAP_FADE_MS = 450
+
+  // Per-decal (animation-scheme visible zone) total-lifetime cache, keyed by zone
+  // id — a NON-looping decal plays 0→N-1 across (total - remaining)/total, so
+  // each spawn plays its full animation from the start. Pruned when the zone goes.
+  private decalAnimTotals = new Map<string, number>()
 
   // Per-trap sprite animation state. Only sprite-backed trap types use this;
   // others continue to run through the procedural render path. An entry is
@@ -579,6 +585,9 @@ export class CanvasRenderer {
     // no per-frame layering are skipped here and drawn in the above-units pass.
     this.drawEffects(this.state.effects, units, 'below')
     this.drawUnits(units)
+    // Above-units animation decals (explosion presentations, etc.) — in front of
+    // the unit band, same layer intent as the effect 'above' pass below.
+    this.drawAboveUnitDecals(this.state.traps)
     // Effects sit on top of the caster body but underneath projectiles so
     // arrows and bolts always read clearly over the VFX layer.
     this.drawEffects(this.state.effects, units, 'above')
@@ -1612,7 +1621,96 @@ export class CanvasRenderer {
     }
   }
 
+  // isAnimationDecalType reports whether a visible-zone snapshot's `type` is a
+  // NON-object animation scheme (effect:/projectile:/beam:/image:). Those render
+  // as an animation decal via the shared drawAnimationDecal rather than the
+  // object sprite / procedural paths. Object visuals arrive from the server as a
+  // bare key (+ variant), so they parse to null here and take the object path —
+  // preserving their rings / selection / variant-swap treatment.
+  private isAnimationDecalType(type: string | undefined): boolean {
+    const parsed = parseAnimationRef(type)
+    return parsed !== null && parsed.source !== 'object'
+  }
+
+  // drawAnimationDecalTraps renders visible zones whose sprite is an animation
+  // scheme (effect / projectile / beam / uploaded image) — the cross-source
+  // create_zone visuals. A NON-looping animation (an explosion) plays 0→N-1 once
+  // across the decal's own server lifetime (remaining / total), so EVERY spawn
+  // plays the full animation from the start — a later spawn no longer jumps to
+  // the last frame (an explosion that's all smoke). A looping animation cycles on
+  // the render clock, the same seam every other looping cosmetic uses.
+  private drawAnimationDecalTraps(traps: TrapSnapshot[]) {
+    const ctx = this.ctx
+    const now = this.timeSource()
+    for (const t of traps) {
+      const frames = resolveAnimationFrames(t.type)
+      if (!frames) continue
+      const img = frames.image
+      if (!(img.complete && img.naturalWidth > 0)) continue
+      const n = Math.max(1, frames.frameCount)
+
+      let frameIndex: number
+      if (frames.loop) {
+        frameIndex = ((Math.floor(now / frames.frameDurationMs) % n) + n) % n
+      } else {
+        // Track each decal's peak remaining as its total duration (the first
+        // frame it appears carries ~the spawn value), then play across it.
+        const rem = t.remainingSeconds ?? 0
+        const total = Math.max(this.decalAnimTotals.get(t.id) ?? 0, rem)
+        this.decalAnimTotals.set(t.id, total)
+        frameIndex = oneShotDecalFrame(rem, total, n)
+      }
+
+      const mult = t.scaleMultiplier && t.scaleMultiplier > 0 ? t.scaleMultiplier : 1
+      const scale = mult * this.OBJECT_SPRITE_SCALE
+      const sw = frames.frameWidth
+      const sh = frames.frameHeight
+      if (sw > 0 && sh > 0) {
+        ctx.imageSmoothingEnabled = false
+        const dw = sw * scale
+        const dh = sh * scale
+        ctx.drawImage(img, frameIndex * sw, 0, sw, sh, t.x - dw / 2, t.y - dh / 2, dw, dh)
+      }
+
+      if (this.state.selectedTrapId === t.id) {
+        ctx.save()
+        ctx.globalAlpha = 1
+        ctx.beginPath()
+        ctx.arc(t.x, t.y, Math.max(t.radius, 8) + 3, 0, Math.PI * 2)
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.setLineDash([])
+        ctx.stroke()
+        ctx.restore()
+      }
+    }
+  }
+
+  // drawAboveUnitDecals renders the animation-scheme visible zones flagged
+  // aboveUnits (VFX that read as a burst OVER the victim, e.g. an explosion
+  // presentation). Called after drawUnits so they sit in front; ground-layer
+  // decals were already drawn in drawTraps (before units).
+  private drawAboveUnitDecals(traps: TrapSnapshot[]) {
+    this.drawAnimationDecalTraps(traps.filter((t) => this.isAnimationDecalType(t.type) && t.aboveUnits === true))
+  }
+
   private drawTraps(traps: TrapSnapshot[]) {
+    // Animation-scheme visuals (non-object) render through the shared decal path;
+    // the object/procedural body below only deals with object + legacy traps.
+    const decalTraps = traps.filter((t) => this.isAnimationDecalType(t.type))
+    // Prune per-decal animation state for zones no longer present (done once here
+    // over ALL decals, since drawAnimationDecalTraps is called for both the
+    // below-units and above-units subsets and must not prune the other's ids).
+    const decalIds = new Set(decalTraps.map((t) => t.id))
+    for (const id of Array.from(this.decalAnimTotals.keys())) {
+      if (!decalIds.has(id)) this.decalAnimTotals.delete(id)
+    }
+    if (decalTraps.length) {
+      // Ground-layer decals here (before units); aboveUnits decals draw later.
+      this.drawAnimationDecalTraps(decalTraps.filter((t) => t.aboveUnits !== true))
+      traps = traps.filter((t) => !this.isAnimationDecalType(t.type))
+    }
+
     const ctx = this.ctx
     const now = this.timeSource()
     const currentIds = new Set<string>()
@@ -2733,7 +2831,10 @@ export class CanvasRenderer {
       // get an offset, larger, fainter shadow (see resolveUnitShadow). Skipped
       // for sprite-less placeholder blobs, which already read as grounded.
       if (spriteSet) {
-        const shadow = resolveUnitShadow(unitDef?.shadow, unitBounds, !!unit.flyer)
+        // Path-then-type shadow (mirrors unitBounds above) so a promotion path's
+        // authored shadow renders instead of the base unit's.
+        const shadowCfg = getUnitShadowFor({ path: unit.path, unitType: unit.unitType })
+        const shadow = resolveUnitShadow(shadowCfg, unitBounds, !!unit.flyer)
         if (shadow) {
           const feetX = unit.x + ringOffsetX + shadow.offsetX
           const feetY = unit.y + bottomOffset - ringLift + ringOffsetY + shadow.offsetY

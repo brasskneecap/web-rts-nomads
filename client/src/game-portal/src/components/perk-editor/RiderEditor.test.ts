@@ -60,7 +60,7 @@ function makeSchema(): ActionSchemaBundle {
 }
 
 function emptyCatalogs(): AbilityBuilderCatalogs {
-  return { effects: [], projectiles: [], damageTypes: ['shadow', 'fire', 'physical'], categories: [], autoCastSelectors: [], unitTypes: [], perks: [] }
+  return { effects: [], projectiles: [], damageTypes: ['shadow', 'fire', 'physical'], categories: [], autoCastSelectors: [], unitTypes: [], objectSprites: [], perks: [] }
 }
 
 function mountEditor(rider: AbilityRider, schema: ActionSchemaBundle | null = makeSchema()) {

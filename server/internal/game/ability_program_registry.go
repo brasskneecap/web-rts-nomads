@@ -352,6 +352,15 @@ type dealDamageConfig struct {
 	// (every deal_damage authored before this field existed, and the primary
 	// hit's own dmg action) is a no-op.
 	FlatOffset int `json:"flatOffset,omitempty"`
+	// CombinePopup, when true, sets DamageSource.SuppressHitSplit on every hit
+	// this action deals: the instances do NOT record per-hit split entries, so
+	// several of them landing on one unit the same tick collapse into ONE summed
+	// floating number instead of one number per hit. For a many-small-instances
+	// effect that should READ as its total — caltrops' Barbed stacking DoT, where
+	// N independent stacks each tick a small amount but should show one big
+	// number. Default false (each hit shows its own number, the existing
+	// behavior). See DamageSource.SuppressHitSplit (damage_pipeline.go).
+	CombinePopup bool `json:"combinePopup,omitempty"`
 	// AmountRef, when non-empty, names a ctxScalar in ctx.Named whose value is the
 	// damage amount (e.g. "trigger_damage", bound by the rider runner to the
 	// triggering tick's damage). AmountMult scales it (default 1 when 0/unset).
@@ -448,6 +457,7 @@ func init() {
 			{Key: "amountMult", Label: "Amount ×", Control: "number", Section: "Properties"},
 			{Key: "adRatio", Label: "Attack Damage Ratio", Control: "number", Section: "Properties"},
 			{Key: "apRatio", Label: "Ability Power Ratio", Control: "number", Section: "Properties"},
+			{Key: "combinePopup", Label: "Combine popup", Control: "boolean", Section: "Advanced"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(dealDamageConfig)
@@ -519,7 +529,7 @@ func init() {
 				if u == nil || u.HP <= 0 {
 					continue
 				}
-				landed := s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", Category: DamageCategoryAbility, DamageType: dt, SourceAbilityID: ctx.AbilityID})
+				landed := s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", Category: DamageCategoryAbility, DamageType: dt, SourceAbilityID: ctx.AbilityID, SuppressHitSplit: c.CombinePopup})
 				hit = append(hit, id)
 				ctx.lastAppliedDamage += amount
 				// The TRACE reports what actually landed, not what was swung:
@@ -531,7 +541,14 @@ func init() {
 				// dealt" is a property of the attack, not of the victim's
 				// defenses. Changing that is a balance decision, not a
 				// reporting one.
-				ctx.trace("damage_applied", ctx.currentActionPath, map[string]any{"unit": id, "amount": landed, "type": string(dt)})
+				dmgPayload := map[string]any{"unit": id, "amount": landed, "type": string(dt)}
+				if c.CombinePopup {
+					// Carry the combine flag so the preview's damage-number
+					// derivation sums these per-instance events into one number,
+					// matching the in-game combine (DamageSource.SuppressHitSplit).
+					dmgPayload["combine"] = true
+				}
+				ctx.trace("damage_applied", ctx.currentActionPath, dmgPayload)
 			}
 			return hit
 		},

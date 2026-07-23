@@ -3,10 +3,7 @@
   "name": "Adept",
   "faction": "human",
   "archetype": "caster",
-  "combatProfile": "caster",
-  "visionRange": 400,
   "hp": 125,
-  "armor": 0,
   "damage": 20,
   "attackRange": 220,
   "attackSpeed": 1,
@@ -16,27 +13,13 @@
     "wood": 175
   },
   "meatCost": 4,
-  "requiresBuildings": ["temple"],
   "spawnSeconds": 10,
-  "pathChances": {
-    "arch_mage": 1
-  },
   "capabilities": [
     "move",
     "attack"
   ],
   "trainLabel": "Train Adept",
-  "maxMana": 50,
-  "manaRegenRate": 1.0,
-  "projectile": "fire_bolt",
-  "damageType": "fire",
-  "projectileScale": 1.5,
-  "abilities": [
-    "arcane_bolt"
-  ],
-  "metadata": {
-    "todo": "Placeholder — copied verbatim from acolyte.json so the catalog loader accepts the dir. Author real Adept stats (HP/damage/range/cost/abilities/etc.) before this unit ships."
-  },
+  "combatProfile": "caster",
   "attackVisual": {
     "kind": "projectile",
     "originX": 24,
@@ -46,8 +29,23 @@
   "bounds": {
     "halfWidth": 20,
     "top": -72,
-    "bottom": 36,
-    "ringOffsetX": 0,
-    "ringOffsetY": -15
+    "bottom": 30,
+    "ringOffsetX": 1,
+    "ringOffsetY": 8
+  },
+  "visionRange": 400,
+  "maxMana": 50,
+  "manaRegenRate": 1,
+  "projectile": "fire_bolt",
+  "damageType": "fire",
+  "projectileScale": 1.5,
+  "abilities": [
+    "arcane_bolt"
+  ],
+  "requiresBuildings": [
+    "temple"
+  ],
+  "pathChances": {
+    "arch_mage": 1
   }
 }

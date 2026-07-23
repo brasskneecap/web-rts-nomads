@@ -23,7 +23,7 @@ import {
 } from './terrainTileGroups'
 import type { BuildingDef, BuildingStyleRenderDef } from './buildingDefs'
 import type { ObstacleDef } from './obstacleDefs'
-import type { UnitAttackOrigin, UnitBounds, UnitDef } from './unitDefs'
+import type { UnitAttackOrigin, UnitBounds, UnitDef, UnitShadow } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
 import type { PerkDef } from './perkDefs'
 import type { ItemDef } from './itemDefs'
@@ -174,7 +174,7 @@ export async function fetchObstacleDefs(): Promise<ObstacleDef[]> {
 // existing null-tolerant `if (pathBounds)` check in getUnitBoundsFor already
 // handles a bounds-less entry correctly at runtime; widening its static type
 // is out of scope for this task.
-export type PathBoundsEntry = { path: string; bounds: UnitBounds; attackOrigin?: UnitAttackOrigin | null }
+export type PathBoundsEntry = { path: string; bounds: UnitBounds; attackOrigin?: UnitAttackOrigin | null; shadow?: UnitShadow | null }
 
 export async function fetchUnitDefs(): Promise<{
   units: UnitDef[]

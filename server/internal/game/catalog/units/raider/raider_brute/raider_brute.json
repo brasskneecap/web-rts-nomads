@@ -3,16 +3,12 @@
   "name": "Raider Brute",
   "faction": "raider",
   "archetype": "raider",
-  "visionRange": 224,
   "hp": 500,
-  "armor": 0,
   "damage": 20,
-  "experience": 150,
   "attackRange": 100,
   "attackSpeed": 0.5,
-  "moveSpeed": 80,
   "splashRadius": 50,
-  "attackType": "swing",
+  "moveSpeed": 80,
   "resourceCost": {},
   "meatCost": 0,
   "spawnSeconds": 0,
@@ -20,12 +16,14 @@
     "move",
     "attack"
   ],
-  "trainLabel": "",
+  "attackType": "swing",
   "bounds": {
     "halfWidth": 30,
     "top": -60,
-    "bottom": 20,
-    "ringOffsetX": 0,
-    "ringOffsetY": -20
-  }
+    "bottom": 40,
+    "ringOffsetX": 2,
+    "ringOffsetY": 10
+  },
+  "experience": 150,
+  "visionRange": 224
 }

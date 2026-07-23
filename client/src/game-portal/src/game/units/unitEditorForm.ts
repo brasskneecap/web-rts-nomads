@@ -1,4 +1,4 @@
-import type { UnitAttackOrigin } from '@/game/maps/unitDefs'
+import type { UnitAttackOrigin, UnitBounds, UnitShadow } from '@/game/maps/unitDefs'
 
 // AuthoredUnitDef is the full authored shape (superset of the render-time
 // UnitDef). Modeled fields are typed; unmodeled keys (attackVisual/bounds/
@@ -58,6 +58,12 @@ export interface AuthoredUnitDef {
   trainLabel?: string
   channelLoop?: { start: number; end: number }
   attackOrigin?: UnitAttackOrigin
+  // Visual footprint + ground-shadow tuning, authored via the "Anchors & bounds"
+  // overlay in UnitSpritePreview. Modeled (not remainder-only) so the panel can
+  // bind v-model:bounds / v-model:shadow directly and a clear-to-undefined edit
+  // round-trips — same reasoning as attackOrigin.
+  bounds?: Partial<UnitBounds>
+  shadow?: UnitShadow
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
@@ -71,7 +77,7 @@ const MODELED_KEYS = [
   'projectile','projectileScale','goldGatherAmount','woodGatherAmount','maxMana',
   'manaRegenRate','visionRange','flyer','abilities','requiresBuildings','pathChances',
   'dominionPointDropChance','dominionPointAmount','spawnExp','experience','nonCombat',
-  'trainLabel','channelLoop','attackOrigin','baseStats','abilityStats',
+  'trainLabel','channelLoop','attackOrigin','baseStats','abilityStats','bounds','shadow',
 ] as const
 
 export interface UnitEditorForm extends AuthoredUnitDef {

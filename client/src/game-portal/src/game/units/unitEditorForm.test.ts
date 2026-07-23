@@ -18,8 +18,11 @@ const fullDef: AuthoredUnitDef = {
   manaRegenRate: 0, visionRange: 6, flyer: false, abilities: [],
   requiresBuildings: [], pathChances: {}, dominionPointDropChance: 0.1,
   dominionPointAmount: 1, spawnExp: 0, nonCombat: false,
-  // art blobs the form does NOT model — must survive untouched:
-  attackVisual: { anchor: 'hand' }, bounds: { w: 20, h: 40 }, shadow: { scale: 0.6 },
+  // attackVisual is an unmodeled blob that must survive untouched via remainder;
+  // bounds/shadow are now MODELED fields (authored via the anchors overlay) and
+  // round-trip as typed values.
+  attackVisual: { anchor: 'hand' },
+  bounds: { halfWidth: 20, top: -40, bottom: 2 }, shadow: { radiusX: 12, radiusY: 5, opacity: 0.6 },
   attackOrigin: { default: { x: 3, y: -40 }, byFacing: { east: { x: 14, y: -30 } } },
 }
 

@@ -36,7 +36,7 @@ func TestActionSchemasCoversRegistry(t *testing.T) {
 	if !pp.Runnable {
 		t.Fatalf("play_presentation should be runnable (has a registered executor)")
 	}
-	wantFields := map[string]bool{"asset": true, "position": true, "scale": true, "renderLayer": true, "presentationId": true, "bindToStatusDuration": true}
+	wantFields := map[string]bool{"asset": true, "position": true, "scale": true, "duration": true, "renderLayer": true, "presentationId": true, "bindToStatusDuration": true}
 	if len(pp.Fields) != len(wantFields) {
 		t.Fatalf("play_presentation schema fields = %+v; want keys %v", pp.Fields, wantFields)
 	}

@@ -182,6 +182,14 @@ function kindClass(id: string): string {
   color: var(--ed-text-dim);
 }
 
+/* Strip the global `code` box (light var(--code-bg) + padding) — unreadable on
+   the dark editor. Just gold text. */
+.oip__selected code {
+  color: var(--ed-brass);
+  background: transparent;
+  padding: 0;
+}
+
 .oip__kind {
   margin-left: 4px;
   text-transform: capitalize;

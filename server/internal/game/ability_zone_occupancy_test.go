@@ -82,6 +82,72 @@ func traceTriggerFireCount(tr *AbilityExecutionTrace, triggerID string) int {
 	return n
 }
 
+// TestCreateZone_CountSpawnsMultipleAtSpread: create_zone's count spawns K
+// copies of the zone, the extras offset around the target by spreadDistance
+// (not stacked on one point). This is the primitive increased_deployment scales
+// — one trap placement becomes K traps, K raised by the perk.
+func TestCreateZone_CountSpawnsMultipleAtSpread(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+
+	cfg := `{"name":"Z","radius":50,"duration":5,"tickInterval":1,"count":3,"spreadDistance":40}`
+	runOneActionProgram(t, s, caster.ID, 0, ActionCreateZone, cfg, nil)
+
+	if len(s.AbilityZones) != 3 {
+		t.Fatalf("count=3 should spawn 3 zones, got %d", len(s.AbilityZones))
+	}
+	centers := map[protocol.Vec2]bool{}
+	for _, z := range s.AbilityZones {
+		centers[z.Center] = true
+	}
+	if len(centers) != 3 {
+		t.Errorf("the copies should be spread to distinct positions, got %d unique centers of 3", len(centers))
+	}
+}
+
+// TestAbilityZone_MaxTicksBoundsTickCount: a zone with MaxTicks set fires its
+// on_tick at most that many times, then expires — regardless of how much life
+// Remaining would otherwise give it. This is the bounded-repeat primitive
+// explosive_trap's aftershock uses (K blasts, K scaled by a perk), so a designer
+// authors "blast N times" as a count rather than juggling duration.
+func TestAbilityZone_MaxTicksBoundsTickCount(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	target := teamCombatUnit(t, s, "p2", 20, 0)
+	target.HP, target.MaxHP = 1000, 1000
+
+	onTick := AbilityTriggerDef{
+		ID: "tick", Type: TriggerOnTick,
+		Actions: []AbilityActionDef{
+			{ID: "sel", Type: ActionSelectTargets, Outputs: map[string]string{"targets": "hit"},
+				Target: &TargetQueryDef{Source: SrcAllInScene, Origin: OriginZoneCenter, RadiusRef: "zone_radius", Relations: []TargetRelation{"enemy"}}},
+			{ID: "dmg", Type: ActionDealDamage, Input: map[string]ContextRef{"targets": {Key: "hit"}},
+				Config: json.RawMessage(`{"amount":10}`)},
+		},
+	}
+	z := &AbilityZone{
+		AbilityID: "test_zone", CasterID: caster.ID, OwnerPlayerID: caster.OwnerID,
+		Center: protocol.Vec2{X: 0, Y: 0}, Radius: 50, Remaining: 10, TickInterval: 1, MaxTicks: 3,
+		Triggers: []AbilityTriggerDef{onTick},
+	}
+	s.spawnAbilityZoneLocked(z)
+
+	startHP := target.HP
+	for i := 0; i < 100; i++ { // 10s of life — would tick ~11 times uncapped
+		s.tickAbilityZonesLocked(0.1)
+	}
+
+	if lost := startHP - target.HP; lost != 30 {
+		t.Fatalf("target lost %d HP; want 30 (exactly 3 ticks x 10 — MaxTicks cap)", lost)
+	}
+	if len(s.AbilityZones) != 0 {
+		t.Errorf("zone should expire once its max ticks are spent; %d remain", len(s.AbilityZones))
+	}
+}
+
 // TestAbilityZoneOccupancy_EnterFiresOnceOnCross is the core semantic: enter
 // fires exactly once the tick a unit crosses into the zone, not on every
 // subsequent tick it remains inside.

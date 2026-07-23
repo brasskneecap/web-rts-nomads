@@ -6,7 +6,7 @@ import SchemaField from './SchemaField.vue'
 import type { AbilityBuilderCatalogs } from './useAbilityBuilder'
 
 function emptyCatalogs(): AbilityBuilderCatalogs {
-  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], perks: [] }
+  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], objectSprites: [], perks: [] }
 }
 
 function mountField(
@@ -161,6 +161,38 @@ describe('SchemaField', () => {
     // Selecting still commits the raw id, not the label.
     await select.vm.$emit('update:modelValue', 'fire_bolt')
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['fire_bolt'])
+  })
+
+  it('shows object sprite-sets (Title-Cased) in the asset picker for a sprite-keyed field, committing the raw id', async () => {
+    const wrapper = mountField(
+      { key: 'sprite', label: 'Visible Sprite', control: 'asset' },
+      'fire_pit',
+      { catalogs: { ...emptyCatalogs(), objectSprites: ['caltrops', 'fire_pit', 'marker_trap'] } },
+    )
+    const select = wrapper.findComponent(FilterableSelect)
+    expect(select.props('options')).toEqual([
+      { id: 'caltrops', label: 'Caltrops' },
+      { id: 'fire_pit', label: 'Fire Pit' },
+      { id: 'marker_trap', label: 'Marker Trap' },
+    ])
+    // Selecting still commits the raw id, not the label.
+    await select.vm.$emit('update:modelValue', 'caltrops')
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['caltrops'])
+  })
+
+  it('animation control normalizes a legacy bare sprite id to an object scheme', () => {
+    const wrapper = mountField({ key: 'sprite', label: 'Visible Sprite', control: 'animation' }, 'marker_trap')
+    expect(wrapper.find('.sf-animation__code').text()).toBe('object:marker_trap')
+  })
+
+  it('animation control normalizes a legacy bare presentation id to an effect scheme', () => {
+    const wrapper = mountField({ key: 'presentation', label: 'Presentation', control: 'animation' }, 'explosion')
+    expect(wrapper.find('.sf-animation__code').text()).toBe('effect:explosion')
+  })
+
+  it('animation control keeps an already-schemed value as-is', () => {
+    const wrapper = mountField({ key: 'sprite', label: 'Visible Sprite', control: 'animation' }, 'object:caltrops@electrified')
+    expect(wrapper.find('.sf-animation__code').text()).toBe('object:caltrops@electrified')
   })
 
   it('renders a sentinel_number control: checked hides the number input and commits the sentinel', async () => {

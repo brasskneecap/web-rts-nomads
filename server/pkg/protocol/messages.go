@@ -475,10 +475,7 @@ type EffectiveTrapSnapshot struct {
 	MarkMultiplier  float64 `json:"markMultiplier,omitempty"`  // marker_trap
 	MarkDuration    float64 `json:"markDuration,omitempty"`    // marker_trap
 	// Silver trap-specific upgrade stats (zero/omitted when the gating perk is absent):
-	BarbedFieldRampPerSec     float64 `json:"barbedFieldRampPerSec,omitempty"`     // caltrops + barbed_field
-	BarbedFieldMaxBonusDPS    float64 `json:"barbedFieldMaxBonusDPS,omitempty"`    // caltrops + barbed_field
 	LastingFlamesBurnDuration float64 `json:"lastingFlamesBurnDuration,omitempty"` // fire_pit + lasting_flames
-	AftershockDelaySeconds    float64 `json:"aftershockDelaySeconds,omitempty"`    // explosive_trap + explosive_chain
 }
 
 // PerkCooldownSnapshot advertises how long until a perk's next activation.
@@ -1494,6 +1491,10 @@ type TrapSnapshot struct {
 	Type             string  `json:"type"`
 	RemainingSeconds float64 `json:"remainingSeconds"`
 	Triggered        bool    `json:"triggered,omitempty"`
+	// AboveUnits draws this visual in the above-units pass (in front of units)
+	// instead of on the ground beneath them. Set by transient VFX decals (an
+	// explosion presentation); false/omitted for ground-layer object sprites.
+	AboveUnits bool `json:"aboveUnits,omitempty"`
 }
 
 // GameOverSnapshot is included in every snapshot once one or more players have

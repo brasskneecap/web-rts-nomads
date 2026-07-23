@@ -1,44 +1,78 @@
 {
   "path": "vanguard",
-  "attackType": "stab",
-  "visionRange": 288,
   "description": "Sturdy frontliner: more HP, high armor, slight attack-speed cost early. Armor 54 produces ~35% damage reduction via the diminishing-returns curve in armorDamageReduction.",
   "bounds": {
     "halfWidth": 24,
     "top": -80,
     "bottom": 38,
     "ringOffsetX": 0,
-    "ringOffsetY": -18
+    "ringOffsetY": 9
   },
-  "perksByRank": {
-    "bronze": ["hold_the_line", "interlock", "reinforced_armor", "retaliation", "shield_bash"],
-    "silver": ["brace", "challengers_mark", "last_stand", "punishing_guard"],
-    "gold": ["guardian_aura", "pain_share", "rallying_banner"]
-  },
+  "visionRange": 288,
+  "attackType": "stab",
+  "abilities": [],
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 2,
-      "damageMultiplier": 1.10,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 1.1,
       "attackSpeedMultiplier": 1,
-      "moveSpeedMultiplier": 1.00,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
       "armor": 100,
-      "blockChance": 0.10
-    },
-    "silver": {
-      "maxHPMultiplier": 2.25,
-      "damageMultiplier": 1.25,
-      "attackSpeedMultiplier": 1.100,
-      "moveSpeedMultiplier": 1.00,
-      "armor": 150,
-      "blockChance": 0.125
+      "dodgeChance": 0,
+      "blockChance": 0.1,
+      "visionRange": 0
     },
     "gold": {
       "maxHPMultiplier": 2.5,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
       "damageMultiplier": 1.45,
-      "attackSpeedMultiplier": 1.250,
-      "moveSpeedMultiplier": 1.00,
+      "attackSpeedMultiplier": 1.25,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
       "armor": 200,
-      "blockChance": 0.15
+      "dodgeChance": 0,
+      "blockChance": 0.15,
+      "visionRange": 0
+    },
+    "silver": {
+      "maxHPMultiplier": 2.25,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 1.25,
+      "attackSpeedMultiplier": 1.1,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
+      "armor": 150,
+      "dodgeChance": 0,
+      "blockChance": 0.125,
+      "visionRange": 0
     }
+  },
+  "perksByRank": {
+    "bronze": [
+      "hold_the_line",
+      "interlock",
+      "reinforced_armor",
+      "retaliation",
+      "shield_bash"
+    ],
+    "gold": [
+      "guardian_aura",
+      "pain_share",
+      "rallying_banner"
+    ],
+    "silver": [
+      "brace",
+      "challengers_mark",
+      "last_stand",
+      "punishing_guard"
+    ]
   }
 }

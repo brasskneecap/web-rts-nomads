@@ -41,9 +41,11 @@ func castExplosiveTrap(t *testing.T, s *GameState) (caster, enemy *Unit) {
 	return caster, enemy
 }
 
-// TestExplosiveTrapZone_DetonatesOnceAndVanishes is the behaviour the primitive
-// exists for: the trap blasts when stepped on, then is GONE — it does not keep
-// ticking for the rest of its authored duration.
+// TestExplosiveTrapZone_DetonatesOnceAndVanishes is the behaviour the trap
+// exists for: stepping on it CONSUMES the armed trap immediately (it vanishes),
+// and starts a detonation loop that — a fuse later — plays the explosion and
+// blasts the enemy. The armed trap does not keep ticking for its authored
+// duration.
 func TestExplosiveTrapZone_DetonatesOnceAndVanishes(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
@@ -60,13 +62,29 @@ func TestExplosiveTrapZone_DetonatesOnceAndVanishes(t *testing.T) {
 	}
 
 	before := enemy.HP
-	s.tickAbilityZonesLocked(0.1) // enemy is already inside ⇒ on_zone_enter fires
+	// on_zone_enter fires (enemy is inside): select targets, consume the trap
+	// (it vanishes NOW), and schedule the detonation loop ~1s out.
+	s.tickAbilityZonesLocked(0.1)
+	for _, z := range s.AbilityZones {
+		if len(z.Triggers) > 0 {
+			t.Fatalf("armed trap should be consumed on enter, but a triggered zone remains (sprite=%q)", z.Sprite)
+		}
+	}
+
+	// Advance time so the scheduled detonation fires (explosion decal + blast),
+	// then the decal expires.
+	for i := 0; i < 30; i++ { // 3s > the 1s fuse + 0.8s decal
+		s.simTime += 0.1
+		s.tickPendingLoopsLocked()
+		s.tickAbilityZonesLocked(0.1)
+	}
 
 	if enemy.HP >= before {
 		t.Errorf("enemy stepping on the trap took no blast damage (HP %d -> %d)", before, enemy.HP)
 	}
+	// After the detonation and the explosion decal's short life, nothing remains.
 	if len(s.AbilityZones) != 0 {
-		t.Fatalf("trap should be consumed after detonating, %d zone(s) remain", len(s.AbilityZones))
+		t.Fatalf("everything should be gone after detonating, %d zone(s) remain", len(s.AbilityZones))
 	}
 }
 

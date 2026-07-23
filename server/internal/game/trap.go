@@ -136,9 +136,9 @@ type Trap struct {
 	// corresponding Silver perk gated on the Bronze trap type. Zero means "no
 	// upgrade active" — the trap behaves exactly like the Bronze baseline.
 
-	// barbed_field (caltrops): ramping bonus DPS per second-in-zone.
-	BarbedFieldRampPerSec  float64
-	BarbedFieldMaxBonusDPS float64
+	// barbed_field migrated to a data perk (a has_perk-gated "Barbed" stacking
+	// status in caltrops' program), so the legacy trap runtime no longer carries
+	// its ramp values.
 
 	// exposed_weakness migrated to a pure data perk (a has_perk gate in
 	// marker_trap's program adding a damageDealt/Weaken status to the mark), so
@@ -380,19 +380,10 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				currentInZone[unit.ID] = true
 				// Apply slow with a 1s refresh window so it expires ~1s after leaving.
 				s.ApplySlowLocked(unit.ID, trap.SlowMultiplier, 1.0)
-				// barbed_field (silver): add ramping bonus DPS scaled by the
-				// victim's accumulated in-zone time. The accumulator is advanced
-				// once per tick in tickTrapperSilverDebuffsLocked regardless of
-				// how many overlapping barbed zones hit; here we only read.
+				// barbed_field migrated to a data perk: the ramping bonus is now a
+				// has_perk-gated "Barbed" stacking status in caltrops' program, not
+				// a field on this legacy trap runtime.
 				dps := trap.DamagePerSecond
-				if trap.BarbedFieldRampPerSec > 0 {
-					bonus := unit.PerkState.BarbedFieldStaySeconds * trap.BarbedFieldRampPerSec
-					if trap.BarbedFieldMaxBonusDPS > 0 && bonus > trap.BarbedFieldMaxBonusDPS {
-						bonus = trap.BarbedFieldMaxBonusDPS
-					}
-					dps += bonus
-					unit.PerkState.BarbedFieldInZoneThisTick = true
-				}
 				// DoT damage — gated at threshold = dps / trapDoTProcsPerSec
 				// so popups fire ~3× per second regardless of the authored
 				// caltrops DPS or amplified_effects scaling. Multiple traps
@@ -780,25 +771,20 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 // debuff state that cannot live inside tickTrapEffectsLocked because it must
 // continue to tick even when no trap entities exist (detached burn DoT).
 //
-// MUST be called AFTER tickTrapEffectsLocked so the scratch flags set by this
-// tick's trap effects are current:
-//   - BarbedFieldInZoneThisTick   (caltrops onStay)
+// It runs the burn DoT pass per unit: decay BurnRemaining, bank fractional
+// damage, apply when ≥1. Credits the original trap owner when alive; purely
+// applies damage when the owner has died (no XP, same pattern as CC
+// primitives). While the victim stands in a lasting_flames fire_pit, the
+// fire_pit branch of tickTrapEffectsLocked refreshes BurnRemaining to the full
+// duration every tick, so the countdown here only makes progress once the
+// victim leaves the zone.
 //
-// Runs two passes per unit:
-//  1. barbed_field: if the victim was hit by any barbed caltrops this tick,
-//     advance the accumulator by dt. Otherwise reset — the ramp drops the
-//     moment they step out of the zone.
-//  2. burn DoT: decay BurnRemaining, bank fractional damage, apply when ≥1.
-//     Credits the original trap owner when alive; purely applies damage when
-//     the owner has died (no XP, same pattern as CC primitives). While the
-//     victim stands in a lasting_flames fire_pit, the fire_pit branch of
-//     tickTrapEffectsLocked refreshes BurnRemaining to the full duration
-//     every tick, so the countdown here only makes progress once the victim
-//     leaves the zone.
+// (barbed_field's in-zone-timer pass used to live here too; it migrated to a
+// has_perk-gated Barbed stacking status in caltrops' program.)
 //
 // Dead units are collected and culled at the end of the pass, mirroring
-// tickTrapEffectsLocked. New trap-specific debuffs plug in here alongside
-// the existing two sections.
+// tickTrapEffectsLocked. New trap-specific debuffs plug in here alongside the
+// burn section.
 //
 // Must be called under s.mu write lock.
 func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
@@ -808,14 +794,6 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 		if unit == nil {
 			continue
 		}
-
-		// ── barbed_field: accumulate or reset the in-zone timer ─────────────
-		if unit.PerkState.BarbedFieldInZoneThisTick {
-			unit.PerkState.BarbedFieldStaySeconds += dt
-		} else {
-			unit.PerkState.BarbedFieldStaySeconds = 0
-		}
-		unit.PerkState.BarbedFieldInZoneThisTick = false
 
 		// ── burn DoT tick ───────────────────────────────────────────────────
 		// Iterate each stack independently: every stack decays its own
@@ -941,30 +919,19 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 }
 
 // plantTrapLocked constructs a new Trap at the unit's current position from
-// the given TrapConfig snapshot and appends it to s.Traps. When the unit owns
-// increased_deployment (gold), additional bonus traps are planted at
-// perpendicular offsets using the same snapshotted stats — count is driven by
-// that perk's bonusTrapCount config key. The bonus plants are NOT recursive —
-// only the outer plant call reads increased_deployment.
+// the given TrapConfig snapshot and appends it to s.Traps. (increased_deployment's
+// multi-trap fan-out moved to the create_zone system — see the body.)
 //
 // Must be called under s.mu write lock.
 func (s *GameState) plantTrapLocked(unit *Unit, cfg TrapConfig) {
 	if unit == nil {
 		return
 	}
+	// increased_deployment migrated to a data perk: an abilityFields row adds to
+	// each trap's create_zone `count`, so the multi-trap fan-out is now the zone
+	// system's job (createZoneConfig.Count / zoneSpreadPosition), not this legacy
+	// place_trap runtime. Only the primary trap is planted here.
 	s.plantOneTrapLocked(unit, cfg, 0)
-	if !containsString(unit.PerkIDs, "increased_deployment") {
-		return
-	}
-	bonusCount := 1
-	if bd := perkDefByID("increased_deployment"); bd != nil {
-		if v, ok := bd.ConfigForRank(unit.Rank)["bonusTrapCount"]; ok && v > 0 {
-			bonusCount = int(v)
-		}
-	}
-	for i := 1; i <= bonusCount; i++ {
-		s.plantOneTrapLocked(unit, cfg, i)
-	}
 }
 
 // plantOneTrapLocked is the single-trap plant primitive used by plantTrapLocked
@@ -1010,10 +977,8 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, cfg TrapConfig, bonusIndex in
 		trap.Radius = cfg.Radius * mods.RadiusMultiplier
 		trap.DamagePerSecond = cfg.DamagePerSecond * mods.EffectMultiplier
 		trap.SlowMultiplier = amplifySlow(cfg.SlowMultiplier, mods.EffectMultiplier)
-		// barbed_field: ramp values scale with EffectMultiplier so amplified_effects
-		// stacks the way the player expects (more ramp, harder cap).
-		trap.BarbedFieldRampPerSec = specific.BarbedFieldRampPerSec * mods.EffectMultiplier
-		trap.BarbedFieldMaxBonusDPS = specific.BarbedFieldMaxBonusDPS * mods.EffectMultiplier
+		// barbed_field migrated to a data perk (has_perk-gated Barbed stacking
+		// status in caltrops' program) — nothing to snapshot here anymore.
 		// ascendant_infusion → Electrified Caltrops. Bonus damage scales with
 		// EffectMultiplier; stun odds/duration/cooldown are carried as-is so
 		// tuning remains predictable (tuning chance with effectMult would be
@@ -1063,12 +1028,11 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, cfg TrapConfig, bonusIndex in
 		trap.TriggerRadius = cfg.TriggerRadius * mods.RadiusMultiplier
 		base := int(cfg.BurstDamage)
 		trap.BurstDamage = int(float64(base)*mods.EffectMultiplier + 0.5)
-		// AftershockDelaySeconds drives explosive_chain's "second detonation
-		// of the trap" (a re-blast of the trap itself). Cataclysm's secondary
-		// fires INDEPENDENTLY via PendingCataclysms — each detonation (initial
-		// and chain aftershock) schedules its own Cataclysm follow-up, so
-		// owning both perks gives 4 total explosions instead of 2.
-		trap.AftershockDelaySeconds = specific.AftershockDelaySeconds
+		// explosive_chain migrated to a data perk (maxTicks on explosive_trap's
+		// Detonation zone), so the legacy re-blast is no longer fed from the perk;
+		// Trap.AftershockDelaySeconds stays 0 (the aftershock scheduling below and
+		// overload_protocol's Cataclysm interaction remain until that gold perk
+		// migrates, but nothing arms them anymore).
 		trap.OverloadCataclysmDelaySeconds = specific.OverloadCataclysmDelaySeconds
 		trap.OverloadCataclysmSpriteScale = specific.OverloadCataclysmSpriteScale
 		trap.OverloadCataclysmExplosionSpriteScale = specific.OverloadCataclysmExplosionSpriteScale

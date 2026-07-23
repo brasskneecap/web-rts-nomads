@@ -19,7 +19,7 @@ import type {
 import type { CraftCatalogEntry, DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification, ZoneInspectionInfo } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs, initBuildingStyleRenders } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
-import { UNIT_DEF_MAP, initPathAttackOrigin, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
+import { UNIT_DEF_MAP, initPathAttackOrigin, initPathBounds, initPathShadow, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs, initPerkRanksFromPaths } from '../maps/perkDefs'
 import { initItemDefs, ITEM_DEF_MAP, DEFAULT_CONSUMABLE_RANGE } from '../maps/itemDefs'
@@ -202,6 +202,7 @@ export class GameClient {
     initUnitDefs(unitDefs.units)
     initPathBounds(unitDefs.paths)
     initPathAttackOrigin(unitDefs.paths)
+    initPathShadow(unitDefs.paths)
     initPathsByUnitType(unitDefs.pathsByUnit)
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
@@ -228,6 +229,7 @@ export class GameClient {
         initUnitDefs(units)
         initPathBounds(paths)
         initPathAttackOrigin(paths)
+        initPathShadow(paths)
         initPathsByUnitType(pathsByUnit)
         initBuildingDefs(buildingDefs.buildings)
         initBuildingStyleRenders(buildingDefs.buildingStyles)

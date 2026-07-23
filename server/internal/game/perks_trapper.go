@@ -138,17 +138,13 @@ func (s *GameState) trapModifiersForUnitLocked(unit *Unit) TrapModifiers {
 // trap type is known. New trap-specific perks (future Silver/Gold) plug in
 // by adding a case to trapSpecificModifiersForUnitLocked below.
 type TrapSpecificModifiers struct {
-	// AftershockDelaySeconds > 0 means the trap should fire a second blast
-	// after this delay. Currently set by explosive_chain (applies only to
-	// explosive_trap).
-	AftershockDelaySeconds float64
+	// explosive_chain migrated to a pure data perk: an abilityFields row adds to
+	// explosive_trap's Detonation zone maxTicks (one extra blast per +1), so the
+	// legacy trap runtime no longer carries an aftershock delay from the perk.
 
-	// barbed_field (silver): caltrops-only ramping bonus DPS. RampPerSecond
-	// is added to the victim-specific damage-per-second for every second the
-	// victim has been in a barbed zone (BarbedFieldStaySeconds). MaxBonusDPS
-	// caps the bonus so ramp cannot spiral unbounded.
-	BarbedFieldRampPerSec  float64
-	BarbedFieldMaxBonusDPS float64
+	// barbed_field migrated to a pure data perk: a has_perk gate in caltrops'
+	// program applies a "Barbed" stacking status whose per-stack tick is the
+	// ramp. No trap-modifier field is needed — see the perk's json.
 
 	// exposed_weakness migrated to a pure data perk: it is now a has_perk gate
 	// inside marker_trap's program that adds a `damageDealt` (Weaken) status to
@@ -225,15 +221,6 @@ func (s *GameState) trapSpecificModifiersForUnitLocked(unit *Unit, trapType stri
 			continue
 		}
 		switch perkID {
-		case "explosive_chain":
-			if trapType == "explosive_trap" {
-				m.AftershockDelaySeconds = def.Config["aftershockDelaySeconds"]
-			}
-		case "barbed_field":
-			if trapType == "caltrops" {
-				m.BarbedFieldRampPerSec = def.Config["rampPerSecond"]
-				m.BarbedFieldMaxBonusDPS = def.Config["maxBonusDamagePerSecond"]
-			}
 		case "lasting_flames":
 			if trapType == "fire_pit" {
 				// "Damage-as-debuff" mode: duration is the only tunable. The
@@ -327,10 +314,7 @@ type EffectiveTrapStats struct {
 	MarkDuration    float64 // marker_trap
 
 	// ── Silver trap-specific upgrade stats (zero when the gating perk is absent) ──
-	BarbedFieldRampPerSec     float64 // caltrops + barbed_field
-	BarbedFieldMaxBonusDPS    float64 // caltrops + barbed_field
 	LastingFlamesBurnDuration float64 // fire_pit + lasting_flames (burn DPS == fire_pit DamagePerSecond)
-	AftershockDelaySeconds    float64 // explosive_trap + explosive_chain
 }
 
 // EffectiveTrapSnapshotLocked computes the live compounded trap stats for a
@@ -359,10 +343,7 @@ func (s *GameState) EffectiveTrapSnapshotLocked(unit *Unit) *protocol.EffectiveT
 		SlowMultiplier:            stats.SlowMultiplier,
 		MarkMultiplier:            stats.MarkMultiplier,
 		MarkDuration:              stats.MarkDuration,
-		BarbedFieldRampPerSec:     stats.BarbedFieldRampPerSec,
-		BarbedFieldMaxBonusDPS:    stats.BarbedFieldMaxBonusDPS,
 		LastingFlamesBurnDuration: stats.LastingFlamesBurnDuration,
-		AftershockDelaySeconds:    stats.AftershockDelaySeconds,
 	}
 	return snap
 }
@@ -510,8 +491,6 @@ func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, boo
 		out.Radius = tc.Radius * m.RadiusMultiplier
 		out.DamagePerSecond = tc.DamagePerSecond * m.EffectMultiplier
 		out.SlowMultiplier = amplifySlow(tc.SlowMultiplier, m.EffectMultiplier)
-		out.BarbedFieldRampPerSec = specific.BarbedFieldRampPerSec * m.EffectMultiplier
-		out.BarbedFieldMaxBonusDPS = specific.BarbedFieldMaxBonusDPS * m.EffectMultiplier
 	case "fire_pit":
 		out.Radius = tc.Radius * m.RadiusMultiplier
 		out.DamagePerSecond = tc.DamagePerSecond * m.EffectMultiplier
@@ -524,7 +503,6 @@ func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, boo
 		out.TriggerRadius = tc.TriggerRadius * m.RadiusMultiplier
 		base := int(tc.BurstDamage)
 		out.BurstDamage = int(float64(base)*m.EffectMultiplier + 0.5)
-		out.AftershockDelaySeconds = specific.AftershockDelaySeconds
 	case "marker_trap":
 		out.Radius = tc.Radius * m.RadiusMultiplier
 		out.MarkMultiplier = tc.MarkMultiplier * m.EffectMultiplier

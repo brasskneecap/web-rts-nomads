@@ -146,6 +146,30 @@
       @update:model-value="commitEnumLike"
     />
 
+    <!-- animation: a visual picker over ALL sprite sources (effects /
+         projectiles / beams / objects@state / uploads). Used by create_zone's
+         presentation + visible-sprite fields. Shows a live thumbnail + the
+         stored scheme + a Browse button opening the AnimationPicker modal.
+         Legacy bare values ("caltrops", "explosion") normalize to a scheme by
+         the field's default source (sprite → object, everything else → effect)
+         so old catalog data still renders and seeds the picker correctly. -->
+    <div v-else-if="field.control === 'animation'" class="sf-animation" data-test="sf-animation">
+      <span class="sf-animation__cell">
+        <AnimationRefCanvas :animation="normalizedAnimation" :size="40" />
+      </span>
+      <code class="sf-animation__code">{{ normalizedAnimation || '(none)' }}</code>
+      <button type="button" class="sf-animation__browse" data-test="sf-animation-browse" @click="animPickerOpen = true">
+        Browse…
+      </button>
+      <AnimationPicker
+        v-if="animPickerOpen"
+        :model-animation="normalizedAnimation"
+        :ability-id="abilityId ?? ''"
+        @update:animation="commitAnimation"
+        @close="animPickerOpen = false"
+      />
+    </div>
+
     <!-- sentinel_number: the match-attack-range pattern from
          AbilityEditorPanel.vue's castRangeMatchesAttack — a checkbox that
          swaps the sentinel string in/out, plus a number input while unchecked. -->
@@ -243,6 +267,9 @@ import type { SchemaField as SchemaFieldDescriptor } from '@/game/abilities/prog
 import type { TargetQueryDef } from '@/game/abilities/program/abilityProgram'
 import EditorField from '@/components/editor/EditorField.vue'
 import FilterableSelect, { type FilterableOption } from '@/components/editor/FilterableSelect.vue'
+import { parseAnimationRef } from '@/game/rendering/animationRef'
+import AnimationRefCanvas from './AnimationRefCanvas.vue'
+import AnimationPicker from './AnimationPicker.vue'
 import TargetQueryEditor from './TargetQueryEditor.vue'
 import { ALIVE_STATE_OPTIONS, targetQueryOptionHint, targetQueryOptionLabel } from './targetQueryHints'
 import type { AbilityBuilderCatalogs } from './useAbilityBuilder'
@@ -264,6 +291,10 @@ const props = defineProps<{
   /** Named-context keys this ability saves to (outputs + store_targets),
    *  forwarded to the target_query control's "Saved Value" picker. */
   savedNames?: string[]
+  /** The ability (or perk) id being edited — the custom-upload key for the
+   *  `animation` control's Upload tab. Optional: without it the picker still
+   *  works for the built-in sources, only per-ability uploads are unavailable. */
+  abilityId?: string
 }>()
 
 const emit = defineEmits<{
@@ -495,10 +526,40 @@ function titleCaseAssetId(id: string): string {
 }
 
 const assetOptions = computed<FilterableOption[]>(() => {
-  const isProjectile = props.field.key.toLowerCase() === 'projectile'
+  const key = props.field.key.toLowerCase()
+  // `sprite` resolves against the OBJECT sprite-sets (a visible create_zone's
+  // ground art), `projectile` against the projectile catalog, every other
+  // asset field against the effect catalog. Sprites and projectiles have no
+  // display name of their own, so the picker Title-Cases the id ("fire_pit" →
+  // "Fire Pit") while the STORED value stays the raw id.
+  if (key === 'sprite') {
+    return props.catalogs.objectSprites.map((v) => ({ id: v, label: titleCaseAssetId(v) }))
+  }
+  const isProjectile = key === 'projectile'
   const list = isProjectile ? props.catalogs.projectiles : props.catalogs.effects
   return list.map((v) => ({ id: v, label: isProjectile ? titleCaseAssetId(v) : v }))
 })
+
+// ── animation ──────────────────────────────────────────────────────────────
+// The animation control stores a scheme string ("effect:x", "object:x@state",
+// …). Older catalog data stored a BARE id — an effect name for `presentation`,
+// an object key for `sprite`. normalizedAnimation upgrades a bare value to a
+// scheme by the field's default source so old data renders and seeds the picker;
+// newly-picked values are always full schemes.
+const animPickerOpen = ref(false)
+
+const defaultAnimSource = computed(() => (props.field.key.toLowerCase() === 'sprite' ? 'object' : 'effect'))
+
+const normalizedAnimation = computed(() => {
+  const v = typeof props.modelValue === 'string' ? props.modelValue : ''
+  if (!v) return ''
+  return parseAnimationRef(v) ? v : `${defaultAnimSource.value}:${v}`
+})
+
+function commitAnimation(a: string) {
+  emit('update:modelValue', a)
+  animPickerOpen.value = false
+}
 
 // ── sentinel_number ─────────────────────────────────────────────────────
 const matchesAttackRange = computed(() => props.modelValue === 'match_attack_range')
@@ -599,6 +660,49 @@ function commitContextRef(e: Event) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.sf-animation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sf-animation__cell {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 2px;
+  background: rgba(8, 14, 24, 0.6);
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+}
+
+.sf-animation__code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  /* Strip the global `code` box (light var(--code-bg) + padding) — unreadable
+     on the dark inspector. Just gold text. */
+  color: var(--ed-brass);
+  background: transparent;
+  padding: 0;
+}
+
+.sf-animation__browse {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--ed-brass);
+  background: rgba(212, 168, 71, 0.1);
+  border: 1px solid var(--ed-line-strong);
+  border-radius: var(--ed-radius);
 }
 
 .sf-note {

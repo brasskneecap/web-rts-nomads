@@ -411,20 +411,10 @@ type UnitPerkState struct {
 	// the same cadence so stuns happen "alongside the damage popup".
 	ElectrifiedBonusAccumulator float64
 
-	// ── barbed_field (silver trapper) ─────────────────────────────────────────
-	// BarbedFieldStaySeconds accumulates the elapsed time the victim has been
-	// inside ANY barbed-field caltrops zone without a break. Ramping bonus DPS
-	// is computed from this accumulator by the caltrops onStay effect. Resets
-	// to 0 in tickTrapperSilverDebuffsLocked on any tick the victim is NOT in
-	// a barbed caltrops this tick (one-tick exit window).
-	//
-	// BarbedFieldInZoneThisTick is a per-tick scratch flag set true by caltrops
-	// onStay when the trap has barbed_field armed. Consumed and cleared in
-	// tickTrapperSilverDebuffsLocked each tick. Shared across all barbed
-	// caltrops hitting the same victim in one tick so the accumulator only
-	// advances once per tick regardless of how many overlapping zones hit.
-	BarbedFieldStaySeconds    float64
-	BarbedFieldInZoneThisTick bool
+	// barbed_field migrated to a data perk: its ramping bonus is now a
+	// has_perk-gated "Barbed" stacking status in caltrops' program (each
+	// independent stack ticks a flat bonus), so no per-unit accumulator lives
+	// here anymore.
 
 	// ── burn debuff (lasting_flames + Flame Collapse) ────────────────────────
 	// Burn stacks per source (up to maxDebuffStacks). Each stack runs its own

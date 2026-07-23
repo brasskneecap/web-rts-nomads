@@ -44,6 +44,14 @@ type pathCatalogFile struct {
 	// Opaque client-render data: the server never reads it, only persists
 	// and serves it back, same as Bounds.
 	AttackOrigin json.RawMessage `json:"attackOrigin,omitempty"`
+	// Shadow is an optional per-path override of the unit's ground-shadow
+	// tuning (enabled/radiusX/radiusY/opacity/offsetX/offsetY) — mirrors
+	// UnitDef.Shadow. A path variant whose sprite sits differently on the
+	// ground (or is simply bigger) may want its own blob shadow rather than
+	// inheriting the base unit's. Opaque client-render passthrough, exactly
+	// like Bounds/AttackOrigin: the server never reads it, only persists and
+	// serves it back.
+	Shadow json.RawMessage `json:"shadow,omitempty"`
 	// VisionRange overrides BaseVisionRange for units on this path, in world pixels.
 	// When 0 or absent, the unit's BaseVisionRange (from its unit def) is used.
 	VisionRange float64 `json:"visionRange,omitempty"`
@@ -194,6 +202,12 @@ var pathBoundsByPath = map[string]json.RawMessage{}
 // (see PathBoundsEntry / ListPathBounds) so the game client's existing
 // fetch is sufficient; the server never reads it.
 var pathAttackOriginByPath = map[string]json.RawMessage{}
+
+// pathShadowByPath holds the optional per-path ground-shadow override, keyed by
+// path id. Empty when a path JSON omits the field. Mirrors pathBoundsByPath /
+// pathAttackOriginByPath exactly — same opaque client-render passthrough,
+// served via the /catalog/units "paths" entries (PathBoundsEntry.Shadow).
+var pathShadowByPath = map[string]json.RawMessage{}
 
 // pathVisionRangeByPath stores the optional per-path base vision range in world
 // pixels, keyed by path id (e.g. "marksman": 448). Zero means "use the unit
@@ -463,6 +477,7 @@ type PathBoundsEntry struct {
 	Path         string          `json:"path"`
 	Bounds       json.RawMessage `json:"bounds"`
 	AttackOrigin json.RawMessage `json:"attackOrigin,omitempty"`
+	Shadow       json.RawMessage `json:"shadow,omitempty"`
 }
 
 // ListPathBounds returns every path that declared a bounds override and/or
@@ -475,11 +490,14 @@ type PathBoundsEntry struct {
 func ListPathBounds() []PathBoundsEntry {
 	pathCatalogMu.RLock()
 	defer pathCatalogMu.RUnlock()
-	seen := make(map[string]struct{}, len(pathBoundsByPath)+len(pathAttackOriginByPath))
+	seen := make(map[string]struct{}, len(pathBoundsByPath)+len(pathAttackOriginByPath)+len(pathShadowByPath))
 	for path := range pathBoundsByPath {
 		seen[path] = struct{}{}
 	}
 	for path := range pathAttackOriginByPath {
+		seen[path] = struct{}{}
+	}
+	for path := range pathShadowByPath {
 		seen[path] = struct{}{}
 	}
 	out := make([]PathBoundsEntry, 0, len(seen))
@@ -488,6 +506,7 @@ func ListPathBounds() []PathBoundsEntry {
 			Path:         path,
 			Bounds:       pathBoundsByPath[path],
 			AttackOrigin: pathAttackOriginByPath[path],
+			Shadow:       pathShadowByPath[path],
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
@@ -705,6 +724,7 @@ type pathDerivedMaps struct {
 	modifiersByKey        map[string]pathModifierDef
 	boundsByPath          map[string]json.RawMessage
 	attackOriginByPath    map[string]json.RawMessage
+	shadowByPath          map[string]json.RawMessage
 	visionRangeByPath     map[string]float64
 	projectileByPath      map[string]string
 	damageTypeByPath      map[string]DamageType
@@ -725,6 +745,7 @@ func newPathDerivedMaps() *pathDerivedMaps {
 		modifiersByKey:        make(map[string]pathModifierDef, 16),
 		boundsByPath:          map[string]json.RawMessage{},
 		attackOriginByPath:    map[string]json.RawMessage{},
+		shadowByPath:          map[string]json.RawMessage{},
 		visionRangeByPath:     map[string]float64{},
 		projectileByPath:      map[string]string{},
 		damageTypeByPath:      map[string]DamageType{},
@@ -749,6 +770,7 @@ func livePathDerivedMaps() *pathDerivedMaps {
 		modifiersByKey:        pathModifiersByKey,
 		boundsByPath:          pathBoundsByPath,
 		attackOriginByPath:    pathAttackOriginByPath,
+		shadowByPath:          pathShadowByPath,
 		visionRangeByPath:     pathVisionRangeByPath,
 		projectileByPath:      pathProjectileByPath,
 		damageTypeByPath:      pathDamageTypeByPath,
@@ -798,6 +820,9 @@ func registerPathFileInto(dst *pathDerivedMaps, unitKey string, file *pathCatalo
 	}
 	if len(file.AttackOrigin) > 0 {
 		dst.attackOriginByPath[file.Path] = file.AttackOrigin
+	}
+	if len(file.Shadow) > 0 {
+		dst.shadowByPath[file.Path] = file.Shadow
 	}
 	if file.VisionRange > 0 {
 		dst.visionRangeByPath[file.Path] = file.VisionRange
@@ -937,6 +962,9 @@ func clonePathCatalogFile(file *pathCatalogFile) *pathCatalogFile {
 	}
 	if file.AttackOrigin != nil {
 		cp.AttackOrigin = append(json.RawMessage(nil), file.AttackOrigin...)
+	}
+	if file.Shadow != nil {
+		cp.Shadow = append(json.RawMessage(nil), file.Shadow...)
 	}
 	if file.Abilities != nil {
 		abilities := append([]string(nil), (*file.Abilities)...)

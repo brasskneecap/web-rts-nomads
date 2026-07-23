@@ -68,6 +68,7 @@ func TestActionTargetingShape_MatchesExecuteUsage(t *testing.T) {
 		ActionSummonUnit:       false, // spawns near the caster only
 		ActionPlaceTrap:        false, // plants at the caster's position via plantTrapLocked; ignores targets (ability_exec_place_trap.go)
 		ActionConsumeZone:      false, // ends the enclosing zone via ctx.CurrentZoneID; ignores targets (ability_zone.go)
+		ActionSetZoneVisual:    false, // changes the enclosing zone's visual via ctx.currentZone; ignores targets (ability_zone.go)
 		ActionCreateZone:       false, // spawns at PositionRef, not a unit query
 		ActionChargeFireVolley: false, // enqueues a volley; targets re-picked at launch
 

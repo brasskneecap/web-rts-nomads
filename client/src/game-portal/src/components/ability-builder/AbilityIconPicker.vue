@@ -74,6 +74,42 @@
         <p v-if="!beamNames.length" class="ico__hint">No beam sprites available.</p>
       </div>
 
+      <div v-else-if="tab === 'object'" class="ico__object" data-test="ability-icon-objects">
+        <div class="ico__gallery">
+          <button
+            v-for="key in objectKeys"
+            :key="key"
+            type="button"
+            class="ico__item"
+            :class="{ 'ico__item--sel': source === 'object' && ref === key }"
+            :title="key"
+            @click="selectObject(key)"
+          >
+            <AbilityIconCanvas :icon="`object:${key}`" :size="48" />
+            <span class="ico__item-label">{{ key }}</span>
+          </button>
+          <p v-if="!objectKeys.length" class="ico__hint">No objects available.</p>
+        </div>
+
+        <!-- Animation-state selector — an object can define several states
+             (idle, exploding). Pick WHICH one's strip the icon frame is cut
+             from. Only shown once an object is chosen and it has >1 state. -->
+        <div v-if="source === 'object' && objectStates.length > 1" class="ico__states" data-test="ability-icon-object-states">
+          <span class="ico__states-label">Animation</span>
+          <div class="ico__states-row">
+            <button
+              v-for="st in objectStates"
+              :key="st"
+              type="button"
+              class="ico__state"
+              :class="{ 'ico__state--sel': objectState === st }"
+              :data-test="`ability-icon-object-state-${st}`"
+              @click="selectObjectState(st)"
+            >{{ st }}</button>
+          </div>
+        </div>
+      </div>
+
       <div v-else class="ico__upload">
         <label class="ico__upload-btn">
           <input type="file" accept="image/png" data-test="ability-icon-upload" @change="onFile" />
@@ -87,7 +123,8 @@
         </p>
       </div>
 
-      <!-- Frame slider: only for a multi-frame asset (effect sheet / projectile strip). -->
+      <!-- Frame slider: only for a multi-frame asset (effect sheet / projectile
+           strip / object animation state). -->
       <div v-if="frameCount > 1" class="ico__frames" data-test="ability-icon-frames">
         <label class="ico__frames-label" for="ico-frame">Frame</label>
         <input
@@ -126,6 +163,7 @@ import { computed, ref as vref, watch } from 'vue'
 import { listEffectNames } from '@/game/rendering/effectSprites'
 import { listBeamNames } from '@/game/rendering/beamSprites'
 import { registeredProjectileSpriteIds } from '@/game/rendering/projectileSpriteSheets'
+import { listObjectSpriteKeys, listObjectAnimationStates } from '@/game/rendering/objectSprites'
 import {
   parseAbilityIcon,
   formatAbilityIcon,
@@ -153,6 +191,7 @@ const TABS = [
   { id: 'effect', label: 'Effects' },
   { id: 'projectile', label: 'Projectiles' },
   { id: 'beam', label: 'Beams' },
+  { id: 'object', label: 'Objects' },
   { id: 'upload', label: 'Upload' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
@@ -160,21 +199,26 @@ type TabId = (typeof TABS)[number]['id']
 const effectNames = listEffectNames()
 const beamNames = listBeamNames()
 const projectileIds = registeredProjectileSpriteIds().sort()
+const objectKeys = listObjectSpriteKeys()
 
 // Draft selection, seeded from the current icon.
 const parsed = parseAbilityIcon(props.modelIcon)
 const source = vref<AbilityIconSource>(parsed?.source ?? 'effect')
 const ref = vref<string>(parsed?.ref ?? '')
-const frame = vref<number>(parsed?.source === 'effect' || parsed?.source === 'projectile' ? parsed.frame : 0)
+const frame = vref<number>(parsed && parsed.source !== 'key' ? parsed.frame : 0)
+const objectState = vref<string>(parsed?.source === 'object' ? parsed.state : 'idle')
 const tab = vref<TabId>(source.value === 'key' ? 'effect' : source.value)
+
+// The animation states the currently-selected object defines.
+const objectStates = computed(() => (source.value === 'object' && ref.value ? listObjectAnimationStates(ref.value) : []))
 
 // frameCount is re-derived whenever the chosen asset changes. Projectile counts
 // need the image decoded, so a fresh selection nudges it once the image lands.
 const frameCount = vref(1)
 function refreshFrameCount() {
-  frameCount.value = ref.value ? abilityIconFrameCount(source.value, ref.value) : 1
+  frameCount.value = ref.value ? abilityIconFrameCount(source.value, ref.value, objectState.value) : 1
 }
-watch([source, ref], () => {
+watch([source, ref, objectState], () => {
   refreshFrameCount()
   // Projectile art may still be decoding — re-check on load so a strip reveals
   // its frames. Effects already know their count from the manifest.
@@ -191,11 +235,26 @@ watch(frameCount, (n) => {
   if (frame.value > n - 1) frame.value = Math.max(0, n - 1)
 })
 
-const draftIcon = computed(() => (ref.value ? formatAbilityIcon(source.value, ref.value, frame.value) : ''))
+const draftIcon = computed(() =>
+  ref.value ? formatAbilityIcon(source.value, ref.value, frame.value, objectState.value) : '',
+)
 
 function select(s: AbilityIconSource, r: string) {
   source.value = s
   ref.value = r
+  frame.value = 0
+}
+
+function selectObject(key: string) {
+  source.value = 'object'
+  ref.value = key
+  // Default to idle when switching objects; the state row lets the author change it.
+  objectState.value = 'idle'
+  frame.value = 0
+}
+
+function selectObjectState(st: string) {
+  objectState.value = st
   frame.value = 0
 }
 
@@ -294,9 +353,14 @@ async function onFile(e: Event) {
 }
 
 .ico__preview-code {
+  /* Strip the global `code` rule's light box (background:var(--code-bg),
+     padding, mono) — inside the dark editor it renders as an unreadable
+     near-white block. Just gold text here. */
   font-family: var(--font-body);
   font-size: 0.76rem;
-  color: var(--ed-text-dim);
+  color: var(--ed-brass);
+  background: transparent;
+  padding: 0;
 }
 
 .ico__tabs {
@@ -372,6 +436,51 @@ async function onFile(e: Event) {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+
+.ico__object {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ico__states {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 2px 0;
+  border-top: 1px solid var(--ed-line);
+}
+
+.ico__states-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ed-text-dim);
+}
+
+.ico__states-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ico__state {
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ed-text-dim);
+  background: rgba(8, 14, 24, 0.4);
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+}
+
+.ico__state--sel {
+  color: var(--ed-brass);
+  border-color: var(--ed-brass);
+  background: rgba(212, 168, 71, 0.12);
 }
 
 .ico__upload {

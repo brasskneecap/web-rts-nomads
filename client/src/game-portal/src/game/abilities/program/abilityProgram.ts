@@ -59,6 +59,7 @@ export type ActionType =
   | 'apply_mark'
   | 'remove_status'
   | 'create_zone'
+  | 'set_zone_visual'
   | 'launch_projectile'
   | 'beam'
   | 'charge_fire_volley'

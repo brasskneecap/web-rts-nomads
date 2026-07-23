@@ -152,6 +152,17 @@ type DamageSource struct {
 	// the hint were still emitted, its (unitID, amount) entry would mis-color
 	// the physical remainder of the same-tick HP-diff.
 	SuppressTypeHint bool
+	// SuppressHitSplit stops applyUnitDamageWithSourceLocked from recording this
+	// instance in the per-hit split channel (recordHitDamageLocked). The client
+	// splits a unit's same-tick HP-drop into one floating number per recorded
+	// hit; suppressing the record makes N such instances collapse back into the
+	// single summed HP-diff number instead. Set by effects that deal damage in
+	// many small instances the same tick but should READ as one total — e.g.
+	// caltrops' Barbed stacking DoT, where six independent stacks ticking 6 each
+	// should show "36", not six "6"s. Default false: every pre-existing
+	// DamageSource{} keeps recording its hit exactly as before. Independent of
+	// SuppressTypeHint (color) — a caller may set either, both, or neither.
+	SuppressHitSplit bool
 	// SourceAbilityID names the composable ability whose damage this instance
 	// carries — "" means either "not from an ability" (a basic attack, a trap,
 	// a building, an item proc, a perk-triggered counter like retaliation) or

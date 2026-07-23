@@ -206,7 +206,7 @@ describe('PreviewSceneControls', () => {
     expect(config.allyCount).toBe(1)
     expect(config.targetSelector).toBe('first_enemy')
     expect(config.seed).toBe(1)
-    expect(config.durationSeconds).toBe(3)
+    expect(config.durationSeconds).toBe(10)
   })
 
   it('changing enemy count emits the new count, not a units array', async () => {

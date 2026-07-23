@@ -1,40 +1,76 @@
 {
   "path": "berserker",
-  "visionRange": 320,
   "description": "Aggressive damage dealer: more damage, attack speed, and a flat +15% move speed at every rank; slightly less HP early. Armor 18 produces ~15% damage reduction via the diminishing-returns curve.",
   "bounds": {
     "halfWidth": 24,
     "top": -80,
     "bottom": 30,
     "ringOffsetX": 0,
-    "ringOffsetY": -16
+    "ringOffsetY": 8
   },
-  "perksByRank": {
-    "bronze": ["bloodlust", "cleaving_rage", "frenzy_core", "relentless", "savage_strikes"],
-    "silver": ["blood_sustain", "executioner", "momentum"],
-    "gold": ["berserk_state", "blood_engine", "whirlwind_core"]
-  },
+  "visionRange": 320,
+  "abilities": [],
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.2,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
       "damageMultiplier": 1.5,
       "attackSpeedMultiplier": 1.5,
       "moveSpeedMultiplier": 1.15,
-      "armor": 18
-    },
-    "silver": {
-      "maxHPMultiplier": 1.4,
-      "damageMultiplier": 1.8,
-      "attackSpeedMultiplier": 1.8,
-      "moveSpeedMultiplier": 1.2,
-      "armor": 38
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
+      "armor": 18,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
     },
     "gold": {
       "maxHPMultiplier": 1.6,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
       "damageMultiplier": 2.2,
       "attackSpeedMultiplier": 2.2,
       "moveSpeedMultiplier": 1.25,
-      "armor": 58
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
+      "armor": 58,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
+    },
+    "silver": {
+      "maxHPMultiplier": 1.4,
+      "maxMPMultiplier": 0,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 1.8,
+      "attackSpeedMultiplier": 1.8,
+      "moveSpeedMultiplier": 1.2,
+      "attackRange": 0,
+      "attackRangeMultiplier": 0,
+      "armor": 38,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
     }
+  },
+  "perksByRank": {
+    "bronze": [
+      "bloodlust",
+      "cleaving_rage",
+      "frenzy_core",
+      "relentless",
+      "savage_strikes"
+    ],
+    "gold": [
+      "berserk_state",
+      "blood_engine",
+      "whirlwind_core"
+    ],
+    "silver": [
+      "blood_sustain",
+      "executioner",
+      "momentum"
+    ]
   }
 }

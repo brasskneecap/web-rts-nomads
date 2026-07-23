@@ -99,6 +99,14 @@ export function damageNumbersForFrameIndex(
 ): PreviewDamageNumberSpec[] {
   const casterOwnerId = findCasterOwnerId(units, casterX, casterY)
   const out: PreviewDamageNumberSpec[] = []
+  // combine-flagged damage on one unit this frame accumulates into a SINGLE
+  // popup (deal_damage's combinePopup — a stacking DoT like caltrops' Barbed,
+  // where N independent stacks each trace their own damage_applied but should
+  // read as one total). Keyed by victim id; the accumulator is the very spec
+  // already pushed into `out`, so summing mutates it in place at its original
+  // position. Mirrors the in-game combine (DamageSource.SuppressHitSplit) so the
+  // preview and a real cast show the same one number.
+  const combined = new Map<number, PreviewDamageNumberSpec>()
 
   for (const e of trace) {
     if (e.type !== 'damage_applied' && e.type !== 'healing_applied') continue
@@ -112,7 +120,7 @@ export function damageNumbersForFrameIndex(
     const victim = units.find((u) => u.id === unitId)
     if (!victim) continue
 
-    out.push({
+    const spec: PreviewDamageNumberSpec = {
       unitId,
       unitType: victim.unitType,
       x: victim.x,
@@ -121,7 +129,17 @@ export function damageNumbersForFrameIndex(
       isFriendly: casterOwnerId !== undefined && victim.ownerId === casterOwnerId,
       kind: e.type === 'healing_applied' ? 'heal' : 'normal',
       damageType: e.type === 'damage_applied' && typeof p.type === 'string' ? p.type : undefined,
-    })
+    }
+
+    if (e.type === 'damage_applied' && p.combine === true) {
+      const existing = combined.get(unitId)
+      if (existing) {
+        existing.amount += amount
+        continue
+      }
+      combined.set(unitId, spec)
+    }
+    out.push(spec)
   }
 
   return out

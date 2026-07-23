@@ -92,10 +92,16 @@ func init() {
 			return out
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "asset", Label: "Asset", Control: "asset", Section: "Presentation"},
+			// `asset` uses the `animation` control — the same AnimationPicker as
+			// create_zone's visual — so a presentation can be any source (effect /
+			// projectile / beam / object@state / uploaded image), not just an
+			// effect id. The at-point Execute renders a server-def'd effect via the
+			// EffectSnapshot path and everything else via a transient decal.
+			{Key: "asset", Label: "Asset", Control: "animation", Section: "Presentation"},
 			{Key: "position", Label: "Position", Control: "context_ref", Section: "Presentation"},
 			{Key: "scale", Label: "Scale", Control: "number", Section: "Presentation"},
-			{Key: "renderLayer", Label: "Render Layer", Control: "enum", Section: "Presentation"},
+			{Key: "duration", Label: "Decal Duration", Control: "duration", Section: "Presentation"},
+			{Key: "renderLayer", Label: "Render Layer", Control: "enum", Options: []string{"in_front_of_units", "behind_units"}, Section: "Presentation"},
 			{Key: "presentationId", Label: "Presentation ID", Control: "text", Section: "Presentation"},
 			// bindToStatusDuration: attach the asset to the afflicted unit for the
 			// enclosing status's duration (valid only in an apply_status_duration
@@ -128,7 +134,7 @@ func init() {
 					// Apply every time the zone re-applies it, so queueing here
 					// unconditionally stacked one flame per tick. See
 					// refreshEffectOnUnitForDurationLocked.
-					s.refreshEffectOnUnitForDurationLocked(u, c.Asset, ctx.CurrentStatus.Remaining, c.Scale)
+					s.refreshEffectOnUnitForDurationLocked(u, animationEffectRef(c.Asset), ctx.CurrentStatus.Remaining, c.Scale)
 					ctx.trace("presentation_played", ctx.currentActionPath, map[string]any{
 						"asset":    c.Asset,
 						"unit":     u.ID,
@@ -150,7 +156,7 @@ func init() {
 					if u == nil {
 						continue
 					}
-					s.playEffectOnUnitLocked(u, c.Asset)
+					s.playEffectOnUnitLocked(u, animationEffectRef(c.Asset))
 					hit = append(hit, id)
 				}
 				ctx.trace("presentation_played", ctx.currentActionPath, map[string]any{
@@ -160,11 +166,15 @@ func init() {
 				return hit
 			}
 
-			// At-point: one effect at a resolved world position. Targets pass
+			// At-point: one animation at a resolved world position. Targets pass
 			// through unchanged (this action doesn't filter/produce a target
 			// set, matching wait/store_targets' pass-through Execute pattern).
 			pos := s.resolveContextPositionLocked(ctx, &c.Position, ctx.CastPoint)
-			s.playEffectAtPointLocked(c.Asset, pos.X, pos.Y, c.Scale)
+			// Layer: presentations read as a burst over the target, so default to
+			// IN FRONT of units (matching the effect renderer's above-units pass);
+			// only "behind_units" pushes it to the ground layer.
+			aboveUnits := c.RenderLayer != "behind_units"
+			s.playAnimationAtPointLocked(ctx, c.Asset, pos, c.Scale, c.Duration, aboveUnits)
 
 			if c.PresentationID != "" && ctx.program != nil {
 				for i := range ctx.program.Presentations {

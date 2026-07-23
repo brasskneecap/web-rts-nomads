@@ -3,7 +3,6 @@
   "name": "Soldier",
   "faction": "human",
   "archetype": "soldier",
-  "visionRange": 400,
   "hp": 175,
   "armor": 33,
   "damage": 12,
@@ -18,28 +17,28 @@
   },
   "meatCost": 2,
   "spawnSeconds": 10,
-  "pathChances": {
-    "vanguard": 1,
-    "berserker": 1
-  },
   "capabilities": [
     "move",
     "attack"
   ],
   "trainLabel": "Train Soldier",
-  "attackType": "swing",
-  "metadata": {},
   "attackVisual": {
     "kind": "melee",
     "originX": 0,
     "originY": 0,
     "effectLength": 10
   },
+  "attackType": "swing",
   "bounds": {
     "halfWidth": 21,
     "top": -72,
     "bottom": 30,
-    "ringOffsetX": 0,
-    "ringOffsetY": -16
+    "ringOffsetX": 1,
+    "ringOffsetY": 9
+  },
+  "visionRange": 400,
+  "pathChances": {
+    "berserker": 1,
+    "vanguard": 1
   }
 }

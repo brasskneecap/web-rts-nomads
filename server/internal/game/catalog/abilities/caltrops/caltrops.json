@@ -9,10 +9,12 @@
     "trap"
   ],
   "category": "offensive",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
-  "icon": "perk-caltrops",
+  "icon": "object:caltrops",
   "casterAnimation": "Attacking",
   "schemaVersion": 2,
   "program": {
@@ -39,6 +41,8 @@
               "radius": 60,
               "duration": 12,
               "tickInterval": 1,
+              "count": 1,
+              "spreadDistance": 50,
               "sprite": "caltrops",
               "triggers": [
                 {
@@ -58,18 +62,6 @@
                       },
                       "outputs": {
                         "targets": "caught"
-                      }
-                    },
-                    {
-                      "id": "spikes",
-                      "type": "deal_damage",
-                      "input": {
-                        "targets": {
-                          "key": "caught"
-                        }
-                      },
-                      "config": {
-                        "amount": 6
                       }
                     },
                     {
@@ -99,6 +91,61 @@
                                 }
                               }
                             ]
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "id": "barbed_gate",
+                      "type": "conditional",
+                      "config": {
+                        "conditions": [
+                          {
+                            "op": "has_perk",
+                            "right": "barbed_field"
+                          }
+                        ],
+                        "then": [
+                          {
+                            "id": "barbed",
+                            "type": "apply_status_duration",
+                            "input": {
+                              "targets": {
+                                "key": "caught"
+                              }
+                            },
+                            "config": {
+                              "name": "Barbed",
+                              "duration": 6,
+                              "stacking": "stack",
+                              "maxStacks": 6,
+                              "tickInterval": 1,
+                              "triggers": [
+                                {
+                                  "id": "barbed_tick",
+                                  "type": "on_tick",
+                                  "actions": [
+                                    {
+                                      "id": "barb_dmg",
+                                      "type": "deal_damage",
+                                      "config": {
+                                        "amount": 6,
+                                        "combinePopup": true
+                                      }
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          }
+                        ],
+                        "else": [
+                          {
+                            "id": "spikes",
+                            "type": "deal_damage",
+                            "config": {
+                              "amount": 6
+                            }
                           }
                         ]
                       }

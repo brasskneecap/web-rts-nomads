@@ -1,4 +1,4 @@
-import type { UnitAttackOrigin } from '@/game/maps/unitDefs'
+import type { UnitAttackOrigin, UnitBounds, UnitShadow } from '@/game/maps/unitDefs'
 
 // PathRankStats models the per-rank multipliers/flats authored for a
 // promotion path rank (bronze/silver/gold). All fields are optional numbers;
@@ -44,7 +44,11 @@ export interface AuthoredPathDef {
   // not merge with whatever the server currently has.
   abilities?: string[]
   channelLoop?: { start: number; end: number }
-  bounds?: unknown
+  // Per-path footprint + shadow overrides, authored via UnitSpritePreview's
+  // "Anchors & bounds" overlay (path-keyed). Modeled so v-model:bounds /
+  // v-model:shadow round-trip cleanly, same as attackOrigin above.
+  bounds?: Partial<UnitBounds>
+  shadow?: UnitShadow
   ranks?: Record<string, PathRankStats>
   // Per-facing attack-origin override for this path's art (same shape/editor
   // as the base unit's attackOrigin — UnitSpritePreview's fire-test reads it
@@ -77,7 +81,7 @@ export interface AuthoredPathDef {
 // or written back into the persisted def.
 const MODELED_PATH_KEYS = [
   'path', 'description', 'visionRange', 'projectile', 'damageType', 'attackType',
-  'projectileScale', 'abilities', 'channelLoop', 'bounds', 'ranks', 'attackOrigin', 'perksByRank',
+  'projectileScale', 'abilities', 'channelLoop', 'bounds', 'shadow', 'ranks', 'attackOrigin', 'perksByRank',
   'abilityPoolsByRank',
   'abilityStatsByRank',
 ] as const

@@ -205,6 +205,14 @@ func (s *GameState) spawnAbilityStatusLocked(st *AbilityStatus) {
 	}
 	key := statusStackKey(st.AbilityID, st.Name)
 
+	// syncTickTimer, when >= 0, is the tick phase a newly-added "stack" instance
+	// adopts from an existing stack of the same key on this unit (set in the
+	// stack branch below) so all stacks fire on_status_tick TOGETHER instead of
+	// drifting into separate frames when applied on different ticks — which would
+	// render N separate floating damage numbers instead of one combined total
+	// (caltrops' Barbed). DPS/ramp/fade are unchanged; only the phase aligns.
+	syncTickTimer := -1.0
+
 	if st.Stacking != "stack" {
 		// refresh (default): find an existing status sharing this key on the
 		// same target and extend it (refresh-longer) instead of spawning a
@@ -228,6 +236,9 @@ func (s *GameState) spawnAbilityStatusLocked(st *AbilityStatus) {
 		for _, existing := range s.AbilityStatuses {
 			if existing.TargetUnitID == st.TargetUnitID && statusStackKey(existing.AbilityID, existing.Name) == key {
 				count++
+				if syncTickTimer < 0 {
+					syncTickTimer = existing.tickTimer
+				}
 			}
 		}
 		maxStacks := st.MaxStacks
@@ -258,6 +269,12 @@ func (s *GameState) spawnAbilityStatusLocked(st *AbilityStatus) {
 		}
 	} else {
 		st.tickTimer = st.TickInterval
+		// Adopt an existing same-key stack's phase (see syncTickTimer above) so
+		// stacks applied on different ticks still fire together — one combined
+		// damage number, not one per stack.
+		if syncTickTimer >= 0 {
+			st.tickTimer = syncTickTimer
+		}
 	}
 	st.ID = abilityStatusIDString(s.nextAbilityStatusID)
 	s.nextAbilityStatusID++

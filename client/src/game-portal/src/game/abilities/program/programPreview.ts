@@ -206,6 +206,6 @@ export function defaultPreviewRequest(ability: AuthoredAbilityDef): PreviewReque
     casterUnitType: '',
     casterRank: '',
     casterPath: '',
-    durationSeconds: 3,
+    durationSeconds: 10,
   }
 }

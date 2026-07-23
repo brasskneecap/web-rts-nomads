@@ -30,6 +30,7 @@ import {
 import { fetchAuthoredUnitDefs } from '@/game/units/unitEditorApi'
 import { fetchActionIcons, fetchPerkDefs } from '@/game/maps/catalog'
 import { ACTION_ICON_MAP, initActionIcons } from '@/game/maps/actionIconDefs'
+import { listObjectSpriteKeys } from '@/game/rendering/objectSprites'
 import * as tree from './programTree'
 import type { NodePath, NodeRef } from './programTree'
 
@@ -45,6 +46,10 @@ export interface AbilityBuilderCatalogs {
   categories: string[]
   autoCastSelectors: string[]
   unitTypes: string[]
+  /** Object sprite-set ids (assets/objects/<id>) a visible create_zone can
+   *  render as. Client-asset concept — enumerated via listObjectSpriteKeys(),
+   *  not a /catalog endpoint. Feeds the "Visible Sprite" field's picker. */
+  objectSprites: string[]
   /** Perks the preview can grant the caster, so a perk-gated branch can be
    *  exercised by owning the perk rather than by forcing the branch.
    *  `path` scopes a perk to one promotion path (absent = any). */
@@ -58,7 +63,7 @@ interface Snapshot {
 }
 
 function emptyCatalogs(): AbilityBuilderCatalogs {
-  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], perks: [] }
+  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], objectSprites: [], perks: [] }
 }
 
 function errorMessage(e: unknown): string {
@@ -344,6 +349,7 @@ export function useAbilityBuilder() {
         categories,
         autoCastSelectors,
         unitTypes: units.map((u) => u.type),
+        objectSprites: listObjectSpriteKeys(),
         perks: perkDefs.map((p) => ({ id: p.id, label: p.displayName || p.id, path: p.path })),
       }
     } catch (e) {

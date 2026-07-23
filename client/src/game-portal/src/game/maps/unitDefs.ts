@@ -131,8 +131,13 @@ export const DEFAULT_UNIT_BOUNDS: UnitBounds = {
   bottom: 2,
 }
 
+// Merge the authored bounds OVER the defaults rather than replacing them, so a
+// PARTIAL bounds block (e.g. the anchors overlay authoring only ringOffsetX/Y,
+// with no halfWidth/top/bottom) still yields a complete UnitBounds. Replacing
+// would leave halfWidth/bottom `undefined`, which anchors the sprite at NaN and
+// makes the unit render invisibly.
 export function getUnitBounds(def: UnitDef | undefined | null): UnitBounds {
-  return def?.bounds ?? DEFAULT_UNIT_BOUNDS
+  return def?.bounds ? { ...DEFAULT_UNIT_BOUNDS, ...def.bounds } : DEFAULT_UNIT_BOUNDS
 }
 
 // Per-path bounds override: path id (e.g. "marksman") → bounds. Populated
@@ -143,6 +148,36 @@ export let PATH_BOUNDS_MAP: Map<string, UnitBounds> = new Map()
 
 export function initPathBounds(entries: Array<{ path: string; bounds: UnitBounds }>): void {
   PATH_BOUNDS_MAP = new Map(entries.map((e) => [e.path, e.bounds]))
+}
+
+// Per-path ground-shadow override: path id → shadow config. Populated from the
+// /catalog/units `paths` array's shadow field. Mirrors PATH_BOUNDS_MAP /
+// PATH_ATTACK_ORIGIN_MAP — a path variant may want its own blob shadow, distinct
+// from the base unit's (authored via UnitSpritePreview's anchors overlay).
+export let PATH_SHADOW_MAP: Map<string, UnitShadow> = new Map()
+
+export function initPathShadow(entries: Array<{ path: string; shadow?: UnitShadow | null }>): void {
+  PATH_SHADOW_MAP = new Map(
+    entries
+      .filter((e): e is { path: string; shadow: UnitShadow } => !!e.shadow)
+      .map((e) => [e.path, e.shadow]),
+  )
+}
+
+// Resolves the shadow config for a rendered unit instance, checking the PATH's
+// authored shadow before the base unit def's — mirrors getUnitBoundsFor's
+// path-then-type precedence. Returns undefined when neither authors one, so the
+// caller falls through to resolveUnitShadow's bounds-derived default blob.
+export function getUnitShadowFor(args: {
+  path?: string | null
+  unitType?: string | null
+}): UnitShadow | undefined {
+  if (args.path && args.path !== 'none') {
+    const s = PATH_SHADOW_MAP.get(args.path)
+    if (s) return s
+  }
+  const def = args.unitType ? UNIT_DEF_MAP.get(args.unitType) : undefined
+  return def?.shadow
 }
 
 // Catalog topology: unit type → its promotion path ids, mirroring the
@@ -163,12 +198,17 @@ export function getUnitBoundsFor(args: {
   path?: string | null
   unitType?: string | null
 }): UnitBounds {
+  const def = args.unitType ? UNIT_DEF_MAP.get(args.unitType) : undefined
+  const base = getUnitBounds(def)
   if (args.path && args.path !== 'none') {
     const pathBounds = PATH_BOUNDS_MAP.get(args.path)
-    if (pathBounds) return pathBounds
+    // Merge the path override OVER the base unit's bounds — a path may author a
+    // COMPLETE bounds (its sprite is a different size) or just a PARTIAL tweak
+    // (e.g. only the ring offset via the anchors overlay). Either way it inherits
+    // any field it doesn't set from the base unit instead of nulling it out.
+    if (pathBounds) return { ...base, ...pathBounds }
   }
-  const def = args.unitType ? UNIT_DEF_MAP.get(args.unitType) : undefined
-  return getUnitBounds(def)
+  return base
 }
 
 export function getResolvedUnitAttackVisual(

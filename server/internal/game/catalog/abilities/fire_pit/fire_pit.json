@@ -42,6 +42,8 @@
               "radius": 55,
               "duration": 10,
               "tickInterval": 1,
+              "count": 1,
+              "spreadDistance": 50,
               "sprite": "fire_pit",
               "triggers": [
                 {

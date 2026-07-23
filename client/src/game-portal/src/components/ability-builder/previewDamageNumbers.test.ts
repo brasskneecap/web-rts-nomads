@@ -28,6 +28,13 @@ function healEvent(t: number, unit: number, amount: number): AbilityExecutionTra
   return { t, type: 'healing_applied', payload: { unit, amount } }
 }
 
+// A damage_applied event flagged combine — deal_damage's combinePopup, carried
+// through the trace so the preview sums many small same-tick instances (a
+// stacking DoT) into one number, mirroring the in-game combine.
+function combineDamageEvent(t: number, unit: number, amount: number, type?: string): AbilityExecutionTraceEvent {
+  return { t, type: 'damage_applied', payload: { unit, amount, combine: true, ...(type ? { type } : {}) } }
+}
+
 const CASTER_X = 0
 const CASTER_Y = 0
 
@@ -66,6 +73,41 @@ describe('damageNumbersForFrameIndex', () => {
         damageType: 'fire',
       },
     ])
+  })
+
+  it('sums combine-flagged damage on one unit in one frame into a single popup', () => {
+    const trace = [
+      combineDamageEvent(0.1, 3, 6, 'physical'),
+      combineDamageEvent(0.1, 3, 6, 'physical'),
+      combineDamageEvent(0.1, 3, 6, 'physical'),
+    ]
+    const specs = damageNumbersForFrameIndex(trace, 2, units, CASTER_X, CASTER_Y)
+    expect(specs).toHaveLength(1)
+    expect(specs[0].unitId).toBe(3)
+    expect(specs[0].amount).toBe(18)
+    expect(specs[0].damageType).toBe('physical')
+  })
+
+  it('combines only WITHIN a unit+frame — different units and unflagged hits stay separate', () => {
+    const trace = [
+      combineDamageEvent(0.1, 3, 6), // enemy, combined group
+      combineDamageEvent(0.1, 3, 6),
+      combineDamageEvent(0.1, 2, 6), // ally, its own combined group of one
+      damageEvent(0.1, 3, 25, 'fire'), // enemy, a normal unflagged hit stays its own popup
+    ]
+    const specs = damageNumbersForFrameIndex(trace, 2, units, CASTER_X, CASTER_Y)
+    const forEnemy = specs.filter((s) => s.unitId === 3).map((s) => s.amount).sort((a, b) => a - b)
+    const forAlly = specs.filter((s) => s.unitId === 2).map((s) => s.amount)
+    expect(forEnemy).toEqual([12, 25]) // combined 6+6, plus the standalone 25
+    expect(forAlly).toEqual([6])
+  })
+
+  it('does not combine flagged events that fall in different frames', () => {
+    const trace = [combineDamageEvent(0.1, 3, 6), combineDamageEvent(0.2, 3, 6)]
+    // 0.1 -> frame 2, 0.2 -> frame 4: only the frame-2 one shows here.
+    const specs = damageNumbersForFrameIndex(trace, 2, units, CASTER_X, CASTER_Y)
+    expect(specs).toHaveLength(1)
+    expect(specs[0].amount).toBe(6)
   })
 
   it('spawns a heal popup (no damageType) for a healing_applied event', () => {

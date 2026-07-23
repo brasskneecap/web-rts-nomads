@@ -3,15 +3,11 @@
   "name": "Raider",
   "faction": "raider",
   "archetype": "raider",
-  "visionRange": 256,
   "hp": 75,
-  "armor": 0,
-  "experience": 10,
   "damage": 5,
   "attackRange": 60,
   "attackSpeed": 1,
   "moveSpeed": 100,
-  "attackType": "stab",
   "resourceCost": {},
   "meatCost": 0,
   "spawnSeconds": 0,
@@ -19,12 +15,14 @@
     "move",
     "attack"
   ],
-  "trainLabel": "",
+  "attackType": "stab",
   "bounds": {
     "halfWidth": 14,
     "top": -60,
-    "bottom": 10,
-    "ringOffsetX": 0,
-    "ringOffsetY": -8
-  }
+    "bottom": 23,
+    "ringOffsetX": -1,
+    "ringOffsetY": 7
+  },
+  "experience": 10,
+  "visionRange": 256
 }

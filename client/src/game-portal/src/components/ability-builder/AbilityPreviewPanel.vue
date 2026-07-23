@@ -190,7 +190,7 @@ const sceneConfig = ref<PreviewSceneConfig>({
   allyCount: 1,
   targetSelector: 'first_enemy',
   seed: 1,
-  durationSeconds: 3,
+  durationSeconds: 10,
   casterCharge: 0,
   casterUnitType: '',
   casterRank: '',

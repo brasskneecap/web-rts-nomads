@@ -331,6 +331,11 @@ type playPresentationAtPointConfig struct {
 	// parallel-timer model as chill (the effect's own DurationTicks matches the
 	// status), so no explicit teardown is needed on expiry.
 	BindToStatusDuration bool `json:"bindToStatusDuration,omitempty"`
+	// Duration bounds a NON-effect / client-only animation played at a point as a
+	// transient decal (the every-source fallback for Asset — see the at-point
+	// Execute). A server-def'd effect uses its own authored length and ignores
+	// this. 0 → a short default.
+	Duration float64 `json:"duration,omitempty"`
 }
 
 // ── offensive ───────────────────────────────────────────────────────────

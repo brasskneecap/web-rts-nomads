@@ -417,6 +417,7 @@ import {
 } from '@/game/abilities/abilityEditorApi'
 import type { ActionSchemaBundle } from '@/game/abilities/program/programSchema'
 import type { AbilityBuilderCatalogs } from '@/components/ability-builder/useAbilityBuilder'
+import { listObjectSpriteKeys } from '@/game/rendering/objectSprites'
 import { fetchAuthoredUnitDefs } from '@/game/units/unitEditorApi'
 import { fetchUnitDefs } from '@/game/maps/catalog'
 import RiderEditor from '@/components/perk-editor/RiderEditor.vue'
@@ -918,6 +919,7 @@ watch(auraRows, (rows) => {
 const riderSchema = ref<ActionSchemaBundle | null>(null)
 const riderCatalogs = ref<AbilityBuilderCatalogs>({
   effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [],
+  objectSprites: listObjectSpriteKeys(),
   // Riders never offer a perk picker (the preview's caster-perk control is the
   // only consumer), so this stays empty rather than costing another fetch.
   perks: [],
@@ -1105,6 +1107,7 @@ onMounted(async () => {
     riderCatalogs.value = {
       effects, projectiles, damageTypes, categories, autoCastSelectors,
       unitTypes: units.map((u) => u.type),
+      objectSprites: listObjectSpriteKeys(),
       perks: [],
     }
   } catch {

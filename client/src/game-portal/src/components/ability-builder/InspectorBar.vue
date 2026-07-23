@@ -262,6 +262,7 @@
                   :model-value="selectedAction.config?.[f.key]"
                   :enums="enumsValue"
                   :catalogs="builder.catalogs.value"
+                  :ability-id="builder.form.value.id"
                   :loop-vars="loopScope.vars"
                   :variable-capable="loopScope.inLoop"
                   @update:model-value="(v) => commitActionConfig(f.key, v)"

@@ -3,10 +3,7 @@
   "name": "Raider Roc",
   "faction": "raider",
   "archetype": "raider_roc",
-  "flyer": true,
-  "visionRange": 384,
   "hp": 50,
-  "armor": 0,
   "damage": 15,
   "attackRange": 150,
   "attackSpeed": 1,
@@ -18,9 +15,7 @@
     "move",
     "attack"
   ],
-  "trainLabel": "",
   "combatProfile": "flyer_skirmisher",
-  "targetableTypes": ["ground", "flyer"],
   "attackVisual": {
     "kind": "projectile",
     "originX": 0,
@@ -30,8 +25,14 @@
   "bounds": {
     "halfWidth": 18,
     "top": -64,
-    "bottom": 10,
-    "ringOffsetX": 0,
-    "ringOffsetY": -10
-  }
+    "bottom": 17,
+    "ringOffsetX": -1,
+    "ringOffsetY": 7
+  },
+  "visionRange": 384,
+  "flyer": true,
+  "targetableTypes": [
+    "ground",
+    "flyer"
+  ]
 }

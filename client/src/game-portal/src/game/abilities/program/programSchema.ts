@@ -19,6 +19,7 @@ export type ControlType =
   | 'target_query'
   | 'context_ref'
   | 'animation_marker'
+  | 'animation'
   | 'nested_triggers'
   | (string & {})
 

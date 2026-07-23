@@ -59,6 +59,50 @@ func TestHitDamageEvents_TwoSimultaneousHits(t *testing.T) {
 	}
 }
 
+// TestHitDamageEvents_SuppressHitSplit verifies the opt-out: a damage instance
+// flagged to combine its popup records NO per-hit entry, so N such hits on one
+// unit in a tick collapse into ONE summed number (a stacking DoT like caltrops'
+// Barbed reads as its total, not N split numbers). The damage still lands
+// normally — only the split channel is suppressed.
+func TestHitDamageEvents_SuppressHitSplit(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0xB19)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := &Unit{
+		ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier",
+		Visible: true, HP: 1000, MaxHP: 1000,
+	}
+	s.nextUnitID++
+	s.addUnitLocked(target)
+
+	s.resetHitDamageEventsThisTickLocked()
+	startHP := target.HP
+
+	// Three flagged hits land this tick (three Barbed stacks ticking together).
+	landed := 0
+	for i := 0; i < 3; i++ {
+		landed += s.applyUnitDamageWithSourceLocked(target, 6, DamageSource{SuppressHitSplit: true})
+	}
+
+	if count, _ := sumHitDamageForUnit(s, target.ID); count != 0 {
+		t.Fatalf("SuppressHitSplit must record NO per-hit entries, got %d; queue=%+v", count, s.hitDamageEventsThisTick)
+	}
+	if landed <= 0 {
+		t.Fatal("flagged damage landed nothing")
+	}
+	if hpLost := startHP - target.HP; hpLost != landed {
+		t.Fatalf("flagged damage did not land normally: HP loss %d != landed %d", hpLost, landed)
+	}
+
+	// Control: without the flag the split channel is still the default.
+	s.resetHitDamageEventsThisTickLocked()
+	s.applyUnitDamageWithSourceLocked(target, 6, DamageSource{})
+	if count, _ := sumHitDamageForUnit(s, target.ID); count != 1 {
+		t.Fatalf("an unflagged hit should record one per-hit entry, got %d", count)
+	}
+}
+
 // TestHitDamageEvents_FullyMitigatedHitEmitsNothing guards the lower edge: a
 // hit that removes no HP (fully absorbed / mitigated to zero) must not emit a
 // phantom per-hit entry, or the client would try to split a popup that never

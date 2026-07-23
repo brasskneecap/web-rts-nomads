@@ -1,6 +1,10 @@
 {
   "path": "siphoner",
   "description": "Acolyte promotion path — stub. Stat tuning, projectile / damageType / projectileScale, and any ability override are deferred; rows currently mirror the default rank curve (see defaultRankCurve in path_defs.go) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Siphoner gets its formal pass. If the shipped sprites are a different pixel size than the base Acolyte, add a `bounds` field here so the selection ring / hit-test rect track the new art.",
+  "bounds": {
+    "ringOffsetX": -1,
+    "ringOffsetY": 4
+  },
   "attackOrigin": {
     "byFacing": {
       "south": {
@@ -40,11 +44,6 @@
   "abilities": [
     "siphon_life"
   ],
-  "perksByRank": {
-    "bronze": ["lingering_hex", "mark_of_weakness", "soul_leech", "withering_beam"],
-    "silver": ["amplify_damage", "chain_siphon", "dark_renewal", "shared_suffering"],
-    "gold": ["ascended_corruption", "beam_mastery", "repurposed_life"]
-  },
   "channelLoop": {
     "start": 3,
     "end": 4
@@ -61,7 +60,8 @@
       "attackRangeMultiplier": 1,
       "armor": 0,
       "dodgeChance": 0,
-      "blockChance": 0
+      "blockChance": 0,
+      "visionRange": 0
     },
     "gold": {
       "maxHPMultiplier": 1.35,
@@ -74,7 +74,8 @@
       "attackRangeMultiplier": 1,
       "armor": 0,
       "dodgeChance": 0,
-      "blockChance": 0
+      "blockChance": 0,
+      "visionRange": 0
     },
     "silver": {
       "maxHPMultiplier": 1.2,
@@ -87,7 +88,27 @@
       "attackRangeMultiplier": 1,
       "armor": 0,
       "dodgeChance": 0,
-      "blockChance": 0
+      "blockChance": 0,
+      "visionRange": 0
     }
+  },
+  "perksByRank": {
+    "bronze": [
+      "lingering_hex",
+      "mark_of_weakness",
+      "soul_leech",
+      "withering_beam"
+    ],
+    "gold": [
+      "ascended_corruption",
+      "beam_mastery",
+      "repurposed_life"
+    ],
+    "silver": [
+      "amplify_damage",
+      "chain_siphon",
+      "dark_renewal",
+      "shared_suffering"
+    ]
   }
 }

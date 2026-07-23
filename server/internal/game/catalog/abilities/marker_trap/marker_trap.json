@@ -14,7 +14,7 @@
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
-  "icon": "perk-marker-trap",
+  "icon": "object:marker_trap",
   "casterAnimation": "Attacking",
   "schemaVersion": 2,
   "program": {
@@ -41,6 +41,8 @@
               "radius": 115,
               "duration": 12,
               "tickInterval": 1,
+              "count": 1,
+              "spreadDistance": 50,
               "sprite": "marker_trap",
               "triggers": [
                 {

@@ -17,7 +17,7 @@ const t1ActionA1Path: NodePath = [{ kind: 'trigger', id: 't1' }, { kind: 'action
 const t1Path: NodePath = [{ kind: 'trigger', id: 't1' }]
 
 function emptyCatalogs(): AbilityBuilderCatalogs {
-  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], perks: [] }
+  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], objectSprites: [], perks: [] }
 }
 
 function makeProgram(): AbilityProgram {

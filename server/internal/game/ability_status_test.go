@@ -39,6 +39,48 @@ func spawnTestStatus(s *GameState, caster, target *Unit, remaining, tickInterval
 	return st
 }
 
+// TestAbilityStatus_StackAppliesSyncTickPhase: when a new "stack" instance is
+// added to a unit that already carries a stack of the same key, it adopts the
+// existing stack's tick PHASE instead of arming a fresh full interval. Without
+// this, stacks applied on different ticks (caltrops' Barbed, one per second)
+// drift into different frames and render as separate floating numbers instead
+// of one combined total. DPS/ramp/fade are unaffected — only the tick phase is
+// aligned so the instances fire together.
+func TestAbilityStatus_StackAppliesSyncTickPhase(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	target := teamCombatUnit(t, s, "p2", 50, 0)
+	target.HP, target.MaxHP = 1000, 1000
+
+	newStack := func() *AbilityStatus {
+		return &AbilityStatus{
+			AbilityID: "test_status", Name: "Barbed", CasterID: caster.ID, TargetUnitID: target.ID,
+			Remaining: 10, TickInterval: 1.0, Stacking: "stack", MaxStacks: 6,
+			Triggers: []AbilityTriggerDef{currentEventDamageTrigger("tick", TriggerOnTick, 1)},
+		}
+	}
+
+	s.spawnAbilityStatusLocked(newStack()) // stack 1: arms fresh at 1.0
+	s.tickAbilityStatusesLocked(0.3)        // its phase is now mid-interval (~0.7)
+	s.spawnAbilityStatusLocked(newStack()) // stack 2: must sync to stack 1's phase
+
+	var stacks []*AbilityStatus
+	for _, st := range s.AbilityStatuses {
+		if st.Name == "Barbed" && st.TargetUnitID == target.ID {
+			stacks = append(stacks, st)
+		}
+	}
+	if len(stacks) != 2 {
+		t.Fatalf("want 2 Barbed stacks, got %d", len(stacks))
+	}
+	if stacks[0].tickTimer != stacks[1].tickTimer {
+		t.Errorf("stacked instances did not sync tick phase: %.3f vs %.3f — they would tick in different frames and show as separate numbers",
+			stacks[0].tickTimer, stacks[1].tickTimer)
+	}
+}
+
 // ── on_status_tick cadence ──────────────────────────────────────────────────
 
 // TestAbilityStatus_TicksOnIntervalAndFiresOnStatusTick exercises the core

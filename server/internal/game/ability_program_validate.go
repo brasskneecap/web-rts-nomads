@@ -11,7 +11,7 @@ var allActionTypes = []ActionType{
 	ActionSelectTargets, ActionStoreTargets, ActionFilterTargets, ActionDealDamage,
 	ActionRestoreHealth, ActionApplyStatus, ActionApplyStatusDuration, ActionChangeStat, ActionApplyMark, ActionApplyColorOverlay,
 	ActionRemoveStatus, ActionCreateZone,
-	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionPlaceTrap, ActionConsumeZone, ActionMoveUnit, ActionApplyForce,
+	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionPlaceTrap, ActionConsumeZone, ActionSetZoneVisual, ActionMoveUnit, ActionApplyForce,
 	ActionModifyResource, ActionTriggerEvent, ActionPlayPresentation, ActionPlaySound,
 	ActionChangeRenderLayer, ActionCameraShake, ActionWait, ActionConditional,
 	ActionRepeat, ActionSetContext, ActionLoop, ActionCustom,

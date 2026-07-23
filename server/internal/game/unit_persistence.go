@@ -56,16 +56,20 @@ func SaveUnitDef(def *UnitDef) error {
 		return err
 	}
 	outDir := filepath.Join(dir, def.Faction, def.Type)
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return err
-	}
 	raw, err := json.MarshalIndent(def, "", "  ")
 	if err != nil {
 		return err
 	}
-	// Remove any previous override under a different faction so an edited unit
-	// never exists at two paths.
+	// Remove any previous override (under this or a different faction) FIRST, so
+	// an edited unit never exists at two paths — THEN (re)create the destination
+	// dir. Order matters: removeUnitOverrideFiles also drops a now-empty <type>/
+	// dir, so for a freshly-created unit (whose dir holds only its own json) it
+	// would delete the very directory we're about to write into. MkdirAll after
+	// the remove re-establishes it, so WriteFile can't fail ENOENT.
 	removeUnitOverrideFiles(dir, def.Type)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(outDir, def.Type+".json"), raw, 0o644); err != nil {
 		return err
 	}

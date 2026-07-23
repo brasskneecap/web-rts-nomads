@@ -211,7 +211,13 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	// Ancillary/minor instances (splash, DoT) route through here too; the
 	// client only splits when the entries reconcile with the MAJOR remainder,
 	// so mixed-in minors just fall back to the single number.
-	s.recordHitDamageLocked(target, damage)
+	//
+	// SuppressHitSplit opts an instance OUT (see its doc comment): a many-small-
+	// instances-that-read-as-one effect (Barbed's per-stack DoT) skips the
+	// record so the client keeps the single summed number.
+	if !src.SuppressHitSplit {
+		s.recordHitDamageLocked(target, damage)
+	}
 	// Ability-preview trace: the editor's floating damage numbers and event log
 	// are trace-driven, and until this existed the trace only knew about damage
 	// the ability under test dealt ITSELF. See the helper for the split.

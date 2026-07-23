@@ -3,11 +3,37 @@ package game
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"sort"
 	"strconv"
+	"strings"
 
 	"webrts/server/pkg/protocol"
 )
+
+// parseAnimationRefScheme splits a create_zone visual's animation-ref scheme
+// ("effect:x", "object:key@state", "projectile:x", …). It mirrors the client's
+// animationRef.ts parser. A bare value (no recognized scheme prefix) returns
+// source "" with ref=the whole input, so a legacy sprite id / effect id keeps
+// working unchanged. Only these five sources are recognized; anything else is
+// treated as bare.
+func parseAnimationRefScheme(s string) (source, ref, state string) {
+	i := strings.IndexByte(s, ':')
+	if i <= 0 {
+		return "", s, ""
+	}
+	switch s[:i] {
+	case "effect", "projectile", "beam", "object", "image":
+	default:
+		return "", s, ""
+	}
+	source = s[:i]
+	rest := s[i+1:]
+	if j := strings.IndexByte(rest, '@'); j >= 0 {
+		return source, rest[:j], rest[j+1:]
+	}
+	return source, rest, ""
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ABILITY ZONE SYSTEM (Phase 3, Task 5)
@@ -86,11 +112,23 @@ type AbilityZone struct {
 	Remaining     float64
 	TickInterval  float64
 	tickTimer     float64 // counts down to the next on_zone_tick fire (runtime-only)
+	// MaxTicks caps how many on_zone_tick fires this zone gets over its whole
+	// life; once reached, the zone expires even if Remaining would keep it alive.
+	// 0 = unbounded (the default — every zone shipped before this ticks for its
+	// full Duration). Lets a zone be authored as "blast K times" (explosive
+	// trap's aftershock) as an explicit count instead of a hand-tuned Duration.
+	MaxTicks   int
+	ticksFired int // on_zone_tick fires so far this life (runtime-only)
 	// Sprite / SpriteScale make this zone VISIBLE — see createZoneConfig.Sprite.
 	// Empty Sprite (the default) keeps the zone server-only, so nothing about an
 	// existing zone's behavior or wire footprint changes.
 	Sprite      string
 	SpriteScale float64
+	// SpriteAboveUnits draws the visual IN FRONT of units (the above-units pass)
+	// instead of on the ground beneath them. False (default) = ground layer, which
+	// is right for a persistent object sprite (a trap barrel); transient VFX
+	// decals (an explosion) set this so they read as a burst over the victim.
+	SpriteAboveUnits bool
 	Triggers    []AbilityTriggerDef // compiled on_zone_tick / on_zone_enter / on_zone_exit trigger(s)
 	// occupantIDs is the sorted-ascending, deduped set of unit IDs that were
 	// inside Radius as of the end of the previous tickAbilityZonesLocked call
@@ -138,6 +176,17 @@ func (s *GameState) visibleZoneSnapshotsLocked() []protocol.TrapSnapshot {
 		if z == nil || z.Sprite == "" {
 			continue
 		}
+		// Resolve the sprite scheme: an `object:key@state` ref serializes as a
+		// bare Type (the object key) + Variant (the animation state), so the
+		// existing client object renderer draws it with its rings / selection /
+		// variant-swap treatment. Every OTHER scheme (effect/projectile/beam/
+		// image) — and a bare legacy id — passes through verbatim as Type; the
+		// client's decal branch resolves and animates it. See
+		// CanvasRenderer.isAnimationDecalType.
+		typ, variant := z.Sprite, ""
+		if src, ref, state := parseAnimationRefScheme(z.Sprite); src == "object" {
+			typ, variant = ref, state
+		}
 		out = append(out, protocol.TrapSnapshot{
 			ID:               z.ID,
 			OwnerID:          z.OwnerPlayerID,
@@ -145,7 +194,9 @@ func (s *GameState) visibleZoneSnapshotsLocked() []protocol.TrapSnapshot {
 			Y:                z.Center.Y,
 			Radius:           z.Radius,
 			ScaleMultiplier:  z.SpriteScale,
-			Type:             z.Sprite,
+			Type:             typ,
+			Variant:          variant,
+			AboveUnits:       z.SpriteAboveUnits,
 			RemainingSeconds: z.Remaining,
 		})
 	}
@@ -196,6 +247,80 @@ func (s *GameState) spawnAbilityZoneLocked(z *AbilityZone) {
 	z.ID = abilityZoneIDString(s.nextAbilityZoneID)
 	s.nextAbilityZoneID++
 	s.AbilityZones = append(s.AbilityZones, z)
+}
+
+// spawnVisualDecalZoneLocked spawns a gameplay-inert, radius-0 zone whose only
+// job is to carry a create_zone PRESENTATION's animation ref (a
+// projectile/beam/object/image scheme — sources with no EffectSnapshot
+// producer) so it rides the visible-zone snapshot path and renders as a decal
+// at `pos` for `duration` seconds, then expires. It has NO triggers, so it never
+// damages, marks, or otherwise touches the sim — it is purely a visual. Effect
+// presentations don't come here (they use the richer EffectSnapshot path); this
+// is the every-source fallback. TickInterval is set positive only to suppress
+// spawnAbilityZoneLocked's "never ticks" warning; with no triggers that tick is
+// a no-op. Caller holds s.mu.
+func (s *GameState) spawnVisualDecalZoneLocked(sprite string, pos protocol.Vec2, scale, duration float64, aboveUnits bool, ownerID, abilityID string, casterID int) {
+	tick := duration
+	if tick <= 0 {
+		tick = 1
+	}
+	s.spawnAbilityZoneLocked(&AbilityZone{
+		AbilityID:        abilityID,
+		CasterID:         casterID,
+		OwnerPlayerID:    ownerID,
+		Center:           pos,
+		Radius:           0,
+		Remaining:        duration,
+		TickInterval:     tick,
+		Sprite:           sprite,
+		SpriteScale:      scale,
+		SpriteAboveUnits: aboveUnits,
+	})
+}
+
+// animationEffectRef extracts the effect id from an animation-ref asset for the
+// presentation paths that only render EFFECTS (the unit-attached ones): a bare
+// id or an "effect:x" scheme yields x; any other scheme yields its ref, which
+// won't resolve as an effect and is a safe no-op there.
+func animationEffectRef(asset string) string {
+	_, ref, _ := parseAnimationRefScheme(asset)
+	return ref
+}
+
+// playAnimationAtPointLocked plays a create_zone-style animation ref at a world
+// point ONCE. A server-def'd effect (a bare id or "effect:x" whose EffectDef is
+// registered) rides the rich EffectSnapshot path; every other source — a
+// non-effect scheme (projectile/beam/object/image) OR a client-only effect asset
+// with no server def (explosion, whirlwind) — renders as a transient client
+// decal lasting `duration` (default 0.8s). This is what lets play_presentation's
+// animation picker show ANY asset, not just server-registered effects. Caller
+// holds s.mu.
+func (s *GameState) playAnimationAtPointLocked(ctx *RuntimeAbilityContext, asset string, pos protocol.Vec2, scale, duration float64, aboveUnits bool) {
+	if asset == "" {
+		return
+	}
+	src, ref, _ := parseAnimationRefScheme(asset)
+	if src == "" || src == "effect" {
+		if _, ok := getEffectDef(ref); ok {
+			s.playEffectAtPointLocked(ref, pos.X, pos.Y, scale)
+			return
+		}
+	}
+	// Fallback decal. Ensure the ref is a SCHEME — a bare "explosion" would parse
+	// as a (nonexistent) object client-side; a bare value is an effect id by
+	// play_presentation's convention.
+	decalRef := asset
+	if src == "" {
+		decalRef = "effect:" + ref
+	}
+	if duration <= 0 {
+		duration = 0.8
+	}
+	owner := ""
+	if caster := s.getUnitByIDLocked(ctx.CasterID); caster != nil {
+		owner = caster.OwnerID
+	}
+	s.spawnVisualDecalZoneLocked(decalRef, pos, scale, duration, aboveUnits, owner, ctx.AbilityID, ctx.CasterID)
 }
 
 // tickAbilityZonesLocked advances every zone by dt: recomputes occupancy and
@@ -257,7 +382,14 @@ func (s *GameState) tickAbilityZonesLocked(dt float64) {
 			z.tickTimer -= dt
 			for z.tickTimer <= zoneTickEpsilon {
 				z.tickTimer += z.TickInterval
+				// MaxTicks cap: stop firing once the zone has spent its allotted
+				// ticks (0 = unbounded). Break rather than continue draining the
+				// accumulator — no further tick this life should fire.
+				if z.MaxTicks > 0 && z.ticksFired >= z.MaxTicks {
+					break
+				}
 				s.fireAbilityZoneTickLocked(z)
+				z.ticksFired++
 			}
 		}
 
@@ -265,8 +397,10 @@ func (s *GameState) tickAbilityZonesLocked(dt float64) {
 		// A zone that consumed itself (consume_zone) is culled this tick no
 		// matter how much life it had left — that is the whole point of the
 		// one-shot shape. It still runs the exit sweep below, so an
-		// enter-paired effect is never left dangling.
-		if !z.consumed && z.Remaining > zoneTickEpsilon {
+		// enter-paired effect is never left dangling. A zone that has spent its
+		// MaxTicks is likewise done: it expires this tick regardless of Remaining.
+		maxTicksSpent := z.MaxTicks > 0 && z.ticksFired >= z.MaxTicks
+		if !z.consumed && !maxTicksSpent && z.Remaining > zoneTickEpsilon {
 			kept = append(kept, z)
 			continue
 		}
@@ -412,8 +546,21 @@ type createZoneConfig struct {
 	Radius       float64     `json:"radius"`
 	Duration     float64     `json:"duration"`
 	TickInterval float64     `json:"tickInterval"`
-	OwnerRef     *ContextRef `json:"owner"`
-	Presentation string      `json:"presentation"`
+	// MaxTicks caps the number of on_zone_tick fires (0/absent = unbounded, the
+	// default). Authors "tick exactly K times then expire" — explosive trap's
+	// aftershock blasts K times, and a perk scales K. See AbilityZone.MaxTicks.
+	MaxTicks int `json:"maxTicks,omitempty"`
+	// Count spawns K copies of this zone in one placement (0/1 = a single zone,
+	// the default). The extras are fanned out around the resolved position by
+	// SpreadDistance so they don't stack. Lets one trap placement deploy several
+	// traps (increased_deployment) — the count is a plain numeric field a perk
+	// adds to, so raising the bonus is data-only.
+	Count int `json:"count,omitempty"`
+	// SpreadDistance is the offset (world units) between fanned Count copies.
+	// Ignored when Count <= 1. 0 stacks them on the same point.
+	SpreadDistance float64     `json:"spreadDistance,omitempty"`
+	OwnerRef       *ContextRef `json:"owner"`
+	Presentation   string      `json:"presentation"`
 	// PresentationScale sizes the Presentation effect (0/absent -> 1x, matching
 	// playEffectAtPointForDurationLocked). For a compiled meteor this carries
 	// the legacy def.EffectScale so the crater matches the legacy GroundHazard
@@ -492,11 +639,55 @@ func (s *GameState) resolveContextPositionLocked(ctx *RuntimeAbilityContext, ref
 	return fallback
 }
 
+// zoneSpreadPosition places the index-th of a create_zone's Count copies. The
+// primary (index 0) sits on `center` (the target — the enemy the trap lands on);
+// each extra is offset PERPENDICULAR to the caster->center cast direction,
+// alternating sides at growing distance, so the copies fan out to either side of
+// the cast line. A HORIZONTAL cast (trapper left of target) fans the copies
+// vertically (one above the target, one below); a cast from ABOVE fans them
+// horizontally (one left, one right — "O Q O"). Falls back to a fixed vertical
+// axis when the caster sits exactly on the target (no cast direction) or
+// SpreadDistance is 0. Pure — deterministic, no RNG.
+func zoneSpreadPosition(casterPos, center protocol.Vec2, index int, spread float64) protocol.Vec2 {
+	if index == 0 || spread <= 0 {
+		return center
+	}
+	dx, dy := center.X-casterPos.X, center.Y-casterPos.Y
+	length := math.Hypot(dx, dy)
+	var px, py float64
+	if length < 1e-6 {
+		px, py = 0, 1 // no cast direction — spread along a fixed axis
+	} else {
+		px, py = -dy/length, dx/length // unit perpendicular to the cast line
+	}
+	side := 1.0
+	if index%2 == 0 {
+		side = -1.0
+	}
+	mag := spread * float64((index+1)/2) // 1,1,2,2,3,3,... on alternating sides
+	return protocol.Vec2{X: center.X + px*side*mag, Y: center.Y + py*side*mag}
+}
+
 // consumeZoneConfig is the (empty) config for consume_zone. The action needs no
 // tuning: it always ends the zone the current execution is running inside.
 type consumeZoneConfig struct{}
 
 func (consumeZoneConfig) actionConfig() {}
+
+// setZoneVisualConfig is the config for set_zone_visual. Animation is the
+// animation-ref scheme to show (e.g. "effect:explosion"). Persist selects the
+// mode: false (default) plays it once at the zone center; true permanently swaps
+// the firing zone's visible sprite. Scale sizes the visual; Duration bounds a
+// play-once NON-effect decal (effects play their own authored length; ignored
+// when Persist).
+type setZoneVisualConfig struct {
+	Animation string  `json:"animation"`
+	Persist   bool    `json:"persist,omitempty"`
+	Scale     float64 `json:"scale,omitempty"`
+	Duration  float64 `json:"duration,omitempty"`
+}
+
+func (setZoneVisualConfig) actionConfig() {}
 
 func init() {
 	registerAction(ActionDescriptor{
@@ -524,6 +715,71 @@ func init() {
 			}
 			ctx.currentZone.consumed = true
 			ctx.trace("zone_consumed", ctx.currentActionPath, map[string]any{"zone": ctx.CurrentZoneID})
+			return targets
+		},
+	})
+
+	registerAction(ActionDescriptor{
+		Type: ActionSetZoneVisual,
+		Decode: func(b json.RawMessage) (ActionConfig, error) {
+			var c setZoneVisualConfig
+			if len(b) == 0 {
+				return c, nil
+			}
+			err := json.Unmarshal(b, &c)
+			return c, err
+		},
+		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue {
+			if cfg.(setZoneVisualConfig).Animation == "" {
+				return []ValidationIssue{{Code: "empty_required_property", Message: "set_zone_visual requires an animation", Severity: "error"}}
+			}
+			return nil
+		},
+		// The animation is chosen from the SAME AnimationPicker as create_zone's
+		// visual (effect / projectile / beam / object@state / uploaded image).
+		// `persist` toggles play-once vs. permanent swap; `duration` bounds a
+		// play-once non-effect decal (effects use their own authored length).
+		Schema: ActionFieldSchema{Fields: []SchemaField{
+			{Key: "animation", Label: "Animation", Control: "animation", Section: "Presentation"},
+			{Key: "persist", Label: "Keep showing (swap the zone's visual)", Control: "boolean", Section: "Presentation"},
+			{Key: "scale", Label: "Scale", Control: "number", Section: "Presentation"},
+			{Key: "duration", Label: "Play Duration", Control: "duration", Section: "Presentation"},
+		}},
+		// Execute changes the firing zone's visual. Operates on ctx.currentZone
+		// (the within-tick pointer consume_zone uses), so it ignores `targets` and
+		// passes them through unchanged.
+		//   - persist: swap ctx.currentZone.Sprite so the zone SHOWS the new
+		//     animation for the rest of its life. The client switches render paths
+		//     automatically (object ↔ decal) from the new scheme.
+		//   - play once: play the animation at the zone center a single time — an
+		//     effect via the EffectSnapshot path (natural length), any other source
+		//     via a transient visual-only decal zone lasting `duration`.
+		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
+			z := ctx.currentZone
+			if z == nil {
+				ctx.trace("zone_visual_skipped", ctx.currentActionPath, map[string]any{"reason": "not inside a zone"})
+				return targets
+			}
+			c := cfg.(setZoneVisualConfig)
+			if c.Persist {
+				z.Sprite = c.Animation
+				if c.Scale > 0 {
+					z.SpriteScale = c.Scale
+				}
+				ctx.trace("zone_visual_swapped", ctx.currentActionPath, map[string]any{"zone": ctx.CurrentZoneID, "animation": c.Animation})
+				return targets
+			}
+			// Play once as a transient, CLIENT-rendered decal — so ANY picked
+			// animation shows, including client-only effect assets (explosion,
+			// whirlwind) that have no server effect def and would render nothing
+			// through the EffectSnapshot path. Loops for `duration` (default ~1s),
+			// outlives a same-tick consume_zone, then vanishes.
+			dur := c.Duration
+			if dur <= 0 {
+				dur = 1
+			}
+			s.spawnVisualDecalZoneLocked(c.Animation, z.Center, c.Scale, dur, true /*aboveUnits*/, z.OwnerPlayerID, z.AbilityID, z.CasterID)
+			ctx.trace("zone_visual_played", ctx.currentActionPath, map[string]any{"zone": ctx.CurrentZoneID, "animation": c.Animation})
 			return targets
 		},
 	})
@@ -558,13 +814,22 @@ func init() {
 			{Key: "radius", Label: "Radius", Control: "number", Kind: abilityStatKindRadius, Section: "Targeting"},
 			{Key: "duration", Label: "Duration", Control: "duration", Kind: abilityStatKindDuration, Section: "Timing"},
 			{Key: "tickInterval", Label: "Tick Interval", Control: "duration", Section: "Timing"},
+			{Key: "maxTicks", Label: "Max Ticks", Control: "number", Section: "Timing"},
+			{Key: "count", Label: "Count", Control: "number", Section: "Placement"},
+			{Key: "spreadDistance", Label: "Spread Distance", Control: "number", Section: "Placement"},
 			{Key: "owner", Label: "Owner", Control: "context_ref", Section: "Advanced"},
-			{Key: "presentation", Label: "Presentation", Control: "asset", Section: "Presentation"},
+			// presentation & sprite both use the `animation` control — a visual
+			// picker (AnimationPicker) over every sprite source (effect /
+			// projectile / beam / object@state / upload). The stored value is an
+			// animation-ref scheme ("effect:x", "object:x@state", …); a legacy
+			// bare id still works (presentation → effect, sprite → object) via
+			// the client's normalization + the server's resolveAnimationRef.
+			{Key: "presentation", Label: "Presentation", Control: "animation", Section: "Presentation"},
 			{Key: "scale", Label: "Presentation Scale", Control: "number", Section: "Presentation"},
 			// Opt-in visibility: naming a sprite turns this zone from a
 			// server-only effect area into a persistent ground entity the
 			// client draws for the zone's whole life.
-			{Key: "sprite", Label: "Visible Sprite", Control: "text", Section: "Presentation"},
+			{Key: "sprite", Label: "Visible Sprite", Control: "animation", Section: "Presentation"},
 			{Key: "spriteScale", Label: "Sprite Scale", Control: "number", Section: "Presentation"},
 			// Config's on_zone_tick/on_zone_enter/on_zone_exit triggers are NOT
 			// re-declared here (a "triggers" nested_triggers field used to sit
@@ -583,30 +848,48 @@ func init() {
 				return nil
 			}
 			center := s.resolveContextPositionLocked(ctx, c.PositionRef, protocol.Vec2{X: caster.X, Y: caster.Y})
-			z := &AbilityZone{
-				AbilityID: ctx.AbilityID,
-				CasterID:  ctx.CasterID,
-				// TODO(phase-3b): resolve OwnerRef to a player when present; Phase 3
-				// zones are always owned by the caster.
-				OwnerPlayerID: caster.OwnerID,
-				Center:        center,
-				Radius:        c.Radius,
-				Remaining:     c.Duration,
-				TickInterval:  c.TickInterval,
-				Sprite:        c.Sprite,
-				SpriteScale:   c.SpriteScale,
-				Triggers:      c.Triggers,
+			casterPos := protocol.Vec2{X: caster.X, Y: caster.Y}
+			// Count copies (default 1): the primary at `center`, extras fanned out
+			// by SpreadDistance (increased_deployment). Each copy is its own
+			// independent AbilityZone with its own tick/occupancy state.
+			count := c.Count
+			if count < 1 {
+				count = 1
 			}
-			s.spawnAbilityZoneLocked(z)
-			ctx.trace("zone_created", ctx.currentActionPath, map[string]any{"name": c.Name, "radius": c.Radius, "duration": c.Duration})
-			// Render the zone's lingering VFX (e.g. meteor's "burning_crater") for
-			// the zone's whole life, mirroring the legacy GroundHazard path
-			// (spawnGroundHazardLocked -> playEffectAtPointForDurationLocked). Played
-			// at zone-creation time — which for a compiled meteor is the impact
-			// marker, i.e. when the crater should first appear. No-op for an empty /
-			// unregistered presentation id (the helper fails safe).
-			if c.Presentation != "" {
-				s.playEffectAtPointForDurationLocked(c.Presentation, center.X, center.Y, c.PresentationScale, c.Duration)
+			for i := 0; i < count; i++ {
+				pos := zoneSpreadPosition(casterPos, center, i, c.SpreadDistance)
+				z := &AbilityZone{
+					AbilityID: ctx.AbilityID,
+					CasterID:  ctx.CasterID,
+					// TODO(phase-3b): resolve OwnerRef to a player when present; Phase 3
+					// zones are always owned by the caster.
+					OwnerPlayerID: caster.OwnerID,
+					Center:        pos,
+					Radius:        c.Radius,
+					Remaining:     c.Duration,
+					TickInterval:  c.TickInterval,
+					MaxTicks:      c.MaxTicks,
+					Sprite:        c.Sprite,
+					SpriteScale:   c.SpriteScale,
+					Triggers:      c.Triggers,
+				}
+				s.spawnAbilityZoneLocked(z)
+				ctx.trace("zone_created", ctx.currentActionPath, map[string]any{"name": c.Name, "radius": c.Radius, "duration": c.Duration, "index": i})
+				// Render the zone's lingering VFX for the zone's whole life. An
+				// EFFECT presentation (bare effect id or "effect:x") rides the
+				// existing EffectSnapshot path — meteor's "burning_crater",
+				// GroundHazard parity, effect anchoring/tint/layering. Any OTHER
+				// animation source (projectile/beam/object/image) has no
+				// EffectSnapshot producer, so it renders as a transient,
+				// gameplay-inert visual-only zone that expires after the same
+				// duration. No-op for an empty presentation (fails safe).
+				if c.Presentation != "" {
+					if src, ref, _ := parseAnimationRefScheme(c.Presentation); src == "" || src == "effect" {
+						s.playEffectAtPointForDurationLocked(ref, pos.X, pos.Y, c.PresentationScale, c.Duration)
+					} else {
+						s.spawnVisualDecalZoneLocked(c.Presentation, pos, c.PresentationScale, c.Duration, true /*aboveUnits*/, caster.OwnerID, ctx.AbilityID, ctx.CasterID)
+					}
+				}
 			}
 			return nil
 		},

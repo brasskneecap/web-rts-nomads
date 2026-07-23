@@ -4,9 +4,9 @@
   "bounds": {
     "halfWidth": 20,
     "top": -80,
-    "bottom": 35,
-    "ringOffsetX": 0,
-    "ringOffsetY": -12
+    "bottom": 33,
+    "ringOffsetX": -1,
+    "ringOffsetY": 4
   },
   "visionRange": 448,
   "abilities": [],

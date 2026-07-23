@@ -65,6 +65,39 @@ func TestSaveUnitDef_LosslessArtBlobs(t *testing.T) {
 	}
 }
 
+// A plain re-save of a unit whose override directory contains ONLY its own
+// <type>.json (a freshly-created unit — no paths/, sprites, advancements, etc.)
+// must NOT delete it. Regression: SaveUnitDef MkdirAll'd the dir, then
+// removeUnitOverrideFiles deleted the old file AND its now-empty dir, and the
+// WriteFile that followed failed ENOENT — leaving the unit file-less, so it
+// vanished on the next catalog reload. (Acolyte survived only because its dir
+// had other files and so never went empty.)
+func TestSaveUnitDef_ReSaveDoesNotDeleteFreshUnit(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("UNIT_CATALOG_DIR", dir)
+	t.Cleanup(func() {
+		runtimeUnitsMu.Lock()
+		delete(runtimeUnits, "spear_maiden")
+		runtimeUnitsMu.Unlock()
+	})
+	def := UnitDef{
+		Type: "spear_maiden", Faction: "raider", Name: "Spear Maiden",
+		HP: 100, Damage: 10, AttackRange: 32, AttackSpeed: 1, MoveSpeed: 60,
+	}
+	if err := SaveUnitDef(&def); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+	// The editor re-saves the full def after any edit; this second save is the
+	// one that regressed.
+	if err := SaveUnitDef(&def); err != nil {
+		t.Fatalf("re-save (regression): %v", err)
+	}
+	path := filepath.Join(dir, "raider", "spear_maiden", "spear_maiden.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("override file missing after re-save — unit was deleted: %v", err)
+	}
+}
+
 // Deleting the last override for a type must not leave an orphaned, empty
 // <type>/ directory behind — that skeleton then blocks the parent faction
 // directory from ever being recognized as empty.

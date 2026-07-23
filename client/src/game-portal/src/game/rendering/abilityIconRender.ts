@@ -22,17 +22,25 @@ import { getEffectSprite } from './effectSprites'
 import { getBeamSprite } from './beamSprites'
 import { getAbilityIconImageByKey, getAbilityAssetImage, getProjectileAssetImage } from './abilityAssets'
 import { inferProjectileFrameCount } from './projectileSprites'
+import { getObjectSpriteSet } from './objectSprites'
 
-export type AbilityIconSource = 'effect' | 'beam' | 'projectile' | 'key'
+export type AbilityIconSource = 'effect' | 'beam' | 'projectile' | 'object' | 'key'
 
 export type AbilityIconRef =
   | { source: 'effect'; ref: string; frame: number }
   | { source: 'beam'; ref: string; frame: number }
   | { source: 'projectile'; ref: string; frame: number }
+  // Objects carry an animation STATE (like the animation-ref scheme) plus the
+  // static FRAME picked out of that state's strip for the action-bar icon.
+  | { source: 'object'; ref: string; state: string; frame: number }
   | { source: 'key'; ref: string; frame: 0 }
 
-// One scheme covers every sheet/flat art source: "<source>:<name>[@<frame>]".
+// One scheme covers the sheet/flat art sources: "<source>:<name>[@<frame>]".
 const SCHEME_RE = /^(effect|beam|projectile):([a-z0-9_]+)(?:@(\d+))?$/i
+// Objects reuse the animation-ref shape ("object:key[@state]") and add a
+// picker-chosen frame with a distinct "#<n>" suffix (state uses "@", so the
+// icon frame can't also be "@" without colliding): "object:key[@state][#frame]".
+const OBJECT_RE = /^object:([a-z0-9_]+)(?:@([a-z0-9_]+))?(?:#(\d+))?$/i
 const KEY_RE = /^[a-z0-9_]+$/i
 
 // parseAbilityIcon turns an icon string into a typed ref, or null for an
@@ -44,14 +52,24 @@ export function parseAbilityIcon(icon: string | undefined | null): AbilityIconRe
     const source = m[1].toLowerCase() as 'effect' | 'beam' | 'projectile'
     return { source, ref: m[2].toLowerCase(), frame: m[3] ? Number(m[3]) : 0 }
   }
+  const o = OBJECT_RE.exec(icon)
+  if (o) {
+    return { source: 'object', ref: o[1].toLowerCase(), state: (o[2] ?? 'idle').toLowerCase(), frame: o[3] ? Number(o[3]) : 0 }
+  }
   if (KEY_RE.test(icon)) return { source: 'key', ref: icon.toLowerCase(), frame: 0 }
   return null
 }
 
 // formatAbilityIcon is the inverse: produce the stored string. Frame 0 is
 // omitted so the common case stays clean ("effect:meteor", not "effect:meteor@0").
-export function formatAbilityIcon(source: AbilityIconSource, ref: string, frame = 0): string {
+// `state` applies only to object refs (idle is the omittable default).
+export function formatAbilityIcon(source: AbilityIconSource, ref: string, frame = 0, state = 'idle'): string {
   if (source === 'key') return ref
+  if (source === 'object') {
+    const st = state && state !== 'idle' ? `@${state}` : ''
+    const fr = frame > 0 ? `#${frame}` : ''
+    return `object:${ref}${st}${fr}`
+  }
   return frame > 0 ? `${source}:${ref}@${frame}` : `${source}:${ref}`
 }
 
@@ -90,6 +108,13 @@ function resolveSourceImage(input: AbilityIconInput): SourceImage | null {
   if (parsed?.source === 'projectile') {
     const img = getProjectileAssetImage(parsed.ref)
     return img ? { image: img } : null
+  }
+  if (parsed?.source === 'object') {
+    const set = getObjectSpriteSet(parsed.ref)
+    const anim = set?.animations.get(parsed.state) ?? set?.animations.get('idle')
+    return anim
+      ? { image: anim.sheet, sheet: { frameWidth: anim.frameWidth, frameHeight: anim.frameHeight, frames: anim.frameCount } }
+      : null
   }
   const key = parsed?.source === 'key' ? parsed.ref : undefined
   const img =
@@ -150,11 +175,17 @@ export function abilityIconResolves(input: AbilityIconInput): boolean {
 }
 
 // abilityIconFrameCount reports how many frames the chosen asset has, for the
-// picker's frame slider. Effect counts are known from the manifest immediately;
-// flat art needs its image decoded (returns 1 until then, callers re-check on load).
-export function abilityIconFrameCount(source: AbilityIconSource, ref: string): number {
+// picker's frame slider. Effect/object counts are known from the manifest
+// immediately; flat art needs its image decoded (returns 1 until then, callers
+// re-check on load). `state` selects the object animation whose frames to count.
+export function abilityIconFrameCount(source: AbilityIconSource, ref: string, state = 'idle'): number {
   if (source === 'effect') return getEffectSprite(ref)?.frames ?? 1
   if (source === 'beam') return getBeamSprite(ref)?.frames ?? 1
+  if (source === 'object') {
+    const set = getObjectSpriteSet(ref)
+    const anim = set?.animations.get(state) ?? set?.animations.get('idle')
+    return anim?.frameCount ?? 1
+  }
   const img = source === 'projectile' ? getProjectileAssetImage(ref) : getAbilityIconImageByKey(ref)
   if (img && img.complete && img.naturalWidth > 0) return inferProjectileFrameCount(img.naturalWidth, img.naturalHeight)
   return 1

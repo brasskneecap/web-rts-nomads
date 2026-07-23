@@ -117,6 +117,7 @@ func rebuildDerivedPathMaps() {
 	pathModifiersByKey = fresh.modifiersByKey
 	pathBoundsByPath = fresh.boundsByPath
 	pathAttackOriginByPath = fresh.attackOriginByPath
+	pathShadowByPath = fresh.shadowByPath
 	pathVisionRangeByPath = fresh.visionRangeByPath
 	pathProjectileByPath = fresh.projectileByPath
 	pathDamageTypeByPath = fresh.damageTypeByPath

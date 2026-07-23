@@ -148,7 +148,10 @@
                 :projectile-scale="form.projectileScale"
                 :channel-loop="form.channelLoop"
                 :channel-ability="channelAbility"
+                :flyer="form.flyer"
                 v-model:attack-origin="form.attackOrigin"
+                v-model:bounds="form.bounds"
+                v-model:shadow="form.shadow"
               />
               <div class="unit-art" @dragover.prevent @drop.prevent="onFolderDropped">
                 <label v-if="canIngestArt" class="unit-art__drop">
@@ -549,6 +552,8 @@
                 :channel-loop="pathForm.channelLoop"
                 :channel-ability="channelAbility"
                 v-model:attack-origin="pathForm.attackOrigin"
+                v-model:bounds="pathForm.bounds"
+                v-model:shadow="pathForm.shadow"
               />
               <div class="unit-art" @dragover.prevent @drop.prevent="onFolderDropped">
                 <label v-if="canIngestArt" class="unit-art__drop">

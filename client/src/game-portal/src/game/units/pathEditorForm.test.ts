@@ -16,7 +16,7 @@ const fullDef: AuthoredPathDef = {
   projectileScale: 1,
   abilities: ['piercing_shot', 'volley'],
   channelLoop: { start: 12, end: 30 },
-  bounds: { w: 20, h: 40 },
+  bounds: { halfWidth: 20, top: -40, bottom: 2 },
   ranks: {
     bronze: {
       maxHPMultiplier: 1.1, maxMPMultiplier: 1, healthRegenMultiplier: 1,

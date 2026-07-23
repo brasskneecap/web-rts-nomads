@@ -2,13 +2,10 @@
   "type": "bear_cub",
   "name": "Bear Cub",
   "faction": "wildborne",
-  "visionRange": 320,
   "hp": 150,
-  "armor": 0,
   "damage": 20,
-  "experience": 75,
   "attackRange": 80,
-  "attackSpeed": 1.0,
+  "attackSpeed": 1,
   "moveSpeed": 110,
   "resourceCost": {},
   "meatCost": 0,
@@ -17,12 +14,13 @@
     "move",
     "attack"
   ],
-  "trainLabel": "",
   "bounds": {
     "halfWidth": 30,
     "top": -40,
-    "bottom": 40,
-    "ringOffsetX": 0,
-    "ringOffsetY": -18
-  }
+    "bottom": 33,
+    "ringOffsetX": 1,
+    "ringOffsetY": 1
+  },
+  "experience": 75,
+  "visionRange": 320
 }

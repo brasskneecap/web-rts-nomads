@@ -1,13 +1,7 @@
 {
   "id": "barbed_field",
   "displayName": "Barbed Field",
-  "description": "Caltrops: enemies take ramping bonus damage the longer they stay in the zone (+2 DPS per second, up to +12 DPS). Resets when they leave.",
-  "tooltipTemplate": "Caltrops: enemies gain +{rampPerSecond} DPS per second in the zone (max +{maxBonusDamagePerSecond} DPS). Resets on exit.",
+  "description": "Caltrops: enemies take ramping bonus damage the longer they stay in the field (+4 damage per second in the zone, up to +24). It fades once they leave.",
   "icon": "perk-barbed-field",
-  "requiresAbility": "caltrops",
-  "config": {
-    "maxBonusDamagePerSecond": 24,
-    "rampPerSecond": 4
-  },
-  "wired": false
+  "requiresAbility": "caltrops"
 }

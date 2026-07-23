@@ -234,6 +234,34 @@ func scanZoneActions(actions []AbilityActionDef, rate float64, out *zoneEffectSc
 			var sc applyStatusDurationConfig
 			decodeActionConfig(act.Config, &sc)
 			out.clauses = append(out.clauses, describeZoneStatusClauses(sc)...)
+		case ActionCreateZone:
+			// A nested zone carries its effect in its OWN trigger(s), not inline
+			// (explosive trap's on-enter spawns a Detonation zone whose on_tick is
+			// the blast). Recurse into that zone's tick/enter actions so the effect
+			// is described, not just "places a zone". rate 0 — a spawned blast reads
+			// as a discrete hit, not a per-second rate of the OUTER zone.
+			var zc createZoneConfig
+			decodeActionConfig(act.Config, &zc)
+			for _, trg := range zc.Triggers {
+				if trg.Type == TriggerOnTick || trg.Type == TriggerOnZoneEnter {
+					scanZoneActions(trg.Actions, 0, out)
+				}
+			}
+		case ActionRepeat:
+			// A repeat carries its effect in its body (config.actions), not
+			// inline — recurse into the body so the blast is described. rate stays
+			// as-is: the repeat count is a discrete multiplier, not a per-second rate.
+			var rc repeatConfig
+			decodeActionConfig(act.Config, &rc)
+			scanZoneActions(rc.Actions, rate, out)
+		case ActionLoop:
+			// A loop carries its effect in its body — explosive trap's on-enter
+			// loops [play explosion, deal_damage, wait]. Recurse so the blast is
+			// described; rate stays as-is (a loop's spaced iterations are discrete
+			// detonations, not a per-second rate of the zone).
+			var lc loopConfig
+			decodeActionConfig(act.Config, &lc)
+			scanZoneActions(lc.Body, rate, out)
 		case ActionConsumeZone:
 			out.consumesZone = true
 		case ActionConditional:
@@ -250,7 +278,11 @@ func scanZoneActions(actions []AbilityActionDef, rate float64, out *zoneEffectSc
 // conditionalDefaultBranch picks the branch that describes the ability's
 // baseline behavior. A has_perk condition is a VARIANT gate: the perk is the
 // thing that is not there by default, so `else` is what the tooltip should
-// promise. Every other condition reads the ordinary way round.
+// promise — even when `else` is EMPTY. A then-only has_perk gate means the perk
+// purely ADDS its then-branch (barbed_field's Barbed DoT on caltrops); the
+// baseline does neither, so returning Then there would advertise a perk-only
+// effect as always-on (the exact reported-vs-real drift these gates must avoid).
+// Every other (non-has_perk) condition reads the ordinary way round: Then.
 func conditionalDefaultBranch(cc conditionalConfig) []AbilityActionDef {
 	gated := len(cc.Conditions) > 0
 	for _, c := range cc.Conditions {
@@ -259,8 +291,8 @@ func conditionalDefaultBranch(cc conditionalConfig) []AbilityActionDef {
 			break
 		}
 	}
-	if gated && len(cc.Else) > 0 {
-		return cc.Else
+	if gated {
+		return cc.Else // may be empty: the perk adds Then, the baseline shows neither
 	}
 	return cc.Then
 }
