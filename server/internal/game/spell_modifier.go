@@ -300,6 +300,30 @@ func (s *GameState) effectiveSpellLocked(caster *Unit, def AbilityDef) Effective
 	return eff
 }
 
+// abilityDamageStatOnlyLocked applies ONLY the caster's abilityDamage stat, with
+// none of the spell-modifier fold effectiveAbilityDamageLocked also does.
+//
+// The split exists to keep a documented legacy parity intact. A zone tick / DoT
+// tick historically applied its damage RAW — that is what the legacy trap and
+// ground-hazard runtimes did, and the golden migration tests assert the
+// executor matches them exactly (a caster's SpellModifier deliberately does not
+// reach a burn tick). Meanwhile abilityDamage is a UNIT stat that must reach
+// every ability the unit casts, or a perk saying "my abilities hit harder" does
+// nothing on precisely the abilities that are zones.
+//
+// So: the stat applies everywhere, spell modifiers only where they always did.
+// If DoT ticks should start honouring spell modifiers too, that is a gameplay
+// decision to make deliberately — it changes meteor, and the goldens will say so.
+//
+// Caller holds s.mu.
+func (s *GameState) abilityDamageStatOnlyLocked(caster *Unit, base int) int {
+	mult := s.effectiveStatLocked(caster, unitBaseStat(caster, statAbilityDamage), statAbilityDamage)
+	if mult == 1.0 {
+		return base
+	}
+	return int(math.Round(float64(base) * mult))
+}
+
 // effectiveAbilityDamageLocked scales a composable ability action's base
 // damage amount by caster's active spell-modifiers for def's school/tags,
 // at PARITY with effectiveSpellLocked's Damage field: it folds the exact

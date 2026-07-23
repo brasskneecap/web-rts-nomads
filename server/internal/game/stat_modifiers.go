@@ -204,6 +204,25 @@ const (
 	// incoming-damage amplification step (perks_defense.go), the same position
 	// the legacy hand-rolled mark multiplier occupies.
 	statDamageTaken = "damageTaken"
+
+	// statDamageDealt is the ATTACKER-side mirror of statDamageTaken: it
+	// multiplies every point of damage a unit DEALS (base 1.0 = "deal normal
+	// damage"; an `add` of -0.2 = "deal 20% less"). It is the data-driven form
+	// of an outgoing-damage debuff (Trapper's exposed_weakness marks enemies to
+	// deal less) and generalizes to any status/aura/perk that makes a unit hit
+	// harder or softer, with no new fold site.
+	//
+	// Folded at the ONE point every outgoing damage instance funnels through —
+	// applyUnitDamageWithSourceLocked, resolving the attacker via
+	// src.AttackerUnitID — so it covers basic attacks, abilities, procs, and
+	// traps alike (the true mirror of damageTaken, which folds on the target at
+	// the same chokepoint). This is what makes it stronger than a change_stat on
+	// the `damage` stat, which is base attack damage only and would not touch
+	// the victim's ability damage.
+	//
+	// Fixed-1.0 baseline ⇒ IsFraction. AllowMultiply for symmetry, though the
+	// shipped exposed_weakness authoring expresses the debuff as `add -0.2`.
+	statDamageDealt = "damageDealt"
 )
 
 // statDef describes a registered stat: its id, the human label the editor and
@@ -350,10 +369,30 @@ var statRegistry = []statDef{
 	// differs from Ability Damage directly above. AllowMultiply so a perk can
 	// scale the pool; real fold site (deal_damage's ratio term) ⇒ not AuraOnly.
 	{statAbilityPower, "Ability Power", true, false, false},
-	// Damage Taken: fixed-1.0-baseline multiplier on incoming damage, so an
-	// `add` is a percentage-point amount (IsFraction). Real top-level fold site
+	// Vulnerable: fixed-1.0-baseline multiplier on incoming damage, so an `add`
+	// is a percentage-point amount (IsFraction). Real top-level fold site
 	// (perks_defense.go's amplification step) ⇒ not AuraOnly.
-	{statDamageTaken, "Damage Taken", true, true, false},
+	//
+	// Labelled "Vulnerable", not "Damage Taken", because the raw name is
+	// AMBIGUOUS IN SIGN: a designer reading "Damage Taken +0.2" cannot tell
+	// whether the unit now takes more damage or takes 0.2 less. "Vulnerable
+	// +20%" only has one reading. The ID stays damageTaken — it is what
+	// authored catalog data references (marker_trap's mark) and what the fold
+	// site reads; only the human-facing name changed.
+	{statDamageTaken, "Vulnerable", true, true, false},
+	// Weaken: the attacker-side mirror of Vulnerable. Fixed-1.0-baseline
+	// multiplier on OUTGOING damage, so an `add` is a percentage-point amount
+	// (IsFraction). Real top-level fold site (applyUnitDamageWithSourceLocked's
+	// attacker resolution) ⇒ not AuraOnly.
+	//
+	// Labelled "Weaken", not "Damage Dealt", for the same sign-ambiguity reason
+	// Vulnerable is not "Damage Taken": a designer reading "Damage Dealt -0.2"
+	// cannot tell whether the unit now deals more or less. The pilot use is the
+	// debuff direction (exposed_weakness's `add -0.2` = deal 20% less), so the
+	// label names that: "Weaken" reads as unambiguously "deals less". The ID
+	// stays damageDealt — what authored catalog data references and what the
+	// fold site reads; only the human-facing name is opinionated about sign.
+	{statDamageDealt, "Weaken", true, true, false},
 }
 
 // statRegistryByID is the O(1) lookup index built once at init.

@@ -105,8 +105,14 @@ function display(v: unknown): string {
 export function summarizeTraceEvent(e: AbilityExecutionTraceEvent): string {
   const p = e.payload ?? {}
   switch (e.type) {
-    case 'damage_applied':
-      return `unit ${display(p.unit)} ← ${display(p.amount)}${p.type ? ` ${p.type}` : ''}`
+    case 'damage_applied': {
+      // `attacker` is present only on the damage-pipeline records (a basic
+      // attack, a trap, an item proc — anything the ability under test did not
+      // deal itself), where naming who swung is the whole value of the row. An
+      // executor-emitted hit needs no attribution: the caster dealt it.
+      const from = p.attacker != null ? ` from unit ${display(p.attacker)}` : ''
+      return `unit ${display(p.unit)} ← ${display(p.amount)}${p.type ? ` ${p.type}` : ''}${from}`
+    }
     case 'healing_applied':
       return `unit ${display(p.unit)} ← +${display(p.amount)}`
     case 'targets_selected':

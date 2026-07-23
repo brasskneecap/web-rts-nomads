@@ -75,7 +75,6 @@ export type EffectiveTrapSnapshot = {
   markDuration?: number
   barbedFieldRampPerSec?: number
   barbedFieldMaxBonusDPS?: number
-  exposedWeakenedMultiplier?: number
   lastingFlamesBurnDuration?: number
   aftershockDelaySeconds?: number
 }

@@ -1,6 +1,7 @@
 package game
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -255,4 +256,192 @@ func TestEffectiveDescription_ProgramAbility(t *testing.T) {
 	if got := converted.GeneratedDescription(); got != generated {
 		t.Errorf("GeneratedDescription must ignore override: got %q want %q", got, generated)
 	}
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// VISIBLE ZONE PROSE
+// ═════════════════════════════════════════════════════════════════════════
+
+// THE regression this section exists for. A zone ability used to describe only
+// its own placement — "Places a marker zone (115 radius). Lasts 12s." — because
+// the generator looked for exactly one shape (an on_tick deal_damage, outside
+// any conditional). Three of the four Trapper traps do not have that shape, so
+// three of four tooltips said nothing about what the trap actually does.
+//
+// The "has an effect at all" walk here is deliberately INDEPENDENT of
+// scanZoneActions: it looks for the action types directly, so it stays a real
+// check on the generator rather than a restatement of it.
+func TestDescribeAbility_VisibleZoneDescribesWhatItDoes(t *testing.T) {
+	checked := 0
+	for _, def := range ListAbilityDefs() {
+		cfg, ok := findVisibleZoneConfig(def.Program)
+		if !ok || !zoneHasAnyEffect(cfg) {
+			continue
+		}
+		checked++
+		desc := describeAbility(def)
+		if !strings.Contains(desc, " that ") && !strings.Contains(desc, "When an enemy enters") {
+			t.Errorf("%s: zone has effects but the description only places it: %q", def.ID, desc)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no visible-zone abilities found; this test is no longer checking anything")
+	}
+}
+
+// zoneHasAnyEffect reports whether cfg's triggers contain any action carrying a
+// player-visible magnitude, at any depth (including inside conditional
+// branches). Independent of the describe code by design — see the caller.
+func zoneHasAnyEffect(cfg createZoneConfig) bool {
+	var walk func([]AbilityActionDef) bool
+	walk = func(actions []AbilityActionDef) bool {
+		for _, act := range actions {
+			switch act.Type {
+			case ActionDealDamage, ActionApplyStatusDuration, ActionApplyStatus, ActionConsumeZone:
+				return true
+			case ActionConditional:
+				var cc conditionalConfig
+				decodeActionConfig(act.Config, &cc)
+				if walk(cc.Then) || walk(cc.Else) {
+					return true
+				}
+			}
+			for _, child := range act.Children {
+				if walk(child.Actions) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, trg := range cfg.Triggers {
+		if walk(trg.Actions) {
+			return true
+		}
+	}
+	return false
+}
+
+// Each clause shape a zone can produce, on synthetic configs so the numbers are
+// the test's own rather than catalog tuning.
+func TestDescribeZone_ClauseShapes(t *testing.T) {
+	zone := func(triggers []AbilityTriggerDef, tickInterval float64) AbilityDef {
+		cfg := createZoneConfig{
+			Name: "Test Zone", Radius: 50, Duration: 10,
+			TickInterval: tickInterval, Sprite: "x", Triggers: triggers,
+		}
+		return AbilityDef{
+			ID: "synthetic_zone", DisplayName: "Synthetic", SchemaVersion: 2,
+			Program: &AbilityProgram{Triggers: []AbilityTriggerDef{{
+				Type:    TriggerOnCastComplete,
+				Actions: []AbilityActionDef{{Type: ActionCreateZone, Config: rawJSON(t, cfg)}},
+			}}},
+		}
+	}
+	damage := AbilityActionDef{Type: ActionDealDamage, Config: rawJSON(t, dealDamageConfig{Amount: 7, Type: DamageFire})}
+	status := func(name string, duration, tickInterval float64, nested ...AbilityActionDef) AbilityActionDef {
+		return AbilityActionDef{Type: ActionApplyStatusDuration, Config: rawJSON(t, applyStatusDurationConfig{
+			Name: name, Duration: duration, TickInterval: tickInterval,
+			Triggers: []AbilityTriggerDef{{Type: TriggerOnActionComplete, Actions: nested}},
+		})}
+	}
+	changeStat := func(stat, op string, v float64) AbilityActionDef {
+		return AbilityActionDef{Type: ActionChangeStat, Config: rawJSON(t, changeStatConfig{Stat: stat, Op: op, Value: v})}
+	}
+
+	cases := []struct {
+		name string
+		def  AbilityDef
+		want string
+	}{{
+		name: "tick damage reads as a rate",
+		def:  zone([]AbilityTriggerDef{{Type: TriggerOnTick, Actions: []AbilityActionDef{damage}}}, 1),
+		want: "that deals 7 fire damage per second",
+	}, {
+		name: "a slower tick names its interval",
+		def:  zone([]AbilityTriggerDef{{Type: TriggerOnTick, Actions: []AbilityActionDef{damage}}}, 2),
+		want: "that deals 7 fire damage every 2s",
+	}, {
+		name: "entry damage is a separate sentence, with no rate",
+		def:  zone([]AbilityTriggerDef{{Type: TriggerOnZoneEnter, Actions: []AbilityActionDef{damage}}}, 1),
+		want: "When an enemy enters, deals 7 fire damage.",
+	}, {
+		name: "a spent zone says so",
+		def: zone([]AbilityTriggerDef{{Type: TriggerOnZoneEnter, Actions: []AbilityActionDef{
+			damage, {Type: ActionConsumeZone},
+		}}}, 1),
+		want: "deals 7 fire damage, then vanishes.",
+	}, {
+		name: "a moveSpeed multiply reads as a slow, not as a stat delta",
+		def: zone([]AbilityTriggerDef{{Type: TriggerOnTick, Actions: []AbilityActionDef{
+			status("Slowed", 3, 0, changeStat(statMoveSpeed, statOpMultiply, 0.4)),
+		}}}, 1),
+		want: "slows enemies by 60% for 3s",
+	}, {
+		name: "other stat changes name the status and the delta",
+		def: zone([]AbilityTriggerDef{{Type: TriggerOnZoneEnter, Actions: []AbilityActionDef{
+			status("Marked", 4, 0, changeStat(statDamageTaken, statOpAdd, 0.25)),
+		}}}, 1),
+		want: "applies Marked (+25% Vulnerable) for 4s",
+	}, {
+		name: "a damaging status is a burn over its own duration",
+		def: zone([]AbilityTriggerDef{{Type: TriggerOnTick, Actions: []AbilityActionDef{
+			status("Burning", 8, 1, damage),
+		}}}, 1),
+		want: "burns for 7 fire damage per second for 8s",
+	}}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := describeAbility(tc.def); !strings.Contains(got, tc.want) {
+				t.Errorf("description = %q, want it to contain %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A has_perk branch gates a VARIANT: the default tooltip must promise the
+// `else` side, which is what a caster without the perk actually gets. Reading
+// `then` (as the old generator did) advertises a bonus the reader may not have.
+func TestDescribeZone_HasPerkBranchDescribesTheDefaultSide(t *testing.T) {
+	dmg := func(n int) AbilityActionDef {
+		return AbilityActionDef{Type: ActionDealDamage, Config: rawJSON(t, dealDamageConfig{Amount: n})}
+	}
+	cfg := createZoneConfig{
+		Name: "Test Zone", Radius: 50, Duration: 10, TickInterval: 1, Sprite: "x",
+		Triggers: []AbilityTriggerDef{{Type: TriggerOnTick, Actions: []AbilityActionDef{{
+			Type: ActionConditional,
+			Config: rawJSON(t, conditionalConfig{
+				Conditions: []AbilityConditionDef{{Op: condOpHasPerk, Right: rawJSON(t, "some_perk")}},
+				Then:       []AbilityActionDef{dmg(99)},
+				Else:       []AbilityActionDef{dmg(11)},
+			}),
+		}}}},
+	}
+	def := AbilityDef{
+		ID: "synthetic_gated", DisplayName: "Gated", SchemaVersion: 2,
+		Program: &AbilityProgram{Triggers: []AbilityTriggerDef{{
+			Type:    TriggerOnCastComplete,
+			Actions: []AbilityActionDef{{Type: ActionCreateZone, Config: rawJSON(t, cfg)}},
+		}}},
+	}
+
+	got := describeAbility(def)
+	if !strings.Contains(got, "deals 11 damage") {
+		t.Errorf("description = %q, want the ungated (else) magnitude 11", got)
+	}
+	if strings.Contains(got, "99") {
+		t.Errorf("description = %q, must not advertise the perk-gated magnitude 99", got)
+	}
+}
+
+// rawJSON marshals a config struct for a synthetic action def. Distinct from
+// the map-only mustJSON helper in path_ability_stats_test.go.
+func rawJSON(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal %T: %v", v, err)
+	}
+	return b
 }

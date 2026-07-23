@@ -75,8 +75,8 @@ func TestEffectiveTrapSnapshot_Caltrops_WiderNets_Radius(t *testing.T) {
 	}
 
 	caltropsRadius := mustTrapAbilityConfig(t, "caltrops", unitRankBronze).Radius
-	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
-	assertFloatEq(t, "Radius (caltrops + wider_nets)", snap.Radius, caltropsRadius*widerNets)
+	assertFloatEq(t, "Radius (caltrops + wider_nets)", snap.Radius,
+		applyPerkRow(t, "wider_nets", "caltrops", "field", "radius", caltropsRadius))
 }
 
 // TestEffectiveTrapSnapshot_Caltrops_NoModifier_Radius verifies caltrops without

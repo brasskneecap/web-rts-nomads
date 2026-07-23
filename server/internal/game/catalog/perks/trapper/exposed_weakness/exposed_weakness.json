@@ -2,11 +2,6 @@
   "id": "exposed_weakness",
   "displayName": "Exposed Weakness",
   "description": "Marker Trap: marked enemies also deal 20% less damage for the duration of the mark.",
-  "tooltipTemplate": "Marker Trap: marked enemies deal {weakenedMultiplier%} less damage for the mark's duration.",
   "icon": "perk-exposed-weakness",
-  "requiresAbility": "marker_trap",
-  "config": {
-    "weakenedMultiplier": 0.2
-  },
-  "wired": false
+  "requiresAbility": "marker_trap"
 }

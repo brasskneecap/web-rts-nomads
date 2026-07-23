@@ -379,8 +379,11 @@ func TestAbilityOnUnitDeath_DeterministicOrderAcrossRuns(t *testing.T) {
 		}
 		s.drainPendingDeathsLocked()
 
+		// abilityTraceEvents drops the damage pipeline's own per-hit records —
+		// including the ones this test's own kill calls produce — so `order`
+		// stays what it claims to be: the damage the on_unit_death trigger dealt.
 		var order []int
-		for _, e := range tr.Events {
+		for _, e := range abilityTraceEvents(tr.Events) {
 			if e.Type != "damage_applied" {
 				continue
 			}

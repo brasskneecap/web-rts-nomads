@@ -12,9 +12,6 @@
   "abilities": [],
   "ranks": {
     "bronze": {
-      "baseStats": {
-        "abilityPower": 15
-      },
       "maxHPMultiplier": 1.5,
       "maxMPMultiplier": 0,
       "healthRegenMultiplier": 0,

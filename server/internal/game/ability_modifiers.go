@@ -27,6 +27,7 @@ func (s *GameState) abilityScalarModifiersForCasterLocked(caster *Unit, abilityI
 	if caster == nil || abilityID == "" {
 		return set
 	}
+	abilityID = s.authoredAbilityIDLocked(abilityID)
 	for _, perkID := range caster.PerkIDs {
 		def := perkDefByID(perkID)
 		if def == nil {

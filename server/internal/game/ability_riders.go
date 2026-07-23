@@ -38,6 +38,7 @@ func (s *GameState) gatherOwnedRiderFragmentsLocked(caster *Unit, abilityID stri
 	if caster == nil || abilityID == "" {
 		return nil
 	}
+	abilityID = s.authoredAbilityIDLocked(abilityID)
 	var frags []ownedRiderFragment
 	for _, perkID := range caster.PerkIDs {
 		def := perkDefByID(perkID)

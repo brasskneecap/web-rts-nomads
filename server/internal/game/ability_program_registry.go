@@ -482,8 +482,17 @@ func init() {
 				// base stays exactly c.Amount there.
 				base := float64(c.Amount) + s.abilityScalingTermsLocked(caster, c.ADRatio, c.APRatio)
 				amount = int(math.Round(base))
-				if caster != nil && ctx.abilityDef != nil {
-					amount = s.effectiveAbilityDamageLocked(caster, *ctx.abilityDef, amount)
+				if caster != nil {
+					// At CAST scope the full fold applies (spell modifiers for
+					// this ability's school/tags, then the abilityDamage stat).
+					// Inside a zone / status tick ctx.abilityDef is nil, and
+					// only the STAT applies — see abilityDamageStatOnlyLocked
+					// for why the two halves are split.
+					if ctx.abilityDef != nil {
+						amount = s.effectiveAbilityDamageLocked(caster, *ctx.abilityDef, amount)
+					} else {
+						amount = s.abilityDamageStatOnlyLocked(caster, amount)
+					}
 				}
 				// Honour a caller-supplied reduced/boosted-effectiveness cast (e.g.
 				// unstable_magic's free proc — see EffectiveSpell.DamageEffectivenessMultiplier
@@ -510,10 +519,19 @@ func init() {
 				if u == nil || u.HP <= 0 {
 					continue
 				}
-				s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", Category: DamageCategoryAbility, DamageType: dt, SourceAbilityID: ctx.AbilityID})
+				landed := s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", Category: DamageCategoryAbility, DamageType: dt, SourceAbilityID: ctx.AbilityID})
 				hit = append(hit, id)
 				ctx.lastAppliedDamage += amount
-				ctx.trace("damage_applied", ctx.currentActionPath, map[string]any{"unit": id, "amount": amount, "type": string(dt)})
+				// The TRACE reports what actually landed, not what was swung:
+				// the preview's floating numbers and event log are built from
+				// it, and an amplifier on the victim (a marker trap's mark, a
+				// damage-taken aura) is invisible if the number never moves.
+				// lastAppliedDamage above deliberately stays on the pre-
+				// mitigation amount — it feeds lifesteal, whose "% of damage
+				// dealt" is a property of the attack, not of the victim's
+				// defenses. Changing that is a balance decision, not a
+				// reporting one.
+				ctx.trace("damage_applied", ctx.currentActionPath, map[string]any{"unit": id, "amount": landed, "type": string(dt)})
 			}
 			return hit
 		},

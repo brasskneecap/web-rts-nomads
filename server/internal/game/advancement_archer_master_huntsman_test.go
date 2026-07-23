@@ -269,7 +269,6 @@ func TestMasterHuntsman_TrapBonusComposesWithWiderNets(t *testing.T) {
 		t.Skip("wider_nets perk not in catalog")
 	}
 	wantRadiusMult := 1 + nodeEffectPercent(t, masterHuntsmanID, "unitTrapRadiusMul")/100
-	widerNetsMult := widerNets.Config["radiusMultiplier"]
 
 	s, attacker, _ := spawnHuntsmanArcher(t, 25)
 	s.mu.Lock()
@@ -283,10 +282,13 @@ func TestMasterHuntsman_TrapBonusComposesWithWiderNets(t *testing.T) {
 	}
 
 	cfg := mustTrapAbilityConfig(t, "caltrops", attacker.Rank)
-	wantRadius := cfg.Radius * widerNetsMult * wantRadiusMult
+	// wider_nets contributes an ability-stat row; the advancement is a separate
+	// multiplier on top. Both read from their own authored data.
+	widened := applyPerkRow(t, "wider_nets", "caltrops", "field", "radius", cfg.Radius)
+	wantRadius := widened * wantRadiusMult
 	if math.Abs(stats.Radius-wantRadius) > 1e-6 {
-		t.Errorf("trap Radius = %v, want %v (base %v × widerNets %v × advancement %v)",
-			stats.Radius, wantRadius, cfg.Radius, widerNetsMult, wantRadiusMult)
+		t.Errorf("trap Radius = %v, want %v (base %v widened to %v × advancement %v)",
+			stats.Radius, wantRadius, cfg.Radius, widened, wantRadiusMult)
 	}
 }
 

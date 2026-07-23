@@ -221,12 +221,16 @@ func TestAbilityOnDamageDealt_NoQualifyingAbility_NothingFires(t *testing.T) {
 	s.previewTrace = tr
 	defer func() { s.previewTrace = nil }()
 
-	before := len(tr.Events)
+	before := len(abilityTraceEvents(tr.Events))
 	s.applyUnitDamageWithSourceLocked(victim, 10, DamageSource{
 		AttackerUnitID: attacker.ID, Kind: "melee", Category: DamageCategoryBasicAttack,
 	})
-	if len(tr.Events) != before {
-		t.Fatalf("damage on a unit with no qualifying ability produced %d new trace events, want 0 (fireOnDamageDealtLocked must be a true no-op here)", len(tr.Events)-before)
+	// abilityTraceEvents, not len(tr.Events): the damage pipeline records every
+	// landed hit for the ability preview (recordPreviewDamageTraceLocked), so
+	// one event here is expected and says nothing about the dispatch. What this
+	// test is about is that the EXECUTOR did not run.
+	if got := len(abilityTraceEvents(tr.Events)); got != before {
+		t.Fatalf("damage on a unit with no qualifying ability produced %d new executor trace events, want 0 (fireOnDamageDealtLocked must be a true no-op here)", got-before)
 	}
 	if attacker.OnDamageDealtDispatchActive {
 		t.Fatal("OnDamageDealtDispatchActive left set after a no-op dispatch")

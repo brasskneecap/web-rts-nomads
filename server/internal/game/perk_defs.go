@@ -155,6 +155,9 @@ func validatePerkDef(def *PerkDef) error {
 			return fmt.Errorf("abilityModifiers entry has empty target")
 		}
 	}
+	if err := validatePerkAbilityStats(fmt.Sprintf("perk %q", def.ID), def.AbilityStats); err != nil {
+		return err
+	}
 	if err := validateAbilityFieldModifiers(fmt.Sprintf("perk %q", def.ID), def.AbilityFields); err != nil {
 		return err
 	}
@@ -314,6 +317,17 @@ type AbilityRider struct {
 	// ability_program_validate.go) an authored ability's own actions go
 	// through, so a rider action is held to the identical bar.
 	Actions []AbilityActionDef `json:"actions,omitempty"`
+}
+
+// PerkAbilityStat is one perk row: "this stat, on this ability (or on all of
+// them), by this much". Flat is in the field's own units; Pct is a fraction, so
+// 0.35 is +35%.
+type PerkAbilityStat struct {
+	// Ability is an ability id, or empty for "every ability this unit has".
+	Ability string  `json:"ability,omitempty"`
+	Stat    string  `json:"stat"`
+	Flat    float64 `json:"flat,omitempty"`
+	Pct     float64 `json:"pct,omitempty"`
 }
 
 // PerkStatModifier is one typed, validated unit-stat change contributed by a
@@ -615,6 +629,28 @@ type PerkDef struct {
 	// status inside it, and only an action-level address can tell those apart.
 	// See ability_field_mods.go.
 	AbilityFields []AbilityFieldModifier `json:"abilityFields,omitempty"`
+	// AbilityStats are this perk's BROAD contributions, addressed by ability
+	// STAT (radius / duration / damage / count …) rather than by naming an
+	// action and a field.
+	//
+	// This is the shape most "your traps are bigger / last longer / hit harder"
+	// perks actually want. The precise AbilityFields form above needs one entry
+	// per {ability, action, field} — "+35% trap damage" was SEVEN rows, one per
+	// damage-dealing action across four abilities, and adding a fifth trap meant
+	// remembering to come back and add more. As a stat it is one row, and a new
+	// ability picks it up for free.
+	//
+	// Ability is OPTIONAL and is the whole point of the type:
+	//   - named  → contributes only while THAT ability is being cast
+	//               ("your Fire Pit is 50% bigger")
+	//   - empty  → contributes to every ability the unit has, exactly like the
+	//               unit's own abilityStats block ("your abilities are bigger")
+	//
+	// Use AbilityFields instead when the distinction the perk cares about is
+	// BELOW ability level — extended_setup lengthens a trap's zone but must not
+	// lengthen the burn status inside it, and only an action-level address can
+	// say that.
+	AbilityStats []PerkAbilityStat `json:"abilityStats,omitempty"`
 	// StatModifiers: typed, validated unit-stat changes this perk applies —
 	// data-driven replacement for the freeform Config-map convention where a
 	// perk's runtime handler had to know the exact key string to read (a

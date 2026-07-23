@@ -108,16 +108,19 @@ func (s *GameState) trapModifiersForUnitLocked(unit *Unit) TrapModifiers {
 		}
 		switch perkID {
 		// ── Silver: global trap modifiers ─────────────────────────────────
-		case "extended_setup":
-			m.DurationMultiplier *= def.Config["durationMultiplier"]
-		case "wider_nets":
-			m.RadiusMultiplier *= def.Config["radiusMultiplier"]
+		// extended_setup and wider_nets have NO case here, for the same reason
+		// amplified_effects below has none: they are pure data now (ability-stat
+		// rows) and carry no config for this aggregator to read. A case here
+		// would multiply by a missing key's zero and wipe every trap's numbers.
 		// rapid_deployment is no longer a global trap modifier: placement
 		// cadence is the trap ability's cooldown, and rapid_deployment now
 		// shortens it as a data perk via AbilityModifier.CooldownMult (see its
 		// catalog JSON). It intentionally has no case here.
-		case "amplified_effects":
-			m.EffectMultiplier *= def.Config["effectMultiplier"]
+		// amplified_effects intentionally has NO case here. Its contributions
+		// are all data now — abilityDamage for damage, inflicted-stat rows for
+		// the slow and the mark — so it carries no config for this aggregator
+		// to read. A case here would multiply EffectMultiplier by a missing
+		// key's zero and wipe every trap's numbers.
 
 		// ── EXTENSION POINT: Gold-tier GLOBAL modifiers plug in here.
 		//    Follow the same pattern: multiplicative composition into the
@@ -147,12 +150,10 @@ type TrapSpecificModifiers struct {
 	BarbedFieldRampPerSec  float64
 	BarbedFieldMaxBonusDPS float64
 
-	// exposed_weakness (silver): marker_trap-only. Fraction of outgoing damage
-	// reduction stamped onto marked victims (e.g. 0.20 = deal 20% less damage).
-	// Piggybacks the shared WeakenedRemaining/WeakenedMultiplier state used by
-	// Vanguard's punishing_guard — the outgoing-damage debuff plumbing is
-	// already live in perkOutgoingDamageDebuffMultiplierLocked.
-	ExposedWeakenedMultiplier float64
+	// exposed_weakness migrated to a pure data perk: it is now a has_perk gate
+	// inside marker_trap's program that adds a `damageDealt` (Weaken) status to
+	// the mark. No trap-modifier field is needed — see the perk's json and
+	// stat_modifiers.go statDamageDealt.
 
 	// lasting_flames (silver): fire_pit-only. Switches the fire pit into
 	// "damage-as-debuff" mode by snapshotting the burn-debuff duration onto
@@ -232,10 +233,6 @@ func (s *GameState) trapSpecificModifiersForUnitLocked(unit *Unit, trapType stri
 			if trapType == "caltrops" {
 				m.BarbedFieldRampPerSec = def.Config["rampPerSecond"]
 				m.BarbedFieldMaxBonusDPS = def.Config["maxBonusDamagePerSecond"]
-			}
-		case "exposed_weakness":
-			if trapType == "marker_trap" {
-				m.ExposedWeakenedMultiplier = def.Config["weakenedMultiplier"]
 			}
 		case "lasting_flames":
 			if trapType == "fire_pit" {
@@ -332,7 +329,6 @@ type EffectiveTrapStats struct {
 	// ── Silver trap-specific upgrade stats (zero when the gating perk is absent) ──
 	BarbedFieldRampPerSec     float64 // caltrops + barbed_field
 	BarbedFieldMaxBonusDPS    float64 // caltrops + barbed_field
-	ExposedWeakenedMultiplier float64 // marker_trap + exposed_weakness
 	LastingFlamesBurnDuration float64 // fire_pit + lasting_flames (burn DPS == fire_pit DamagePerSecond)
 	AftershockDelaySeconds    float64 // explosive_trap + explosive_chain
 }
@@ -365,7 +361,6 @@ func (s *GameState) EffectiveTrapSnapshotLocked(unit *Unit) *protocol.EffectiveT
 		MarkDuration:              stats.MarkDuration,
 		BarbedFieldRampPerSec:     stats.BarbedFieldRampPerSec,
 		BarbedFieldMaxBonusDPS:    stats.BarbedFieldMaxBonusDPS,
-		ExposedWeakenedMultiplier: stats.ExposedWeakenedMultiplier,
 		LastingFlamesBurnDuration: stats.LastingFlamesBurnDuration,
 		AftershockDelaySeconds:    stats.AftershockDelaySeconds,
 	}
@@ -534,7 +529,6 @@ func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, boo
 		out.Radius = tc.Radius * m.RadiusMultiplier
 		out.MarkMultiplier = tc.MarkMultiplier * m.EffectMultiplier
 		out.MarkDuration = tc.MarkDuration * m.EffectMultiplier
-		out.ExposedWeakenedMultiplier = specific.ExposedWeakenedMultiplier * m.EffectMultiplier
 	}
 	return out, true
 }

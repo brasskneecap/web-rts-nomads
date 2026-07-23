@@ -1269,7 +1269,6 @@ export type UnitSnapshot = {
     markDuration?: number
     barbedFieldRampPerSec?: number
     barbedFieldMaxBonusDPS?: number
-    exposedWeakenedMultiplier?: number
     lastingFlamesBurnDuration?: number
     aftershockDelaySeconds?: number
   }

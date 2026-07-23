@@ -58,6 +58,12 @@ func describePerk(def PerkDef) string {
 	if s := describePerkAbilityModifiers(def.AbilityModifiers); s != "" {
 		sentences = append(sentences, s)
 	}
+	if s := describePerkAbilityStats(def.AbilityStats); s != "" {
+		sentences = append(sentences, s)
+	}
+	if s := describePerkAbilityFields(def.AbilityFields); s != "" {
+		sentences = append(sentences, s)
+	}
 	if s := describePerkAbilityRiders(def.AbilityRiders); s != "" {
 		sentences = append(sentences, s)
 	}
@@ -129,9 +135,9 @@ func describeStatModifierClause(m PerkStatModifier, stage string) string {
 	var clause string
 	switch {
 	case m.Op == statOpMultiply:
-		clause = fmt.Sprintf("%s %s", signedPercent(m.Value-1), statLabel(m.Stat))
+		clause = fmt.Sprintf("%s %s", signedPercent(m.Value-1), plainStatLabel(statLabel(m.Stat)))
 	case isFractionStat(m.Stat):
-		clause = fmt.Sprintf("%s %s", signedPercent(m.Value), statLabel(m.Stat))
+		clause = fmt.Sprintf("%s %s", signedPercent(m.Value), plainStatLabel(statLabel(m.Stat)))
 	default:
 		clause = fmt.Sprintf("%s %s", signedNumber(m.Value), statLabel(m.Stat))
 	}
@@ -329,6 +335,170 @@ func describePerkAbilityModifiers(mods []AbilityModifier) string {
 		}
 	}
 	return strings.Join(out, " ")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AbilityStats
+// ─────────────────────────────────────────────────────────────────────────────
+
+// describePerkAbilityStats renders a perk's broad ability-stat rows, e.g.
+// "+50% Zone Radius." or "Fire Pit: +2s Duration." — one clause per row, in
+// AUTHORED ORDER (a slice, never a map), so the sentence is identical across
+// repeated calls.
+//
+// Two row families read differently and are worded to match:
+//
+//   - a KINDED row scales a shape (radius, duration, count), so it reads as a
+//     percentage or an amount OF that thing.
+//   - an INFLICTED row changes what the ability does TO a unit, and its sign is
+//     the whole meaning: "-15% Move Speed" is a STRONGER slow, not a weaker one.
+//     Worded as "stronger"/"weaker" rather than a bare signed number, because a
+//     designer reading "-0.15 Move Speed" cannot tell which way it cuts — the
+//     exact ambiguity that got "Damage Taken" renamed to "Vulnerable".
+func describePerkAbilityStats(rows []PerkAbilityStat) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	var out []string
+	for _, row := range rows {
+		clause := describeAbilityStatRow(row)
+		if clause == "" {
+			continue
+		}
+		if row.Ability != "" {
+			clause = fmt.Sprintf("%s: %s", abilityDisplayNameOrID(row.Ability), clause)
+		}
+		out = append(out, clause+".")
+	}
+	return strings.Join(out, " ")
+}
+
+func describeAbilityStatRow(row PerkAbilityStat) string {
+	if row.Flat == 0 && row.Pct == 0 {
+		return ""
+	}
+	label := abilityStatRowLabel(row.Stat)
+
+	if isInflictedStatID(row.Stat) {
+		// Sign carries the meaning, and which direction is "stronger" depends on
+		// the stat: more Vulnerable is a bigger number, a harder slow is a
+		// SMALLER move-speed multiplier. Rather than encode that per stat, say
+		// what changed and by how much, and let the sign speak.
+		//
+		// A fixed-1.0-baseline stat (Vulnerable, Healing Received) is measured in
+		// percentage POINTS, so 0.15 reads as "+15%"; anything else is a raw
+		// amount. Same rule describeStatModifierClause uses, for the same reason.
+		amount := signedNumber(row.Flat)
+		if isFractionStat(row.Stat) {
+			amount = signedPercent(row.Flat)
+		}
+		return fmt.Sprintf("%s %s applied", amount, plainStatLabel(label))
+	}
+
+	var parts []string
+	if row.Pct != 0 {
+		parts = append(parts, fmt.Sprintf("%s %s", signedPercent(row.Pct), plainStatLabel(label)))
+	}
+	if row.Flat != 0 {
+		parts = append(parts, fmt.Sprintf("%s %s", signedNumber(row.Flat), label))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// plainStatLabel drops a trailing "%" from a stat's display name when the
+// clause around it already carries one. "Ability Damage %" earns that suffix in
+// a PICKER, where it is what separates it from Ability Power at a glance; in a
+// sentence it produces "+35% Ability Damage %", which reads as a typo.
+func plainStatLabel(label string) string {
+	return strings.TrimSpace(strings.TrimSuffix(label, "%"))
+}
+
+// abilityStatRowLabel is the designer-facing name for an ability-stat id:
+// the registry label for an inflicted unit stat, the scoped/broad grid label
+// otherwise. Falls back to the raw id so a stat that has lost its definition
+// still reads as something rather than vanishing from the sentence.
+func abilityStatRowLabel(id string) string {
+	for _, d := range AbilityStatDefs() {
+		if d.ID == id {
+			return d.Label
+		}
+	}
+	return id
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AbilityFields
+// ─────────────────────────────────────────────────────────────────────────────
+
+// describePerkAbilityFields renders a perk's PRECISE rows — one field of one
+// action of one ability. There is no way to name the field in prose that a
+// designer would recognise (an action id like "mark" is authoring detail), so
+// the clause names the ABILITY and the operation's effect, e.g.
+// "Marker Trap: +35% mark duration."
+//
+// Authored order, never a map, for the same determinism reason as every other
+// describer here.
+func describePerkAbilityFields(mods []AbilityFieldModifier) string {
+	if len(mods) == 0 {
+		return ""
+	}
+	var out []string
+	for _, m := range mods {
+		delta := describeFieldOpDelta(m)
+		if delta == "" {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s: %s %s.",
+			abilityFieldTargetLabel(m.Target), delta, humanizeFieldName(m.Field)))
+	}
+	return strings.Join(out, " ")
+}
+
+// abilityFieldTargetLabel names what a precise modifier points at: a single
+// ability by display name, or a TAG ("tag:trap") as the group it stands for,
+// since a tag addresses however many abilities carry it.
+func abilityFieldTargetLabel(target string) string {
+	if tag, ok := strippedTagTarget(target); ok {
+		return fmt.Sprintf("Abilities tagged %q", tag)
+	}
+	return abilityDisplayNameOrID(target)
+}
+
+// describeFieldOpDelta renders the SIZE of a precise modifier, honouring its op.
+// An identity value (x1, +0) contributes nothing and returns "".
+func describeFieldOpDelta(m AbilityFieldModifier) string {
+	switch m.Op {
+	case statOpAdd:
+		if m.Value == 0 {
+			return ""
+		}
+		return signedNumber(m.Value)
+	case statOpAmplify:
+		if m.Value == 1 {
+			return ""
+		}
+		return signedPercent(m.Value - 1)
+	default: // statOpMultiply and the empty default
+		if m.Value == 1 {
+			return ""
+		}
+		return signedPercent(m.Value - 1)
+	}
+}
+
+// humanizeFieldName turns a config key into prose ("duration", "radius",
+// "amount" -> "damage"). Deliberately small: the set of fields a perk addresses
+// precisely is small, and a key with no entry reads fine as itself.
+func humanizeFieldName(field string) string {
+	switch field {
+	case "amount":
+		return "damage"
+	case "value":
+		return "strength"
+	case targetQueryRadiusField:
+		return "target radius"
+	}
+	return field
 }
 
 // abilityModifierField pairs one AbilityModifier scalar with its prose

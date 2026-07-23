@@ -9,60 +9,185 @@ function lastConfig(wrapper: ReturnType<typeof mount>): PreviewSceneConfig {
 }
 
 describe('PreviewSceneControls', () => {
-  describe('force-branch toggles', () => {
-    const conditionals = [
-      { id: 'deliver', summary: 'Conditional — has perk: Lasting Flames' },
-      { id: 'gold', summary: 'Conditional — has perk: Overload Protocol' },
+  describe('caster perks', () => {
+    const perkOptions = [
+      { id: 'lasting_flames', label: 'Lasting Flames' },
+      { id: 'wider_nets', label: 'Wider Nets' },
+      { id: 'overload_protocol', label: 'Overload Protocol' },
     ]
 
-    function lastConfig(wrapper: ReturnType<typeof mount>) {
-      const emitted = wrapper.emitted('update:modelValue')!
-      return emitted[emitted.length - 1][0] as { conditionalOverrides: Record<string, boolean> }
+    // A unit carries at most ONE perk per rank, and which perks a rank offers
+    // comes from the PATH's own perksByRank — the sole source of a perk's rank.
+    function stubCatalogs() {
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        const u = String(url)
+        if (u.endsWith('/catalog/units')) {
+          return {
+            ok: true,
+            json: async () => ({
+              units: [{ type: 'archer', name: 'Archer' }],
+              pathsByUnit: { archer: ['trapper'] },
+            }),
+          }
+        }
+        if (u.endsWith('/catalog/paths')) {
+          return {
+            ok: true,
+            json: async () => ({
+              paths: [{
+                path: 'trapper',
+                def: {
+                  perksByRank: {
+                    silver: ['wider_nets', 'lasting_flames'],
+                    gold: ['overload_protocol'],
+                  },
+                },
+              }],
+            }),
+          }
+        }
+        return { ok: true, json: async () => ({}) }
+      }) as unknown as typeof fetch)
     }
 
-    it('renders nothing when the program has no conditionals', () => {
-      const wrapper = mount(PreviewSceneControls)
-      expect(wrapper.find('[data-test="preview-conditionals"]').exists()).toBe(false)
-      expect(lastConfig(wrapper).conditionalOverrides).toEqual({})
+    // Ranks up to GOLD so every row the path grants is visible — the rank filter
+    // has its own tests below. (The fixture path, like the real trapper, grants
+    // no bronze perks at all, so a bronze caster would see no rows.)
+    async function mountWithPath(rank = 'gold') {
+      stubCatalogs()
+      const wrapper = mount(PreviewSceneControls, { props: { perkOptions } })
+      await flushPromises()
+      await wrapper.find('[data-test="preview-caster-unit"]').setValue('archer')
+      await wrapper.find('[data-test="preview-caster-path"]').setValue('trapper')
+      await wrapper.find('[data-test="preview-caster-rank"]').setValue(rank)
+      return wrapper
+    }
+
+    function lastPerks(wrapper: ReturnType<typeof mount>): string[] {
+      const emitted = wrapper.emitted('update:modelValue')!
+      return (emitted[emitted.length - 1][0] as { casterPerks: string[] }).casterPerks
+    }
+
+    it('offers no perk rows until a path is chosen', async () => {
+      stubCatalogs()
+      const wrapper = mount(PreviewSceneControls, { props: { perkOptions } })
+      await flushPromises()
+      expect(wrapper.find('[data-test="preview-perks"]').exists()).toBe(false)
+      expect(lastPerks(wrapper)).toEqual([])
     })
 
-    it('renders one checkbox per conditional, labelled with its branch summary', () => {
-      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
-      expect(wrapper.find('[data-test="preview-conditionals"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="preview-conditional-deliver"]').text()).toContain('Lasting Flames')
-      expect(wrapper.find('[data-test="preview-conditional-gold"]').text()).toContain('Overload Protocol')
+    // One dropdown per rank the path actually grants at — bronze has no bucket
+    // here, so no Bronze row rather than an empty one.
+    it('renders one dropdown per rank the path grants perks at', async () => {
+      const wrapper = await mountWithPath()
+      expect(wrapper.find('[data-test="preview-perk-bronze"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="preview-perk-silver"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-perk-gold"]').exists()).toBe(true)
     })
 
-    // An untouched conditional must send NO override, so a preview that nobody
-    // has configured behaves exactly as it did before this control existed.
-    it('emits no overrides until a box is actually toggled', () => {
-      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
-      expect(lastConfig(wrapper).conditionalOverrides).toEqual({})
+    it("offers only that rank's perks, by display name", async () => {
+      const wrapper = await mountWithPath()
+      const silver = wrapper.find('[data-test="preview-perk-silver"]').findAll('option')
+      expect(silver.map((o) => o.attributes('value'))).toEqual(['', 'lasting_flames', 'wider_nets'])
+      expect(silver[1].text()).toBe('Lasting Flames')
+
+      const gold = wrapper.find('[data-test="preview-perk-gold"]').findAll('option')
+      expect(gold.map((o) => o.attributes('value'))).toEqual(['', 'overload_protocol'])
     })
 
-    it('checking a box forces that conditional true, leaving the others untouched', async () => {
-      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
-      await wrapper.find('[data-test="preview-conditional-deliver"] input').setValue(true)
-      expect(lastConfig(wrapper).conditionalOverrides).toEqual({ deliver: true })
+    it('grants the picked perk, one per rank', async () => {
+      const wrapper = await mountWithPath()
+      await wrapper.find('[data-test="preview-perk-silver"]').setValue('lasting_flames')
+      expect(lastPerks(wrapper)).toEqual(['lasting_flames'])
+
+      await wrapper.find('[data-test="preview-perk-gold"]').setValue('overload_protocol')
+      expect(lastPerks(wrapper)).toEqual(['lasting_flames', 'overload_protocol'])
     })
 
-    it('tracks several conditionals independently', async () => {
-      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
-      await wrapper.find('[data-test="preview-conditional-deliver"] input').setValue(true)
-      await wrapper.find('[data-test="preview-conditional-gold"] input').setValue(true)
-      await wrapper.find('[data-test="preview-conditional-deliver"] input').setValue(false)
-      expect(lastConfig(wrapper).conditionalOverrides).toEqual({ deliver: false, gold: true })
+    // Picking a second perk at the same rank REPLACES the first — a unit cannot
+    // carry two silver perks, and a checkbox list let you build exactly that.
+    it('replaces the perk at a rank rather than adding to it', async () => {
+      const wrapper = await mountWithPath()
+      await wrapper.find('[data-test="preview-perk-silver"]').setValue('lasting_flames')
+      await wrapper.find('[data-test="preview-perk-silver"]').setValue('wider_nets')
+      expect(lastPerks(wrapper)).toEqual(['wider_nets'])
     })
 
-    // A deleted branch's override must not keep riding along in every later
-    // request — and must not come back to life if an action reuses that id.
-    it('drops overrides for conditionals that no longer exist', async () => {
-      const wrapper = mount(PreviewSceneControls, { props: { conditionals } })
-      await wrapper.find('[data-test="preview-conditional-gold"] input').setValue(true)
-      expect(lastConfig(wrapper).conditionalOverrides).toEqual({ gold: true })
+    it('clears back to none', async () => {
+      const wrapper = await mountWithPath()
+      await wrapper.find('[data-test="preview-perk-silver"]').setValue('wider_nets')
+      await wrapper.find('[data-test="preview-perk-silver"]').setValue('')
+      expect(lastPerks(wrapper)).toEqual([])
+    })
 
-      await wrapper.setProps({ conditionals: [conditionals[0]] })
-      expect(lastConfig(wrapper).conditionalOverrides).toEqual({})
+    // A perk belongs to one path, so a leftover pick would describe a unit that
+    // cannot exist.
+    // The perk dropdowns are more of the same kind of choice as caster/rank/
+    // path, so they share that row and wrap with it rather than each taking a
+    // line. The wrapper survives only as a v-if + test hook; display:contents
+    // is what keeps it out of the layout.
+    it('puts the perk fields in the same wrapping row as the other selections', async () => {
+      const wrapper = await mountWithPath()
+      const row = wrapper.find('.pv-scene__row')
+      expect(row.find('[data-test="preview-caster-path"]').exists()).toBe(true)
+      expect(row.find('[data-test="preview-perk-silver"]').exists()).toBe(true)
+    })
+
+    // A unit only carries perks from the ranks it has actually reached, so the
+    // rows follow the chosen rank: bronze offers bronze alone, gold offers
+    // everything the path grants.
+    // A promotion path is EARNED at bronze, so a pathed unit is never at base.
+    // Picking one promotes the rank and retires the Base option.
+    it('promotes to bronze when a path is picked, and stops offering base', async () => {
+      stubCatalogs()
+      const wrapper = mount(PreviewSceneControls, { props: { perkOptions } })
+      await flushPromises()
+      const rank = wrapper.find('[data-test="preview-caster-rank"]')
+      expect(rank.findAll('option').map((o) => o.attributes('value'))).toContain('')
+
+      await wrapper.find('[data-test="preview-caster-unit"]').setValue('archer')
+      await wrapper.find('[data-test="preview-caster-path"]').setValue('trapper')
+
+      expect((rank.element as HTMLSelectElement).value).toBe('bronze')
+      expect(rank.findAll('option').map((o) => o.attributes('value'))).not.toContain('')
+      // The fixture path grants no bronze perks (nor does the real trapper), so
+      // a bronze caster honestly has none to pick.
+      expect(wrapper.findAll('[data-test^="preview-perk-"]')).toHaveLength(0)
+    })
+
+    it('shows only the ranks at or below the chosen rank', async () => {
+      const wrapper = await mountWithPath()
+      expect(wrapper.findAll('[data-test^="preview-perk-"]')).toHaveLength(2)
+
+      await wrapper.find('[data-test="preview-caster-rank"]').setValue('silver')
+      expect(wrapper.find('[data-test="preview-perk-silver"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-perk-gold"]').exists()).toBe(false)
+
+      await wrapper.find('[data-test="preview-caster-rank"]').setValue('gold')
+      expect(wrapper.find('[data-test="preview-perk-silver"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="preview-perk-gold"]').exists()).toBe(true)
+    })
+
+    // The one that matters: a perk chosen at gold must not keep riding along in
+    // the request after the caster drops to silver — it would be previewing a
+    // unit that cannot exist.
+    it('retires a perk above the chosen rank', async () => {
+      const wrapper = await mountWithPath()
+      await wrapper.find('[data-test="preview-perk-gold"]').setValue('overload_protocol')
+      await wrapper.find('[data-test="preview-perk-silver"]').setValue('wider_nets')
+      expect(lastPerks(wrapper)).toEqual(['wider_nets', 'overload_protocol'])
+
+      await wrapper.find('[data-test="preview-caster-rank"]').setValue('silver')
+      expect(lastPerks(wrapper)).toEqual(['wider_nets'])
+    })
+
+    it('drops the picks when the path changes', async () => {
+      const wrapper = await mountWithPath()
+      await wrapper.find('[data-test="preview-perk-gold"]').setValue('overload_protocol')
+      expect(lastPerks(wrapper)).toEqual(['overload_protocol'])
+
+      await wrapper.find('[data-test="preview-caster-path"]').setValue('')
+      expect(lastPerks(wrapper)).toEqual([])
     })
   })
 
@@ -265,5 +390,27 @@ describe('PreviewSceneControls caster + rank', () => {
     const options = wrapper.find('[data-test="preview-caster-unit"]').findAll('option')
     expect(options.length).toBeGreaterThanOrEqual(1)
     expect(options[0].attributes('value')).toBe('')
+  })
+
+  // Off by default: an untouched preview shows the ability acting alone, which
+  // is the honest baseline for what it does by itself.
+  it('emits alliesAttack false until the box is ticked', async () => {
+    const wrapper = mount(PreviewSceneControls)
+    expect(lastConfig(wrapper).alliesAttack).toBe(false)
+
+    await wrapper.find('[data-test="preview-allies-attack"]').setValue(true)
+    expect(lastConfig(wrapper).alliesAttack).toBe(true)
+  })
+
+  // The mirror control: enemies swing back, for previewing a debuff on an
+  // enemy's own outgoing damage. Same default-off, independent of allies.
+  it('emits enemiesAttack false until the box is ticked', async () => {
+    const wrapper = mount(PreviewSceneControls)
+    expect(lastConfig(wrapper).enemiesAttack).toBe(false)
+
+    await wrapper.find('[data-test="preview-enemies-attack"]').setValue(true)
+    expect(lastConfig(wrapper).enemiesAttack).toBe(true)
+    // Independent toggles — enabling enemies must not flip allies.
+    expect(lastConfig(wrapper).alliesAttack).toBe(false)
   })
 })

@@ -54,9 +54,38 @@
           @input="onDurationInput"
         />
       </EditorField>
-      <!-- WHO casts, and at what rank. Both matter because an ability's damage
-           can scale off its caster (deal_damage's adRatio/apRatio) and off that
-           caster's rank — previewing against one hardcoded unit showed neither.
+      <!-- Allies charge in and attack. The only way to preview an ability whose
+           whole effect is on somebody ELSE'S damage (marker_trap's mark deals
+           none of its own). With only one side ticked the other stays inert so
+           the HP delta is attributable. -->
+      <EditorField label="Allies attack" for-id="pv-allies-attack" inline class="pv-scene__field">
+        <input
+          id="pv-allies-attack"
+          class="pv-scene__check"
+          type="checkbox"
+          :checked="alliesAttack"
+          data-test="preview-allies-attack"
+          @change="onAlliesAttackChange"
+        />
+      </EditorField>
+      <!-- Enemies charge in and attack — the mirror of "Allies attack", for
+           previewing an ability whose effect lands on an ENEMY'S outgoing damage
+           (a Weaken debuff makes the marked enemy deal less, visible only once it
+           actually swings). -->
+      <EditorField label="Enemies attack" for-id="pv-enemies-attack" inline class="pv-scene__field">
+        <input
+          id="pv-enemies-attack"
+          class="pv-scene__check"
+          type="checkbox"
+          :checked="enemiesAttack"
+          data-test="preview-enemies-attack"
+          @change="onEnemiesAttackChange"
+        />
+      </EditorField>
+      <!-- Caster, then Path, then Rank: each choice narrows the next, and each
+           one matters because an ability's damage can scale off its caster
+           (deal_damage's adRatio/apRatio) and off how far that caster has been
+           promoted — previewing against one hardcoded unit showed neither.
            Blank = the harness default (an adept). -->
       <EditorField label="Caster" for-id="pv-caster" inline class="pv-scene__field">
         <select
@@ -68,20 +97,6 @@
         >
           <option value="">Default (adept)</option>
           <option v-for="u in casterOptions" :key="u.type" :value="u.type">{{ u.label }}</option>
-        </select>
-      </EditorField>
-      <EditorField label="Rank" for-id="pv-rank" inline class="pv-scene__field">
-        <select
-          id="pv-rank"
-          class="pv-scene__select"
-          :value="casterRank"
-          data-test="preview-caster-rank"
-          @change="onCasterRankChange"
-        >
-          <option value="">Default</option>
-          <option value="bronze">Bronze</option>
-          <option value="silver">Silver</option>
-          <option value="gold">Gold</option>
         </select>
       </EditorField>
       <!-- The path is what turns a rank into real stats (pathModifierFor), so
@@ -106,6 +121,24 @@
           <option v-for="p in pathOptions" :key="p" :value="p">{{ humanizePath(p) }}</option>
         </select>
       </EditorField>
+      <!-- Base is only offered while the caster is PATHLESS. A promotion path is
+           earned at bronze, so a unit on one is never at base — offering it
+           would describe a unit that cannot exist. Picking a path promotes the
+           rank to bronze for the same reason. -->
+      <EditorField label="Rank" for-id="pv-rank" inline class="pv-scene__field">
+        <select
+          id="pv-rank"
+          class="pv-scene__select"
+          :value="casterRank"
+          data-test="preview-caster-rank"
+          @change="onCasterRankChange"
+        >
+          <option v-if="!casterPath" value="">Base</option>
+          <option value="bronze">Bronze</option>
+          <option value="silver">Silver</option>
+          <option value="gold">Gold</option>
+        </select>
+      </EditorField>
       <!-- Only for charge-fire passives (arcane_missiles): seed the caster's
            Arcane Charge so the passive fires. Prefilled to the ability's own
            chargeRequired so one volley is ready by default; bump it to test
@@ -128,35 +161,36 @@
           @input="onCasterChargeInput"
         />
       </EditorField>
-    </div>
+      <!-- Perks the caster OWNS for this run: ONE dropdown per rank, because a
+           unit carries at most one perk per rank. Options come from the selected
+           path's own perksByRank, so a pair that cannot exist in a match cannot
+           be built here either.
 
-    <!-- Force-a-branch toggles, one per `conditional` in the program. The
-         preview caster owns no perks/items/advancements, so every has_perk
-         branch evaluates false on its own and its THEN side would be
-         unreachable here. Checking a box sends conditionalOverrides[id]=true
-         (see Go's PreviewRequest.ConditionalOverrides); unchecking sends
-         `false`, which is a REAL forced value, not "evaluate normally" — a
-         conditional with no entry at all is what evaluates normally, and that
-         only happens for a node the author has never touched (see
-         conditionalOverrides below). Every conditional is independent. -->
-    <div v-if="conditionals.length" class="pv-scene__conditionals" data-test="preview-conditionals">
-      <span class="pv-scene__conditionals-label">Force branches</span>
-      <label
-        v-for="c in conditionals"
-        :key="c.id"
-        class="pv-scene__conditional"
-        :data-test="`preview-conditional-${c.id}`"
-      >
-        <input
-          type="checkbox"
-          :checked="conditionalOverrides[c.id] === true"
-          @change="onConditionalToggle(c.id, $event)"
-        />
-        <span class="pv-scene__conditional-summary">{{ c.summary }}</span>
-      </label>
-      <p class="pv-scene__hint">
-        Checked runs the THEN branch, unchecked the ELSE branch — regardless of what the condition would evaluate to.
-      </p>
+           Replaces the old force-a-branch checkboxes. Forcing proved the THEN
+           side produced some effect but never that the CONDITION was right — a
+           has_perk naming a perk that does not exist previewed identically to a
+           correct one. Owning the perk runs the real evaluator. -->
+      <div v-if="perkRankRows.length" class="pv-scene__perks" data-test="preview-perks">
+        <EditorField
+          v-for="row in perkRankRows"
+          :key="row.rank"
+          :label="row.label"
+          :for-id="`pv-perk-${row.rank}`"
+          inline
+          class="pv-scene__field"
+        >
+          <select
+            :id="`pv-perk-${row.rank}`"
+            class="pv-scene__select"
+            :value="perkByRank[row.rank] ?? ''"
+            :data-test="`preview-perk-${row.rank}`"
+            @change="onPerkRankChange(row.rank, $event)"
+          >
+            <option value="">None</option>
+            <option v-for="p in row.options" :key="p.id" :value="p.id">{{ p.label }}</option>
+          </select>
+        </EditorField>
+      </div>
     </div>
 
     <p class="pv-scene__hint">
@@ -180,7 +214,6 @@ import { computed, ref, watch } from 'vue'
 import EditorField from '@/components/editor/EditorField.vue'
 import SectionCard from '@/components/editor/SectionCard.vue'
 import { defaultPreviewRequest } from '@/game/abilities/program/programPreview'
-import type { ConditionalRef } from './programTree'
 
 export type TargetSelector = 'first_enemy' | 'first_ally' | 'self' | 'point'
 
@@ -203,11 +236,18 @@ export interface PreviewSceneConfig {
   casterRank: string
   /** Promotion path — what actually determines a rank's stats. */
   casterPath: string
-  /** Forced outcomes for named `conditional` actions, keyed by action id. See
-      the template comment on the Force-branches block, and Go's
-      PreviewRequest.ConditionalOverrides. Empty for a program with no
-      conditionals, or one whose branches the author hasn't touched. */
-  conditionalOverrides: Record<string, boolean>
+  /** Perks the caster owns for this run. Perk-gated branches and perk
+      modifiers then behave exactly as they would in a match, which is what
+      replaced the old forced-conditional map. */
+  casterPerks: string[]
+  /** Send the allies in to attack. See PreviewRequest.alliesAttack — the only
+      way to see an ability that changes someone else's damage rather than
+      dealing its own. */
+  alliesAttack: boolean
+  /** Send the enemies in to attack. The mirror of alliesAttack (see
+      PreviewRequest.enemiesAttack) — for an ability that changes an ENEMY'S
+      outgoing damage, e.g. a Weaken debuff. */
+  enemiesAttack: boolean
 }
 
 // chargeRequired: the ability-under-preview's own charge threshold, supplied by
@@ -215,17 +255,14 @@ export interface PreviewSceneConfig {
 // the Charge input (prefilled to this value so one volley is ready); null hides
 // it. The emitted casterCharge is still sent regardless — it's simply ignored
 // server-side for any ability that isn't a charge-fire passive.
-// conditionals: every `conditional` action in the program under preview, in
-// document order (collectConditionals), each rendered as one force-the-branch
-// toggle. Supplied by the panel rather than read from the builder context so
-// this control stays a pure props-in/config-out component like the rest of its
-// fields.
+// perkOptions: every perk in the catalog, id -> display name. Supplied by the
+// panel rather than read from the builder context so this control stays a pure
+// props-in/config-out component like the rest of its fields. WHICH of them a
+// rank offers comes from the path catalog below, not from this list.
 const props = defineProps<{
   chargeRequired?: number | null
-  conditionals?: ConditionalRef[]
+  perkOptions?: { id: string; label: string }[]
 }>()
-
-const conditionals = computed(() => props.conditionals ?? [])
 
 const emit = defineEmits<{ 'update:modelValue': [config: PreviewSceneConfig] }>()
 
@@ -243,6 +280,21 @@ const casterCharge = ref(seedDefaults.casterCharge)
 const casterUnitType = ref('')
 const casterRank = ref('')
 const casterPath = ref('')
+// Off by default: an untouched preview shows the ability acting alone, which is
+// the honest baseline for what it does on its own.
+const alliesAttack = ref(false)
+// Off by default for the same reason: the baseline preview shows the ability
+// alone. Ticked, the enemy scene units swing back — the only way to see a debuff
+// that reduces an enemy's OWN outgoing damage.
+const enemiesAttack = ref(false)
+
+function onAlliesAttackChange(e: Event) {
+  alliesAttack.value = (e.target as HTMLInputElement).checked
+}
+
+function onEnemiesAttackChange(e: Event) {
+  enemiesAttack.value = (e.target as HTMLInputElement).checked
+}
 
 // Caster options come from the unit catalog, so the picker can never offer a
 // unit that no longer exists. A failed fetch leaves the list empty, which
@@ -288,40 +340,106 @@ function onCasterUnitTypeChange(e: Event) {
   // A path belongs to ONE unit, so a leftover selection would describe a pair
   // that doesn't exist. Clear it rather than send an incoherent request.
   casterPath.value = ''
+  perkByRank.value = {}
 }
 
 function onCasterPathChange(e: Event) {
   casterPath.value = (e.target as HTMLSelectElement).value
+  // Perks belong to a path, so a selection from the previous one is nonsense.
+  perkByRank.value = {}
+  // A path is EARNED at bronze — there is no such thing as a pathed unit at
+  // base rank. Promote rather than leaving a pairing no real unit has.
+  if (casterPath.value && !casterRank.value) casterRank.value = 'bronze'
 }
 
 function onCasterRankChange(e: Event) {
   casterRank.value = (e.target as HTMLSelectElement).value
+  // Dropping to a lower rank retires the perks above it. selectedPerks() is
+  // derived from the visible rows and would ignore them anyway, but leaving
+  // them in the state means they silently reappear if the user goes back up —
+  // a selection they never re-made.
+  const next = { ...perkByRank.value }
+  for (const { rank } of PERK_RANKS.slice(rankCap() + 1)) delete next[rank]
+  perkByRank.value = next
 }
 
-// conditionalOverrides holds ONLY the conditionals the author has actually
-// toggled. An id absent from this map is sent as no override at all, so the
-// server evaluates that conditional normally — which keeps an untouched
-// preview behaving exactly as it did before this control existed, rather than
-// silently pinning every branch to false the moment the panel mounts.
-const conditionalOverrides = ref<Record<string, boolean>>({})
+// rankCap is the highest rank index the caster can carry perks from. A unit
+// holds every perk it earned on the way up, so gold offers all three rows and
+// bronze offers only its own.
+//
+// -1 means base rank, which carries no perks at all. That case never coincides
+// with a visible perk row in practice — perk rows require a path, and choosing
+// a path promotes to bronze (onCasterPathChange) — but the ordering still
+// answers it correctly rather than relying on that.
+function rankCap(): number {
+  return PERK_RANKS.findIndex((r) => r.rank === casterRank.value)
+}
 
-// Drop overrides for conditionals that no longer exist. Without this, deleting
-// a branch (or switching to another ability) would leave its entry riding along
-// in every subsequent request — harmless server-side (unknown ids are ignored)
-// but a lie in the emitted config, and it would come back to life if the author
-// ever re-created an action with the same id.
-watch(
-  conditionals,
-  (list) => {
-    const live = new Set(list.map((c) => c.id))
-    const next: Record<string, boolean> = {}
-    for (const [id, v] of Object.entries(conditionalOverrides.value)) {
-      if (live.has(id)) next[id] = v
+// One perk per rank, which is what a unit can actually carry. Empty by default:
+// an untouched preview shows what the ability does for a unit that owns
+// nothing, the honest baseline.
+const perkByRank = ref<Record<string, string>>({})
+
+// perksByRankByPath is the catalog's own rank -> perk-ids map per promotion
+// path. It is the SOLE source of which perks exist at which rank (a PerkDef
+// carries no rank of its own — a path's perksByRank assigns it), so these
+// dropdowns cannot drift from what a real promotion would offer.
+const perksByRankByPath = ref<Record<string, Record<string, string[]>>>({})
+
+async function loadPathPerks() {
+  try {
+    const res = await fetch('/catalog/paths')
+    if (!res.ok) return
+    const body = (await res.json()) as {
+      paths?: { path: string; def?: { perksByRank?: Record<string, string[]> } }[]
     }
-    conditionalOverrides.value = next
-  },
-  { immediate: true },
-)
+    const out: Record<string, Record<string, string[]>> = {}
+    for (const p of body.paths ?? []) {
+      if (p.def?.perksByRank) out[p.path] = p.def.perksByRank
+    }
+    perksByRankByPath.value = out
+  } catch {
+    // Offline / server down: the rank rows simply don't render.
+  }
+}
+void loadPathPerks()
+
+const PERK_RANKS = [
+  { rank: 'bronze', label: 'Bronze Perk' },
+  { rank: 'silver', label: 'Silver Perk' },
+  { rank: 'gold', label: 'Gold Perk' },
+] as const
+
+// One row per rank the selected path actually grants perks at. A path with no
+// silver bucket shows no Silver dropdown rather than an empty one.
+const perkRankRows = computed(() => {
+  const byRank = perksByRankByPath.value[casterPath.value]
+  if (!byRank) return []
+  const labelFor = new Map((props.perkOptions ?? []).map((p) => [p.id, p.label]))
+  const cap = rankCap()
+  return PERK_RANKS.flatMap(({ rank, label }, i) => {
+    if (i > cap) return []
+    const ids = byRank[rank] ?? []
+    if (ids.length === 0) return []
+    return [{
+      rank,
+      label,
+      options: ids
+        .map((id) => ({ id, label: labelFor.get(id) ?? id }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    }]
+  })
+})
+
+// The selected perks, in rank order, skipping ranks left at "None". Derived
+// from the VISIBLE rows rather than from the raw per-rank state, so a perk that
+// the chosen rank cannot carry can never ride along in the request — the rank
+// filter is enforced by what gets emitted, not only by what gets drawn.
+function selectedPerks(): string[] {
+  return perkRankRows.value
+    .map((row) => perkByRank.value[row.rank])
+    .filter((id) => !!id)
+}
 
 // Keep casterCharge in lockstep with whether a charge field is even shown:
 // prefill to the ability's own threshold when a charge-fire ability is under
@@ -347,7 +465,9 @@ const config = computed<PreviewSceneConfig>(() => ({
   casterUnitType: casterUnitType.value,
   casterRank: casterRank.value,
   casterPath: casterPath.value,
-  conditionalOverrides: { ...conditionalOverrides.value },
+  casterPerks: selectedPerks(),
+  alliesAttack: alliesAttack.value,
+  enemiesAttack: enemiesAttack.value,
 }))
 
 watch(config, (v) => emit('update:modelValue', v), { immediate: true })
@@ -376,11 +496,12 @@ function onDurationInput(e: Event) {
   durationSeconds.value = Number.isFinite(n) && n > 0 ? n : 0.1
 }
 
-function onConditionalToggle(id: string, e: Event) {
-  conditionalOverrides.value = {
-    ...conditionalOverrides.value,
-    [id]: (e.target as HTMLInputElement).checked,
-  }
+function onPerkRankChange(rank: string, e: Event) {
+  const id = (e.target as HTMLSelectElement).value
+  const next = { ...perkByRank.value }
+  if (id) next[rank] = id
+  else delete next[rank]
+  perkByRank.value = next
 }
 
 function onCasterChargeInput(e: Event) {
@@ -449,9 +570,26 @@ function onCasterChargeInput(e: Event) {
   padding-right: 4px;
 }
 
+/* Same specificity reason as the number inputs above: without the row+element
+   prefix the shell's width:100% control rule stretches the box. */
+.pv-scene__row input.pv-scene__check {
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
 .pv-scene__row select.pv-scene__select {
   width: auto;
   min-width: 92px;
+}
+
+/* The perk fields belong to the SAME wrapping row as caster/rank/path — they
+   are more of the same kind of choice, not a section of their own. The wrapper
+   survives only as a v-if + test hook, so display:contents lets its children
+   participate in .pv-scene__row's flex flow directly instead of forming a
+   nested box that always breaks to its own line. */
+.pv-scene__perks {
+  display: contents;
 }
 
 .pv-scene__hint {

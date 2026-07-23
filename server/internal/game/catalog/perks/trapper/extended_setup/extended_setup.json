@@ -2,39 +2,11 @@
   "id": "extended_setup",
   "displayName": "Extended Setup",
   "description": "Your traps persist 50% longer, covering more of the battlefield for longer.",
-  "tooltipTemplate": "All traps last {durationMultiplier+%} longer.",
   "icon": "perk-extended-setup",
-  "config": {
-    "durationMultiplier": 1.5
-  },
-  "abilityFields": [
+  "abilityStats": [
     {
-      "target": "fire_pit",
-      "action": "pit",
-      "field": "duration",
-      "op": "multiply",
-      "value": 1.5
-    },
-    {
-      "target": "caltrops",
-      "action": "field",
-      "field": "duration",
-      "op": "multiply",
-      "value": 1.5
-    },
-    {
-      "target": "explosive_trap",
-      "action": "arm",
-      "field": "duration",
-      "op": "multiply",
-      "value": 1.5
-    },
-    {
-      "target": "marker_trap",
-      "action": "zone",
-      "field": "duration",
-      "op": "multiply",
-      "value": 1.5
+      "stat": "create_zone.duration",
+      "pct": 0.5
     }
   ]
 }

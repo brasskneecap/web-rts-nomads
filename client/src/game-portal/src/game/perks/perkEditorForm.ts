@@ -24,6 +24,43 @@ export interface AbilityModifier {
   cooldownMult?: number
 }
 
+/** PerkAbilityStat mirrors the Go PerkAbilityStat struct: one broad improvement
+ *  addressed by ability STAT rather than by naming an action and a field.
+ *
+ *  `ability` is optional and is the point of the type — named improves only that
+ *  ability, omitted improves every ability the unit has (the same fold the
+ *  unit's own abilityStats block feeds). `pct` is a FRACTION on the wire (0.5 =
+ *  +50%); the editor shows whole percent. */
+export interface PerkAbilityStat {
+  ability?: string
+  stat: string
+  flat?: number
+  pct?: number
+}
+
+// AbilityFieldModifier mirrors the Go AbilityFieldModifier struct: the PRECISE
+// form of a perk->ability contribution, addressing ONE field of ONE action of
+// ONE ability (or of every ability carrying a tag, via a "tag:trap" target).
+//
+// Use this when the perk must distinguish one action from another inside an
+// ability — "marker_trap's MARK lasts 35% longer" cannot be said with a
+// PerkAbilityStat, whose `duration` would lengthen the zone too. Use
+// PerkAbilityStat for everything broader; it survives an action being renamed,
+// and this does not.
+export interface AbilityFieldModifier {
+  /** Ability id, or "tag:<tag>" for every ability carrying that tag. */
+  target: string
+  /** Authored action id inside that ability's program (e.g. "mark"). */
+  action: string
+  /** Config key on that action (e.g. "duration"), or "target.radius". */
+  field: string
+  /** "multiply" (default), "add", or "amplify". */
+  op?: string
+  value: number
+  /** "intrinsic" | "base" (default) | "final". */
+  stage?: string
+}
+
 // AbilityRider mirrors the Go AbilityRider struct: extra action fragments a
 // perk grafts onto a named ability's trigger. `actions` reuses the same
 // AbilityActionDef the ability builder authors (@/game/abilities/program/
@@ -87,6 +124,13 @@ export interface AuthoredPerkDef {
   effect?: PerkEffectShape | null
   grantsAbilities?: string[]
   abilityModifiers?: AbilityModifier[]
+  /** Broad, stat-addressed improvements — see PerkAbilityStat. Prefer this over
+   *  abilityFields when the perk means "my abilities are bigger/longer", and
+   *  abilityFields when it must distinguish one action from another inside an
+   *  ability. */
+  abilityStats?: PerkAbilityStat[]
+  /** Precise, action-addressed contributions — see AbilityFieldModifier. */
+  abilityFields?: AbilityFieldModifier[]
   abilityRiders?: AbilityRider[]
   statModifiers?: PerkStatModifier[]
   auras?: PerkAura[]
@@ -104,7 +148,7 @@ const MODELED_KEYS = [
   'id', 'displayName', 'description', 'tooltipTemplate', 'tooltipTemplateByTrap',
   'tooltipTemplateByOwnedPerk', 'icon', 'path', 'requiresPerk', 'requiresAbility',
   'config', 'configByRank', 'effect', 'grantsAbilities',
-  'abilityModifiers', 'abilityRiders', 'statModifiers', 'auras', 'wired', 'generatedDescription',
+  'abilityModifiers', 'abilityStats', 'abilityFields', 'abilityRiders', 'statModifiers', 'auras', 'wired', 'generatedDescription',
 ] as const
 
 export interface PerkEditorForm extends AuthoredPerkDef {

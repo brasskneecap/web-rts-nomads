@@ -63,6 +63,7 @@ function stubFetch(abilities: AuthoredAbilityDef[], deleteStatus: 'deleted' | 'r
     if (method === 'GET' && u.endsWith('/catalog/ability-categories')) return jsonResponse({ abilityCategories: [] })
     if (method === 'GET' && u.endsWith('/catalog/autocast-selectors')) return jsonResponse({ autoCastSelectors: [] })
     if (method === 'GET' && u.endsWith('/catalog/units')) return jsonResponse({ units: [] })
+    if (method === 'GET' && u.endsWith('/catalog/perks')) return jsonResponse({ perks: [] })
     if (method === 'POST' && u.endsWith('/abilities/validate')) return jsonResponse({ issues: [] })
     if (method === 'DELETE' && u.includes('/abilities/')) {
       const id = decodeURIComponent(u.split('/abilities/')[1])
@@ -147,6 +148,7 @@ describe('AbilityBuilderPanel', () => {
       if (method === 'GET' && u.endsWith('/catalog/ability-categories')) return jsonResponse({ abilityCategories: [] })
       if (method === 'GET' && u.endsWith('/catalog/autocast-selectors')) return jsonResponse({ autoCastSelectors: [] })
       if (method === 'GET' && u.endsWith('/catalog/units')) return jsonResponse({ units: [] })
+    if (method === 'GET' && u.endsWith('/catalog/perks')) return jsonResponse({ perks: [] })
       if (method === 'POST' && u.endsWith('/abilities/validate')) return jsonResponse({ issues: [] })
       if (method === 'POST' && u.endsWith('/abilities')) {
         // Mimic the real backend: a save persists the ability, so the NEXT
@@ -203,6 +205,7 @@ describe('AbilityBuilderPanel', () => {
       if (method === 'GET' && u.endsWith('/catalog/ability-categories')) return jsonResponse({ abilityCategories: [] })
       if (method === 'GET' && u.endsWith('/catalog/autocast-selectors')) return jsonResponse({ autoCastSelectors: [] })
       if (method === 'GET' && u.endsWith('/catalog/units')) return jsonResponse({ units: [] })
+    if (method === 'GET' && u.endsWith('/catalog/perks')) return jsonResponse({ perks: [] })
       if (method === 'POST' && u.endsWith('/abilities/validate')) {
         return jsonResponse({
           issues: [

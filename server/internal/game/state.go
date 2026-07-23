@@ -1095,20 +1095,20 @@ type GameState struct {
 	previewTrace *AbilityExecutionTrace
 	previewClock float64
 
-	// previewConditionalOverrides forces individual `conditional` actions to a
-	// fixed outcome for the duration of a RunAbilityPreview run, keyed by the
-	// conditional action's own id. Present ⇒ that conditional takes the mapped
-	// branch without evaluating its conditions at all; absent ⇒ it evaluates
-	// normally. This exists because the preview harness's synthetic caster owns
-	// no perks, items or advancements, so every `has_perk` branch — the whole
-	// point of a perk-gated ability like fire_pit — would always be false and
-	// its THEN side would be unreachable in the editor.
+	// previewAbilityAliases maps a preview harness's scratch ability id back to
+	// the id the ability is AUTHORED under. Empty in every real match.
 	//
-	// nil in every real match (the map is only ever populated by
-	// RunAbilityPreview from PreviewRequest.ConditionalOverrides), so a
-	// production conditional never consults it — a nil-map read is the same
-	// two-word lookup the zero value would be.
-	previewConditionalOverrides map[string]bool
+	// RunAbilityPreview registers the ability under a unique throwaway id so
+	// concurrent previews cannot collide (nextPreviewAbilityID). That id is what
+	// reaches the executor — which silently broke every modifier that names an
+	// ability BY ID: a perk's AbilityFields/AbilityStats/AbilityModifiers/
+	// AbilityRiders row targeting "marker_trap" never matched
+	// "__ability_preview_7__", so the whole ability-targeted half of perk
+	// authoring did nothing in the one place abilities are tested. Tag-targeted
+	// rows were unaffected (tags travel on the def), which is why the gap hid so
+	// long.
+	previewAbilityAliases map[string]string
+
 
 	// simTime accumulates dt every Update() tick, in production and preview
 	// alike (unlike previewClock, which stays 0 in production). It is a

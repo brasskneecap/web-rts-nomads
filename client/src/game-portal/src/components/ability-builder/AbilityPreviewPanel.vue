@@ -5,7 +5,7 @@
          give the canvas/timeline more room. -->
     <PreviewSceneControls
       :charge-required="chargeRequired"
-      :conditionals="conditionals"
+      :perk-options="perkOptions"
       @update:model-value="onSceneConfigUpdate"
     />
 
@@ -135,7 +135,7 @@ import type { PreviewRequest, PreviewResult, PreviewSceneUnit } from '@/game/abi
 import { runAbilityPreview } from '@/game/abilities/abilityEditorApi'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
 import { refFromPath } from './refFromPath'
-import { collectConditionals, type NodePath, type NodeRef } from './programTree'
+import { type NodePath, type NodeRef } from './programTree'
 import { buildExecutionTimeline } from './executionTimeline'
 import { PREVIEW_FRAME_DT_SECONDS } from './previewPlayback'
 import PreviewSceneControls, { type PreviewSceneConfig } from './PreviewSceneControls.vue'
@@ -195,14 +195,22 @@ const sceneConfig = ref<PreviewSceneConfig>({
   casterUnitType: '',
   casterRank: '',
   casterPath: '',
-  conditionalOverrides: {},
+  casterPerks: [],
+  alliesAttack: false,
+  enemiesAttack: false,
 })
 
-// conditionals: every `conditional` action in the program under edit, so the
-// scene controls can offer one force-the-branch toggle each. Recomputed from
-// the live program, so adding/removing/re-labelling a branch in the flow view
-// updates the toggle list immediately.
-const conditionals = computed(() => collectConditionals(builder.program.value))
+// perkOptions: every perk in the catalog, passed down whole. The scene controls
+// scope it to their own selected promotion path.
+//
+// The scoping deliberately does NOT happen here. Filtering by
+// sceneConfig.casterPath would make this computed depend on the very config the
+// child emits: emit -> sceneConfig changes -> this recomputes -> new array
+// identity -> the child's config recomputes -> emit, forever. The child owns
+// casterPath, so the child owns the filter.
+const perkOptions = computed(() =>
+  [...builder.catalogs.value.perks].sort((a, b) => a.label.localeCompare(b.label)),
+)
 
 function onSceneConfigUpdate(v: PreviewSceneConfig) {
   sceneConfig.value = v
@@ -515,7 +523,9 @@ async function onRun() {
       casterPath: sceneConfig.value.casterPath,
       seed: sceneConfig.value.seed,
       durationSeconds: sceneConfig.value.durationSeconds,
-      conditionalOverrides: sceneConfig.value.conditionalOverrides,
+      casterPerks: sceneConfig.value.casterPerks,
+      alliesAttack: sceneConfig.value.alliesAttack,
+      enemiesAttack: sceneConfig.value.enemiesAttack,
     }
     lastRequestDuration.value = req.durationSeconds > 0 ? req.durationSeconds : 3
     lastCasterX.value = req.casterX

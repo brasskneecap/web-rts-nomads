@@ -76,16 +76,35 @@ export interface PreviewRequest {
   casterPath?: string
   durationSeconds: number
   /**
-   * Forced outcomes for individual `conditional` actions, keyed by the
-   * conditional's authored action id: true takes THEN, false takes ELSE, and
-   * an id that isn't present evaluates normally.
+   * Perks the preview caster OWNS for this run.
    *
-   * A TESTING affordance, not a simulation input — the synthetic preview
-   * caster owns no perks, items or advancements, so a has_perk branch would
-   * always resolve false and its THEN side could never be previewed. Ids that
-   * match no conditional are ignored server-side.
+   * Replaces a `conditionalOverrides` map that forced named branches. Forcing
+   * proved the THEN side produced some effect but never that the CONDITION was
+   * authored right — a has_perk naming a perk that does not exist previewed
+   * identically to a correct one. Granting the perk runs the real evaluator,
+   * and perk modifiers apply too, so the preview matches a match. Unknown ids
+   * are ignored server-side.
    */
-  conditionalOverrides?: Record<string, boolean>
+  casterPerks?: string[]
+  /**
+   * Send the allied scene units in to attack the enemy ones: they keep their
+   * catalog move speed, damage and range, and are attack-moved onto the enemy
+   * group when the run starts.
+   *
+   * This is what makes an ability that only changes SOMEONE ELSE'S damage
+   * testable. A mark that makes its victim take +20% from all sources deals
+   * none of its own — with every scene unit frozen and disarmed, the preview
+   * showed the mark being applied and nothing more. With only one side ticked
+   * the other stays inert so the resulting HP delta is attributable.
+   */
+  alliesAttack?: boolean
+  /**
+   * The mirror of alliesAttack: send the ENEMY scene units in to attack the
+   * ally ones. For an ability whose effect lands on an enemy's OUTGOING damage
+   * (a Weaken debuff makes the marked enemy deal less), only visible once that
+   * enemy actually swings.
+   */
+  enemiesAttack?: boolean
 }
 
 // PreviewFrame mirrors Go's game.PreviewFrame: one per-tick snapshot of the

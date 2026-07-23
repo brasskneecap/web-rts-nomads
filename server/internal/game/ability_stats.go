@@ -66,7 +66,10 @@ type abilityStatSource struct {
 // prefixed by family so they can never collide and the sort stays stable.
 //
 // Caller holds s.mu.
-func (s *GameState) collectAbilityStatSourcesLocked(caster *Unit) []abilityStatSource {
+func (s *GameState) collectAbilityStatSourcesLocked(caster *Unit, abilityID string) []abilityStatSource {
+	// Preview runs execute under a scratch ability id; rows naming the authored
+	// id must still match. No-op in a real match.
+	abilityID = s.authoredAbilityIDLocked(abilityID)
 	if caster == nil {
 		return nil
 	}
@@ -100,8 +103,48 @@ func (s *GameState) collectAbilityStatSourcesLocked(caster *Unit) []abilityStatS
 		out = append(out, abilityStatSource{id: "item:" + eq.ItemID, stats: itemDef.AbilityStats})
 	}
 
+	// Perks. A perk row may NAME an ability, in which case it only contributes
+	// while that ability is the one being cast; a row that names none applies to
+	// every ability the unit has, exactly like the unit's own block. This is the
+	// difference between "your FIRE PIT is 50% bigger" and "your abilities are
+	// 50% bigger", and it is the only reason abilityID is threaded down here.
+	for _, perkID := range caster.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil || len(def.AbilityStats) == 0 {
+			continue
+		}
+		stats := make(map[string]AbilityStatMod, len(def.AbilityStats))
+		for _, row := range def.AbilityStats {
+			if row.Ability != "" && row.Ability != abilityID {
+				continue
+			}
+			// Two rows of the same perk may address the same stat (one global,
+			// one ability-specific); they ADD, matching how two separate perks
+			// would combine.
+			cur := stats[row.Stat]
+			cur.Flat += row.Flat
+			cur.Pct += row.Pct
+			stats[row.Stat] = cur
+		}
+		if len(stats) == 0 {
+			continue
+		}
+		out = append(out, abilityStatSource{id: "perk:" + perkID, stats: stats})
+	}
+
 	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
 	return out
+}
+
+// casterHasPerkAbilityStats is the cheap pre-check for the fold's early bail:
+// does this caster carry ANY perk that contributes ability stats?
+func casterHasPerkAbilityStats(caster *Unit) bool {
+	for _, perkID := range caster.PerkIDs {
+		if def := perkDefByID(perkID); def != nil && len(def.AbilityStats) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // abilityStatFoldLocked sums the flat and percentage contributions that apply to
@@ -109,8 +152,8 @@ func (s *GameState) collectAbilityStatSourcesLocked(caster *Unit) []abilityStatS
 // (0, 0) when nothing applies, which is the overwhelmingly common case.
 //
 // Caller holds s.mu.
-func (s *GameState) abilityStatFoldLocked(caster *Unit, action ActionType, kind string) (flat, pct float64) {
-	sources := s.collectAbilityStatSourcesLocked(caster)
+func (s *GameState) abilityStatFoldLocked(caster *Unit, abilityID string, action ActionType, kind string) (flat, pct float64) {
+	sources := s.collectAbilityStatSourcesLocked(caster, abilityID)
 	if len(sources) == 0 {
 		return 0, 0
 	}
@@ -144,7 +187,7 @@ func (s *GameState) abilityStatFoldLocked(caster *Unit, action ActionType, kind 
 // with no ability stats pays one map length check.
 //
 // Caller holds s.mu.
-func (s *GameState) applyAbilityStatsToConfigLocked(caster *Unit, action ActionType, config json.RawMessage) json.RawMessage {
+func (s *GameState) applyAbilityStatsToConfigLocked(caster *Unit, abilityID string, action ActionType, config json.RawMessage) json.RawMessage {
 	if len(config) == 0 || caster == nil {
 		return config
 	}
@@ -152,9 +195,19 @@ func (s *GameState) applyAbilityStatsToConfigLocked(caster *Unit, action ActionT
 	// all? Every unit without an item or an authored block exits here.
 	if len(caster.AbilityStats) == 0 &&
 		len(pathAbilityStatsFor(caster.ProgressionPath, caster.Rank)) == 0 &&
-		!casterHasItemAbilityStats(caster) {
+		!casterHasItemAbilityStats(caster) &&
+		!casterHasPerkAbilityStats(caster) {
 		return config
 	}
+	// INFLICTED-STAT fold: a change_stat action carries the id of the unit stat
+	// it inflicts in its own config, so a row addressed by that stat id folds
+	// onto this action's `value` wherever the action sits in the program. Runs
+	// before the kinded walk below and returns early — change_stat has no kinded
+	// fields, so the two never both apply to one action.
+	if action == ActionChangeStat {
+		return s.applyInflictedStatToChangeStatLocked(caster, abilityID, config)
+	}
+
 	desc, ok := lookupActionDescriptor(action)
 	if !ok {
 		return config
@@ -191,7 +244,7 @@ func (s *GameState) applyAbilityStatsToConfigLocked(caster *Unit, action ActionT
 			// inventing a number). Skip rather than guess.
 			continue
 		}
-		flat, pct := s.abilityStatFoldLocked(caster, action, kind)
+		flat, pct := s.abilityStatFoldLocked(caster, abilityID, action, kind)
 		if !abilityStatKindAllowsPct(kind) {
 			// Belt and braces: validateAbilityStats rejects an authored pct on a
 			// whole-quantity stat at load, so reaching here means a def built
@@ -257,6 +310,50 @@ func casterHasItemAbilityStats(caster *Unit) bool {
 	return false
 }
 
+// applyInflictedStatToChangeStatLocked adds every matching source contribution
+// to a change_stat action's value.
+//
+// "Matching" means the source authored a row whose stat id equals the stat this
+// action inflicts — so a perk row `{stat: "damageTaken", flat: 0.15}` finds
+// marker_trap's mark without knowing the action is called "vulnerable", and
+// `{stat: "moveSpeed", flat: -0.15}` finds caltrops' slow the same way.
+//
+// ADD, never multiply. See the FLAT ONLY note on the inflicted-stat rows in
+// AbilityStatDefs: these values are often inverse-sense, and a flat add is the
+// only op that reads the same way at every site.
+//
+// Caller holds s.mu.
+func (s *GameState) applyInflictedStatToChangeStatLocked(caster *Unit, abilityID string, config json.RawMessage) json.RawMessage {
+	var decoded map[string]any
+	if err := json.Unmarshal(config, &decoded); err != nil {
+		return config
+	}
+	statID, _ := decoded["stat"].(string)
+	if statID == "" {
+		return config
+	}
+	base, isNum := decoded["value"].(float64)
+	if !isNum {
+		// An unresolved loop var / "$param" reference. Skip rather than guess.
+		return config
+	}
+	var flat float64
+	for _, src := range s.collectAbilityStatSourcesLocked(caster, abilityID) {
+		if m, ok := src.stats[statID]; ok {
+			flat += m.Flat
+		}
+	}
+	if flat == 0 {
+		return config
+	}
+	decoded["value"] = base + flat
+	out, err := json.Marshal(decoded)
+	if err != nil {
+		return config
+	}
+	return out
+}
+
 // validateAbilityStats checks an authored ability-stat block: every id must be a
 // stat the registry actually offers, and every value finite. An unknown id is a
 // LOAD ERROR rather than a silent no-op — the whole point of deriving the ids
@@ -293,11 +390,66 @@ func validateAbilityStats(sourceLabel string, stats map[string]AbilityStatMod) e
 		if math.IsNaN(m.Pct) || math.IsInf(m.Pct, 0) {
 			return fmt.Errorf("%s: abilityStats[%q].pct must be finite, got %v", sourceLabel, id, m.Pct)
 		}
+		if m.Pct != 0 && isInflictedStatID(id) {
+			return fmt.Errorf("%s: abilityStats[%q] addresses a stat an ability INFLICTS, which takes a flat amount only — these values are often inverse-sense (a moveSpeed multiplier of 0.35 is a stronger slow than 0.7), so a percentage has no single reading. Use \"flat\": negative strengthens a slow, positive strengthens a debuff", sourceLabel, id)
+		}
 		if m.Pct != 0 && flatOnly[id] {
 			return fmt.Errorf("%s: abilityStats[%q] is a whole quantity and takes a flat bonus only — a percentage of a small count rounds to nothing (+15%% of 3 is 3). Use \"flat\" instead", sourceLabel, id)
 		}
 	}
 	return nil
+}
+
+// validatePerkAbilityStats checks what can be checked AT LOAD: a stat id is
+// present and the numbers are finite.
+//
+// It deliberately does NOT check that the stat id is real or that a named
+// ability exists. Perk defs are built by a package-level VAR initializer, which
+// Go runs before any init() — so the action registry AbilityStatDefs() derives
+// from, and the ability catalog, are both still empty here. Those two checks
+// live in TestCatalog_PerkAbilityStatsResolve instead, where everything is
+// populated. A typo'd stat or ability id fails CI rather than at boot, which is
+// the same trade every other cross-registry catalog rule in this package makes.
+func validatePerkAbilityStats(sourceLabel string, rows []PerkAbilityStat) error {
+	for i, row := range rows {
+		if row.Stat == "" {
+			return fmt.Errorf("%s: abilityStats[%d] names no stat", sourceLabel, i)
+		}
+		if math.IsNaN(row.Flat) || math.IsInf(row.Flat, 0) {
+			return fmt.Errorf("%s: abilityStats[%d].flat must be finite, got %v", sourceLabel, i, row.Flat)
+		}
+		if math.IsNaN(row.Pct) || math.IsInf(row.Pct, 0) {
+			return fmt.Errorf("%s: abilityStats[%d].pct must be finite, got %v", sourceLabel, i, row.Pct)
+		}
+	}
+	return nil
+}
+
+// perkAbilityStatsResolve is validatePerkAbilityStats' other half, split out so
+// it can run once the registries exist (see that function's doc comment for
+// why it cannot run at load). Checks the stat id against the live grid and any
+// named ability against the live catalog.
+//
+// The ability check earns its place: a row naming an ability id that does not
+// exist contributes NOTHING and looks entirely correct in the editor.
+func perkAbilityStatsResolve(sourceLabel string, rows []PerkAbilityStat) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	byStat := make(map[string]AbilityStatMod, len(rows))
+	for i, row := range rows {
+		if row.Ability != "" {
+			if _, ok := getAbilityDef(row.Ability); !ok {
+				return fmt.Errorf("%s: abilityStats[%d] targets ability %q, which does not exist — the row would contribute nothing. Leave `ability` empty to affect every ability the unit has",
+					sourceLabel, i, row.Ability)
+			}
+		}
+		cur := byStat[row.Stat]
+		cur.Flat += row.Flat
+		cur.Pct += row.Pct
+		byStat[row.Stat] = cur
+	}
+	return validateAbilityStats(sourceLabel, byStat)
 }
 
 func copyAbilityStats(src map[string]AbilityStatMod) map[string]AbilityStatMod {

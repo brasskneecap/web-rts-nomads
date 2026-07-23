@@ -111,11 +111,17 @@ var wiredPerkIDs = map[string]struct{}{
 	// so their ids are no longer perks at all. rapid_deployment is also gone
 	// from this set — it became a data perk (AbilityModifier.CooldownMult on the
 	// four trap abilities) and is now wired purely via perkHasTypedBehavior.
-	"extended_setup":       {},
-	"wider_nets":           {},
-	"amplified_effects":    {},
-	"explosive_chain":      {},
-	"barbed_field":         {},
+	"extended_setup":    {},
+	"wider_nets":        {},
+	"amplified_effects": {},
+	"explosive_chain":   {},
+	"barbed_field":      {},
+	// exposed_weakness / lasting_flames are has_perk-GATED perks: their whole
+	// behavior is a conditional inside the relevant trap ability's program
+	// (marker_trap adds a damageDealt/Weaken status; fire_pit switches to
+	// burn-as-debuff). They carry no typed PerkDef data of their own, so
+	// perkHasTypedBehavior can't see them — this hand-maintained entry is the
+	// ONLY thing that keeps the editor from labelling them inert.
 	"exposed_weakness":     {},
 	"lasting_flames":       {},
 	"ascendant_infusion":   {},

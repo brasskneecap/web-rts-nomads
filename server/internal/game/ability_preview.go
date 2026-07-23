@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"webrts/server/pkg/protocol"
@@ -145,17 +146,43 @@ type PreviewRequest struct {
 	// ignored, like CasterUnitType/CasterRank.
 	CasterPath string `json:"casterPath,omitempty"`
 	DurationSeconds float64 `json:"durationSeconds"`
-	// ConditionalOverrides forces named `conditional` actions to a fixed
-	// outcome, keyed by the conditional's authored action id: true takes THEN,
-	// false takes ELSE, and an id that isn't present evaluates normally. Any
-	// number of conditionals can be overridden independently in one run.
+	// CasterPerks are the perks the preview caster OWNS for this run.
 	//
-	// This is a TESTING affordance, not a simulation input: the synthetic
-	// preview caster owns no perks, items or advancements, so a has_perk branch
-	// would otherwise always resolve false and its THEN side could never be
-	// previewed. An id that matches no conditional is silently ignored — the
-	// author may have renamed or deleted the node since the checkbox was set.
-	ConditionalOverrides map[string]bool `json:"conditionalOverrides,omitempty"`
+	// This replaces the old ConditionalOverrides map, which forced named
+	// `conditional` actions to a fixed outcome. That was a lie-shaped testing
+	// affordance: it proved the THEN branch produced some effect, but never that
+	// the CONDITION was authored correctly — a `has_perk` naming a perk that
+	// does not exist, or the wrong perk entirely, previewed identically to a
+	// correct one. Granting the perk exercises the real evaluator, so a typo'd
+	// perk id now shows up as the branch simply not being taken.
+	//
+	// Unknown perk ids are ignored rather than failing the run, matching
+	// CasterUnitType/CasterRank: a stale editor value means the perk was
+	// renamed, not that the preview is invalid.
+	CasterPerks []string `json:"casterPerks,omitempty"`
+	// AlliesAttack turns the allied scene units into real combatants: they keep
+	// their catalog move speed, damage and attack range, and are attack-moved
+	// onto the enemy group when the run starts.
+	//
+	// This is what makes an ability whose whole effect lands on SOMEONE ELSE'S
+	// damage testable. A mark that makes its victim take +20% from all sources
+	// (marker_trap) deals no damage of its own — with every scene unit frozen and
+	// disarmed, the preview showed a mark being applied and nothing else, and
+	// whether it actually changed a number could only be checked in a live match.
+	//
+	// Default false — an untouched preview still shows the ability acting alone,
+	// which is the honest baseline. When ONLY one side attacks, that side hitting
+	// an unresisting target is a clean measurement; ticking BOTH turns the run
+	// into a skirmish whose HP deltas are harder to attribute, which is the
+	// caller's explicit choice to make.
+	AlliesAttack bool `json:"alliesAttack,omitempty"`
+	// EnemiesAttack is the enemy-side mirror of AlliesAttack: the enemy scene
+	// units keep their catalog move speed / damage / range and are attack-moved
+	// onto the ally group when the run starts. This is how you preview an ability
+	// whose effect lands on an ENEMY'S OUTGOING damage — a Weaken debuff
+	// (exposed_weakness) makes the marked enemy deal less, which is only visible
+	// once that enemy actually swings at something. Default false.
+	EnemiesAttack bool `json:"enemiesAttack,omitempty"`
 }
 
 // PreviewUnitResult is one scene unit's HP before/after the preview run,
@@ -235,6 +262,7 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	}
 	// Collision-safe registration id — see nextPreviewAbilityID's doc
 	// comment. Overrides whatever id the caller supplied on req.Ability.
+	authoredID := strings.TrimSpace(req.Ability.ID)
 	pdef.ID = nextPreviewAbilityID()
 
 	if err := validateAbilityDef(&pdef); err != nil {
@@ -358,6 +386,18 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 		// An unrecognized rank is ignored, matching the unknown-unit-type
 		// degrade above: a stale editor value must not fail the run.
 	}
+	// Perks, before initializeCombatUnitLocked so anything that reads PerkIDs
+	// during combat init sees them. Filtered to real perks so a renamed id
+	// degrades to "not owned" instead of sitting in PerkIDs matching nothing.
+	if len(req.CasterPerks) > 0 {
+		owned := make([]string, 0, len(req.CasterPerks))
+		for _, id := range req.CasterPerks {
+			if perkDefByID(id) != nil {
+				owned = append(owned, id)
+			}
+		}
+		caster.PerkIDs = owned
+	}
 	s.initializeCombatUnitLocked(caster)
 	// Seed Arcane Charge so a charge-fire passive (arcane_missiles) can be
 	// previewed: with the ability under test as the caster's only ability and
@@ -393,9 +433,17 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 			continue
 		}
 		u.Visible = true // required for a hostile candidate to pass targeting (applyTargetFiltersLocked)
-		u.MoveSpeed = 0
-		u.Damage = 0
-		u.AttackRange = 0
+		// Frozen and disarmed by default, so the only thing that moves or deals
+		// damage in a preview is the ability under test. An engaging unit (an ally
+		// under AlliesAttack, or an enemy under EnemiesAttack) is the exception and
+		// keeps its catalog move speed / damage / range untouched.
+		isEnemy := su.Team == "enemy"
+		engaging := (req.AlliesAttack && !isEnemy) || (req.EnemiesAttack && isEnemy)
+		if !engaging {
+			u.MoveSpeed = 0
+			u.Damage = 0
+			u.AttackRange = 0
+		}
 		if su.MaxHP > 0 {
 			u.MaxHP = su.MaxHP
 		}
@@ -419,11 +467,17 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	tr := &AbilityExecutionTrace{}
 	s.previewTrace = tr
 	s.previewClock = 0
+	// Teach this run's state that the scratch id IS the authored ability, so a
+	// perk/item row targeting the real id still matches. Without it the whole
+	// ability-targeted half of perk authoring is inert in the previewer — see
+	// GameState.previewAbilityAliases.
+	if authoredID != "" && authoredID != pdef.ID {
+		s.previewAbilityAliases = map[string]string{pdef.ID: authoredID}
+	}
 	// Forced conditional outcomes apply for the whole run (see
 	// PreviewRequest.ConditionalOverrides). Left nil when the request names
 	// none, so the executor's lookup stays the zero-value no-op it is in every
 	// real match. Cleared alongside previewTrace at collection time.
-	s.previewConditionalOverrides = req.ConditionalOverrides
 	s.mu.Unlock()
 
 	// capture appends one unfiltered wire frame (the same shape
@@ -491,6 +545,24 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 		}
 	}
 
+	// ── Engage ──────────────────────────────────────────────────────────
+	// Attack-move rather than a bare attack order: the allies have to CLOSE the
+	// distance (they spawn on the far side of the caster from the enemy group),
+	// and attack-move is the order that both walks them in and lets them acquire
+	// whatever they meet — the same order a player would give. Issued after the
+	// cast so an ability that places something on the ground has already placed
+	// it before anyone walks through.
+	if req.AlliesAttack {
+		if allyIDs, dest, ok := s.previewEngagementFor(entries, false); ok {
+			s.AttackMoveUnits(previewCasterOwner, allyIDs, dest)
+		}
+	}
+	if req.EnemiesAttack {
+		if enemyIDs, dest, ok := s.previewEngagementFor(entries, true); ok {
+			s.AttackMoveUnits(previewEnemyOwner, enemyIDs, dest)
+		}
+	}
+
 	// ── Step ────────────────────────────────────────────────────────────
 	ticks := int(req.DurationSeconds / previewTickDT)
 	if req.DurationSeconds > 0 && ticks == 0 {
@@ -522,10 +594,86 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 		res.CasterManaSpent = manaBefore - u.CurrentMana
 	}
 	s.previewTrace = nil
-	s.previewConditionalOverrides = nil
 	s.mu.Unlock()
 
 	return res, nil
+}
+
+// recordPreviewDamageTraceLocked records a LANDED hit into the ability-preview
+// trace, which is what the editor derives both its floating damage numbers and
+// its event-log rows from (previewDamageNumbers.ts, PreviewEventLog.vue).
+//
+// Nil-safe and free outside a preview: s.previewTrace is nil in every real
+// match, so this is one pointer check on the game's hottest damage path.
+//
+// Ability damage is deliberately SKIPPED here, because the executor's
+// deal_damage already traced it — and traced it with the action path that makes
+// an event-log row clickable back to its flow card, which this seam has no way
+// to know. Emitting from both places would double every ability hit into two
+// popups. Everything else — a basic attack, a trap, an item proc, a perk hit —
+// reaches the trace only through here.
+//
+// The amount is post-mitigation: exactly the health the victim lost, which is
+// the number a match would float. That makes an amplifier like marker_trap's
+// mark visible as a bigger number rather than as arithmetic the author has to
+// do in their head.
+func (s *GameState) recordPreviewDamageTraceLocked(target *Unit, damage int, src DamageSource) {
+	if s.previewTrace == nil || target == nil || damage <= 0 {
+		return
+	}
+	if src.Category == DamageCategoryAbility {
+		return
+	}
+	payload := map[string]any{
+		"unit":   target.ID,
+		"amount": damage,
+		"type":   string(src.ResolvedDamageType()),
+	}
+	if src.AttackerUnitID != 0 {
+		payload["attacker"] = src.AttackerUnitID
+	}
+	if src.Category != "" {
+		payload["category"] = string(src.Category)
+	}
+	s.previewTrace.record(s.previewClock, "damage_applied", "", payload)
+}
+
+// previewEngagementFor resolves the attack-move order for ONE engaging side of a
+// preview run: every surviving scene unit whose team matches attackerIsEnemy,
+// and the CENTROID of the OPPOSING scene units as their destination. Returns
+// ok=false when either side is empty (nobody to send, or nowhere to send them).
+// AlliesAttack passes attackerIsEnemy=false, EnemiesAttack passes true — the two
+// are exact mirrors, which is why they share this helper.
+//
+// Acquires s.mu itself, so it must be called with the lock NOT held — same
+// contract as capture() above, and for the same reason (its caller,
+// AttackMoveUnits, locks too).
+func (s *GameState) previewEngagementFor(entries []previewSceneEntry, attackerIsEnemy bool) ([]int, protocol.Vec2, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var (
+		attackerIDs []int
+		sumX, sumY  float64
+		targets     int
+	)
+	for _, e := range entries {
+		u := s.getUnitByIDLocked(e.unitID)
+		if u == nil {
+			continue
+		}
+		if (e.team == "enemy") == attackerIsEnemy {
+			attackerIDs = append(attackerIDs, e.unitID)
+			continue
+		}
+		sumX += u.X
+		sumY += u.Y
+		targets++
+	}
+	if len(attackerIDs) == 0 || targets == 0 {
+		return nil, protocol.Vec2{}, false
+	}
+	return attackerIDs, protocol.Vec2{X: sumX / float64(targets), Y: sumY / float64(targets)}, true
 }
 
 // knownPreviewPath reports whether a path id exists in the catalog. Guards the
@@ -541,4 +689,20 @@ func knownPreviewPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// authoredAbilityIDLocked maps a preview harness's scratch ability id back to
+// the id the ability is authored under; every other id passes through
+// unchanged. This is what lets a modifier that names an ability BY ID match
+// during a preview run — see GameState.previewAbilityAliases for why the two
+// ids differ in the first place.
+//
+// Nil-map read in every real match, i.e. one map lookup on an empty map.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) authoredAbilityIDLocked(id string) string {
+	if real, ok := s.previewAbilityAliases[id]; ok {
+		return real
+	}
+	return id
 }

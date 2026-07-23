@@ -147,24 +147,14 @@ func TestFirePitZone_RankIsNotAnAbilityConcern(t *testing.T) {
 // data, so a catalog re-tune moves the test with it.
 func TestFirePitZone_ModifierPerksReachTheMigratedTrap(t *testing.T) {
 
-	// paramMultFor reads the multiplier a perk contributes to one fire_pit
-	// parameter straight from the catalog, so nothing here is hardcoded.
-	paramMultFor := func(t *testing.T, perkID, param string) float64 {
+	// Expected values come from each perk's own authored data via the shared
+	// applyPerkRow, which reads whichever of the three authoring forms the perk
+	// used. Nothing here is hardcoded, and moving a contribution between forms
+	// carries this test rather than breaking it.
+	expectedFor := func(t *testing.T, perkID, param string, base float64) float64 {
 		t.Helper()
-		pd := perkDefByID(perkID)
-		if pd == nil {
-			t.Fatalf("perk %q not in catalog", perkID)
-		}
-		// Read the perk's authored multiplier from its FIELD address — the
-		// {action, field} pair that replaced the named parameter.
 		site := trapFieldSite["fire_pit"][param]
-		for _, m := range pd.AbilityFields {
-			if m.Target == "fire_pit" && m.Action == site[0] && m.Field == site[1] {
-				return m.Value
-			}
-		}
-		t.Fatalf("perk %q contributes nothing to fire_pit.%s", perkID, param)
-		return 0
+		return applyPerkRow(t, perkID, "fire_pit", site[0], site[1], base)
 	}
 
 	cases := []struct {
@@ -188,7 +178,7 @@ func TestFirePitZone_ModifierPerksReachTheMigratedTrap(t *testing.T) {
 			caster.PerkIDs = []string{tc.perkID}
 			got := effTrapField(t, s, caster, "fire_pit", tc.param)
 
-			want := base * paramMultFor(t, tc.perkID, tc.param)
+			want := expectedFor(t, tc.perkID, tc.param, base)
 			if got != want {
 				t.Errorf("%s: %s = %v, want %v (base %v scaled by the perk)", tc.perkID, tc.param, got, want, base)
 			}
@@ -359,4 +349,64 @@ func TestFirePitZone_LastingFlamesChangesDelivery(t *testing.T) {
 			t.Error("fire_pit should branch on has_perk(lasting_flames) inline — its behavior must be readable from its own program")
 		}
 	})
+}
+
+// TestFirePitZone_AmplifiedEffectsChangesRealDamage is the end-to-end check
+// behind "I gave the Trapper Amplified Effects and the fire pit hit for exactly
+// the same".
+//
+// It asserts on HP ACTUALLY LOST, not on the reported stat. That distinction is
+// the whole point: the trap panel already showed 22 instead of 16, because
+// EffectiveAbilityFieldLocked folds abilityDamage — while the executor skipped
+// the fold entirely for anything running inside a zone, so the enemy kept
+// taking 16. A tooltip agreeing with a perk proves nothing about the damage.
+func TestFirePitZone_AmplifiedEffectsChangesRealDamage(t *testing.T) {
+	damageDealt := func(t *testing.T, perks []string) int {
+		t.Helper()
+		s := newTrapState(t)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		caster, enemy := castFirePit(t, s, unitRankBronze)
+		caster.ProgressionPath = "trapper"
+		caster.PerkIDs = perks
+		enemy.HP, enemy.MaxHP = 5000, 5000
+
+		before := enemy.HP
+		s.tickAbilityZonesLocked(1)
+		return before - enemy.HP
+	}
+
+	base := damageDealt(t, nil)
+	if base <= 0 {
+		t.Fatal("the pit dealt no damage at all; this test cannot say anything")
+	}
+	amplified := damageDealt(t, []string{"amplified_effects"})
+	if amplified <= base {
+		t.Errorf("amplified_effects dealt %d, unperked dealt %d — the perk did not reach the pit's actual damage", amplified, base)
+	}
+}
+
+// The stat and the damage must agree. They did not: the reporting read folded
+// abilityDamage and the executor did not, so the panel promised a number the
+// enemy never took.
+func TestFirePitZone_ReportedDpsMatchesDamageDealt(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	caster, enemy := castFirePit(t, s, unitRankBronze)
+	caster.ProgressionPath = "trapper"
+	caster.PerkIDs = []string{"amplified_effects"}
+	enemy.HP, enemy.MaxHP = 5000, 5000
+
+	reported := effTrapField(t, s, caster, "fire_pit", "dps")
+
+	before := enemy.HP
+	s.fireAbilityZoneTickLocked(s.AbilityZones[0])
+	dealt := before - enemy.HP
+
+	if float64(dealt) != reported {
+		t.Errorf("one zone tick dealt %d but the panel reports %v dps — the reporting read and the executor disagree", dealt, reported)
+	}
 }

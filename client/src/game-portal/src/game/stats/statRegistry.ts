@@ -62,7 +62,28 @@ export const STAT_DEFS: StatDef[] = [
   // Damage above — an ability opts in per damage action with a RATIO, so an
   // `add` here is a whole amount and NOT a percentage point (isFraction false).
   { id: 'abilityPower', label: 'Ability Power', isFraction: false, auraOnly: false },
+  // Fixed-1.0 baseline like healingReceived/abilityDamage, so an `add` of 0.2
+  // is unambiguously +20 percentage points => isFraction. Marker Trap's mark is
+  // the shipped consumer (a change_stat inside its apply_status_duration).
+  //
+  // Labelled "Vulnerable" rather than "Damage Taken": the raw name is ambiguous
+  // in SIGN ("Damage Taken +0.2" could read as taking 0.2 LESS), and the id is
+  // what catalog data references, so only the display name changed.
+  { id: 'damageTaken', label: 'Vulnerable', isFraction: true, auraOnly: false },
+  // Weaken is the attacker-side mirror of Vulnerable: a fixed-1.0 multiplier on
+  // OUTGOING damage (an `add` of -0.2 => deal 20% less). isFraction for the same
+  // reason. Labelled "Weaken" (not "Damage Dealt") because the raw name is
+  // ambiguous in SIGN and the pilot use (exposed_weakness) is the debuff
+  // direction; the id stays damageDealt, what catalog data references.
+  { id: 'damageDealt', label: 'Weaken', isFraction: true, auraOnly: false },
 ]
+// KEEP THIS LIST COMPLETE. It is a hand-maintained mirror of Go's statRegistry
+// (stat_modifiers.go), and a stat missing here is INVISIBLE rather than broken:
+// the ability editor's change_stat control and the perk editor's stat pickers
+// are driven off it, so an ability authoring a stat the mirror lacks renders a
+// blank dropdown and silently rewrites on touch. That shipped once, with
+// damageTaken. TestStatRegistry_ClientMirrorIsComplete (Go) now fails CI on the
+// drift in either direction.
 
 /** Stats a designer can author a per-unit-type BASE value for on a unit's
  *  `baseStats` (mirrors Go's statBaseAuthorable, stat_modifiers.go): the stats

@@ -149,11 +149,15 @@ func TestCaltropsZone_AmplifiedEffectsStrengthensTheSlow(t *testing.T) {
 		t.Fatalf("amplified_effects made the slow WEAKER: %v -> %v (lower is stronger for an inverse-sense multiplier)", base, got)
 	}
 
-	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
-	want := amplifySlow(base, effectMult)
+	// Expected value from the perk's OWN authored row, whichever form it uses.
+	// amplified_effects moved this contribution from an `amplify` op on the
+	// action id to a flat add addressed by the INFLICTED STAT (moveSpeed): a
+	// negative flat strengthens an inverse-sense multiplier, and unlike the old
+	// op it cannot be unhooked by renaming the action.
+	want := applyAmplifiedRow(t, "caltrops", "slow_move", "value", base)
 	if math.Abs(got-want) > 1e-9 {
-		t.Errorf("slowMultiplier = %v, want %v (amplifySlow(%v, %v) — the shipped definition of amplifying a slow)",
-			got, want, base, effectMult)
+		t.Errorf("slowMultiplier = %v, want %v (base %v plus the perk's authored moveSpeed contribution)",
+			got, want, base)
 	}
 }
 

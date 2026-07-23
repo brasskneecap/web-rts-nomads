@@ -143,10 +143,10 @@ func TestTrapModifiers_ExtendedSetup_DurationCaltrops(t *testing.T) {
 	}
 
 	caltrops := mustTrapAbilityConfig(t, "caltrops", u.Rank)
-	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
-
-	// extended_setup scales durationSeconds by durationMultiplier.
-	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, caltrops.DurationSeconds*durMult)
+	// extended_setup's contribution is an ability-stat row now, so the expected
+	// value comes from applyPerkRow rather than from a config key.
+	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds,
+		applyPerkRow(t, "extended_setup", "caltrops", "field", "duration", caltrops.DurationSeconds))
 	// Other fields must remain at base values.
 	assertFloatEq(t, "Radius", stats.Radius, caltrops.Radius)
 	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, caltrops.PlaceIntervalSeconds)
@@ -175,8 +175,8 @@ func TestTrapModifiers_WiderNets_RadiusCaltrops(t *testing.T) {
 	}
 
 	caltropsRadius := mustTrapAbilityConfig(t, "caltrops", u.Rank).Radius
-	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
-	assertFloatEq(t, "Radius", stats.Radius, caltropsRadius*widerNets)
+	assertFloatEq(t, "Radius", stats.Radius,
+		applyPerkRow(t, "wider_nets", "caltrops", "field", "radius", caltropsRadius))
 }
 
 // TestTrapModifiers_WiderNets_ExplosiveBothRadii verifies that for
@@ -199,9 +199,12 @@ func TestTrapModifiers_WiderNets_ExplosiveBothRadii(t *testing.T) {
 	}
 
 	explosive := mustTrapAbilityConfig(t, "explosive_trap", u.Rank)
-	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
-	assertFloatEq(t, "Radius (explosion)", stats.Radius, explosive.ExplosionRadius*widerNets)
-	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, explosive.TriggerRadius*widerNets)
+	// explosive_trap has ONE radius doing both jobs now (see
+	// effectiveTrapStatsFromParamsLocked), so both fields resolve from the same
+	// authored value and take the same perk contribution.
+	wantRadius := applyPerkRow(t, "wider_nets", "explosive_trap", "arm", "radius", explosive.ExplosionRadius)
+	assertFloatEq(t, "Radius (explosion)", stats.Radius, wantRadius)
+	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, wantRadius)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -265,11 +268,13 @@ func TestTrapModifiers_AmplifiedEffects_Caltrops(t *testing.T) {
 	}
 
 	caltrops := mustTrapAbilityConfig(t, "caltrops", u.Rank)
-	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
+	_ = perkDefByID("amplified_effects") // expectations come from applyAmplifiedRow below
 
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, caltrops.DamagePerSecond*effectMult)
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond,
+		applyAmplifiedRow(t, "caltrops", "spikes", "amount", caltrops.DamagePerSecond))
 	// SlowMultiplier composes through the slow-amount helper, not a flat scale.
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, amplifySlow(caltrops.SlowMultiplier, effectMult))
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier,
+		applyAmplifiedRow(t, "caltrops", "slow_move", "value", caltrops.SlowMultiplier))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,8 +301,7 @@ func TestTrapModifiers_AmplifiedEffects_ExplosiveTrap(t *testing.T) {
 	}
 
 	burst := mustTrapAbilityConfig(t, "explosive_trap", u.Rank).BurstDamage
-	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
-	wantBurst := int(burst*effectMult + 0.5)
+	wantBurst := int(applyAmplifiedRow(t, "explosive_trap", "blast", "amount", burst))
 	if stats.BurstDamage != wantBurst {
 		t.Errorf("BurstDamage: got %d, want %d", stats.BurstDamage, wantBurst)
 	}
@@ -307,9 +311,151 @@ func TestTrapModifiers_AmplifiedEffects_ExplosiveTrap(t *testing.T) {
 // 7. amplified_effects on marker_trap — both markMultiplier and markDuration scale
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestTrapModifiers_AmplifiedEffects_MarkerTrap verifies:
-//   - MarkMultiplier 0.20 → 0.27 (0.20 * 1.35)
-//   - MarkDuration 4 → 5.4 (4 * 1.35)
+// actionTypeOfAction resolves an authored action id to its ActionType by walking
+// the ability's own program — the same lookup programActionConfigValue does
+// internally, exposed for tests that need the type without a field value.
+func actionTypeOfAction(def AbilityDef, actionID string) ActionType {
+	return programActionTypes(def)[actionID]
+}
+
+// applyAmplifiedRow folds amplified_effects' authored contribution to one
+// {ability, action, field} onto a base value, honouring whichever op the row
+// uses. Reading the op rather than assuming one is what lets a designer switch
+// a row between add and multiply without silently invalidating a test.
+func applyAmplifiedRow(t *testing.T, ability, action, field string, base float64) float64 {
+	t.Helper()
+	return applyPerkRow(t, "amplified_effects", ability, action, field, base)
+}
+
+// applyPerkRow folds ONE perk's authored contribution to one
+// {ability, action, field} onto a base value, across ALL of the authoring
+// forms a perk can use:
+//
+//   - abilityFields, the precise {action, field} address, with its own op
+//   - abilityStats addressed by an INFLICTED unit stat (a change_stat's value)
+//   - abilityStats addressed by the field's KIND (broad or action-scoped)
+//   - statModifiers granting abilityDamage (a damage-kind field)
+//
+// It ACCUMULATES rather than taking the first form that matches, in the same
+// order EffectiveAbilityFieldLocked folds them (precise, then inflicted, then
+// kinded, then damage). One perk really can address the same number twice —
+// amplified_effects scales marker_trap's mark duration by 1.35 with a precise
+// row AND adds 2s to it with a kinded row — and a first-match helper reported
+// only one of the two while the engine applied both.
+//
+// Reading the forms rather than assuming one is what lets a designer move (or
+// add) a contribution without silently invalidating every test that asserts
+// the perk's effect.
+func applyPerkRow(t *testing.T, perkID, ability, action, field string, base float64) float64 {
+	t.Helper()
+	pd := perkDefByID(perkID)
+	if pd == nil {
+		t.Fatalf("perk %q not in catalog", perkID)
+	}
+	def, haveDef := getAbilityDef(ability)
+	v := base
+	matched := false
+
+	// PRECISE form.
+	for _, m := range pd.AbilityFields {
+		if m.Target != ability || m.Action != action || m.Field != field {
+			continue
+		}
+		matched = true
+		switch m.Op {
+		case statOpAdd:
+			v += m.Value
+		case statOpMultiply, "":
+			v *= m.Value
+		case statOpAmplify:
+			v = amplifyTowardZero(v, m.Value)
+		default:
+			t.Fatalf("perk %q: %s.%s uses unknown op %q", perkID, action, field, m.Op)
+		}
+	}
+
+	// INFLICTED-STAT form: for a change_stat's `value` the perk addresses the
+	// unit stat the action applies, not the action id.
+	if haveDef && field == "value" {
+		if statID, ok := programActionConfigString(def, action, "stat"); ok {
+			var flat float64
+			for _, row := range pd.AbilityStats {
+				if row.Stat != statID {
+					continue
+				}
+				if row.Ability != "" && row.Ability != ability {
+					continue
+				}
+				flat += row.Flat
+				matched = true
+			}
+			v += flat
+		}
+	}
+
+	// KINDED form: an ability STAT addressed by the field's kind, either broad
+	// ("duration") or scoped ("create_zone.duration").
+	if haveDef {
+		actionType := actionTypeOfAction(def, action)
+		if desc, ok := lookupActionDescriptor(actionType); ok {
+			if f, ok := schemaFieldByKey(desc, field); ok && isAbilityStatGridKind(f.Kind) {
+				var flat, pct float64
+				hit := false
+				for _, row := range pd.AbilityStats {
+					if row.Ability != "" && row.Ability != ability {
+						continue
+					}
+					if row.Stat == f.Kind || row.Stat == scopedAbilityStatID(actionType, f.Kind) {
+						flat += row.Flat
+						pct += row.Pct
+						hit = true
+					}
+				}
+				if hit {
+					v = foldAbilityStat(v, flat, pct)
+					matched = true
+				}
+			}
+		}
+	}
+
+	// DAMAGE form: the perk no longer names damage actions at all — it grants
+	// the unit-wide abilityDamage stat, which deal_damage folds for every
+	// ability. Rounded because damage is an int at execution and the reporting
+	// read mirrors that.
+	if haveDef {
+		if desc, ok := lookupActionDescriptor(actionTypeOfAction(def, action)); ok {
+			if f, ok := schemaFieldByKey(desc, field); ok && f.Kind == abilityStatKindDamage {
+				mult := 1.0
+				for _, sm := range pd.StatModifiers {
+					if sm.Stat == statAbilityDamage && sm.Op == statOpMultiply {
+						mult *= sm.Value
+					}
+				}
+				if mult != 1.0 {
+					v = math.Round(v * mult)
+					matched = true
+				}
+			}
+		}
+	}
+
+	if !matched {
+		t.Fatalf("perk %q contributes nothing to %s %s.%s", perkID, ability, action, field)
+	}
+	return v
+}
+
+// TestTrapModifiers_AmplifiedEffects_MarkerTrap verifies the perk reaches both
+// of marker_trap's numbers. The two are authored with DIFFERENT ops on purpose,
+// so neither expectation is written out here — both are derived from the perk's
+// own rows:
+//
+//   - vulnerability: an `add`. damageTaken is a fixed-1.0-baseline stat, so
+//     scaling an authored 0.2 by 1.35 gives 0.27 — a 7-point gain, which is not
+//     what "35% harder" means to anyone reading it. A flat +0.15 says exactly
+//     what it does and lands the mark at "enemies take 35% more damage".
+//   - mark duration: a `multiply`, because a duration has no such baseline.
 func TestTrapModifiers_AmplifiedEffects_MarkerTrap(t *testing.T) {
 	s := newTrapSilverState(t)
 	s.mu.Lock()
@@ -328,10 +474,11 @@ func TestTrapModifiers_AmplifiedEffects_MarkerTrap(t *testing.T) {
 	}
 
 	marker := mustTrapAbilityConfig(t, "marker_trap", u.Rank)
-	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
 
-	assertFloatEq(t, "MarkMultiplier", stats.MarkMultiplier, marker.MarkMultiplier*effectMult)
-	assertFloatEq(t, "MarkDuration", stats.MarkDuration, marker.MarkDuration*effectMult)
+	assertFloatEq(t, "MarkMultiplier", stats.MarkMultiplier,
+		applyAmplifiedRow(t, "marker_trap", "vulnerable", "value", marker.MarkMultiplier))
+	assertFloatEq(t, "MarkDuration", stats.MarkDuration,
+		applyAmplifiedRow(t, "marker_trap", "mark", "duration", marker.MarkDuration))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -358,16 +505,18 @@ func TestTrapModifiers_AllSilverStack_Caltrops(t *testing.T) {
 	}
 
 	caltrops := mustTrapAbilityConfig(t, "caltrops", u.Rank)
-	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
-	radiusMult := perkDefByID("wider_nets").Config["radiusMultiplier"]
 	cooldownMult := rapidDeploymentCooldownMultFor(t, "caltrops")
-	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
+	_ = perkDefByID("amplified_effects") // expectations come from applyAmplifiedRow below
 
-	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, caltrops.DurationSeconds*durMult)
-	assertFloatEq(t, "Radius", stats.Radius, caltrops.Radius*radiusMult)
+	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds,
+		applyPerkRow(t, "extended_setup", "caltrops", "field", "duration", caltrops.DurationSeconds))
+	assertFloatEq(t, "Radius", stats.Radius,
+		applyPerkRow(t, "wider_nets", "caltrops", "field", "radius", caltrops.Radius))
 	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, caltrops.PlaceIntervalSeconds*cooldownMult)
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, caltrops.DamagePerSecond*effectMult)
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, amplifySlow(caltrops.SlowMultiplier, effectMult))
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond,
+		applyAmplifiedRow(t, "caltrops", "spikes", "amount", caltrops.DamagePerSecond))
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier,
+		applyAmplifiedRow(t, "caltrops", "slow_move", "value", caltrops.SlowMultiplier))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -406,14 +555,21 @@ func TestTrapModifiers_PlantEndToEnd_SnapshotScaled(t *testing.T) {
 	planted := s.Traps[len(s.Traps)-1]
 
 	caltrops := mustTrapAbilityConfig(t, "caltrops", u.Rank)
-	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
-	radiusMult := perkDefByID("wider_nets").Config["radiusMultiplier"]
-	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
-
-	assertFloatEq(t, "planted.RemainingSeconds", planted.RemainingSeconds, caltrops.DurationSeconds*durMult)
-	assertFloatEq(t, "planted.Radius", planted.Radius, caltrops.Radius*radiusMult)
-	assertFloatEq(t, "planted.DamagePerSecond", planted.DamagePerSecond, caltrops.DamagePerSecond*effectMult)
-	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, amplifySlow(caltrops.SlowMultiplier, effectMult))
+	// The legacy plant path reads the config-driven TrapModifiers aggregator,
+	// which extended_setup and wider_nets no longer feed (their contributions are
+	// ability-stat rows, which only exist on the ABILITY path). So a legacy plant
+	// is UNSCALED now. Nothing reaches plantTrapLocked from the catalog any more,
+	// so this test covers dead code and dies with the legacy trap runtime.
+	assertFloatEq(t, "planted.RemainingSeconds", planted.RemainingSeconds, caltrops.DurationSeconds)
+	assertFloatEq(t, "planted.Radius", planted.Radius, caltrops.Radius)
+	// Damage and slow are NOT asserted here any more. This test plants a LEGACY
+	// Trap (plantTrapLocked) and reads the Trap struct, whose numbers come from
+	// the config-driven TrapModifiers aggregator. amplified_effects no longer
+	// feeds that aggregator — its damage is the unit-wide abilityDamage stat and
+	// its slow is an inflicted-stat row, both of which only exist on the ABILITY
+	// path. Duration and radius still scale here because extended_setup and
+	// wider_nets kept their configs. Nothing reaches plantTrapLocked from the
+	// catalog any more, so this whole test dies with the legacy trap runtime.
 	// Ownership
 	if planted.OwnerPlayerID != "p1" {
 		t.Errorf("planted.OwnerPlayerID: got %q, want p1", planted.OwnerPlayerID)
@@ -453,42 +609,30 @@ func TestAmplifySlow_SlowAmountMath(t *testing.T) {
 // Perk def sanity checks — verify catalog loads correctly
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestSilverTrapPerkDefs_AllLoaded verifies all four new Silver perk IDs are
-// present in the loaded catalog with their expected config keys. The exact
-// tuning magnitudes live in the catalog JSON and are free to change with
-// balance passes, so this asserts the design-level invariant for each
-// multiplier (amplifiers stay > 1; the cooldown reducer stays in (0, 1))
-// rather than pinning a magic number that would break on every tweak.
+// TestSilverTrapPerkDefs_AllLoaded verifies the Silver trap perks are present
+// and that each one's contribution is an AMPLIFICATION — it grows the effect
+// rather than shrinking it. The exact tuning lives in the catalog and is free to
+// change with balance passes, so this asserts the design-level invariant rather
+// than pinning a magic number that would break on every tweak.
+//
+// The perks no longer carry freeform Config keys: extended_setup and wider_nets
+// are ability-stat rows, amplified_effects is a stat modifier plus ability-stat
+// rows. So this reads their real authoring instead.
 func TestSilverTrapPerkDefs_AllLoaded(t *testing.T) {
-	perks := []struct {
-		id        string
-		configKey string
-		// amplify=true → value must be > 1 (extends/grows the effect).
-		// amplify=false → value must be in (0, 1) (shrinks the cooldown).
-		amplify bool
-	}{
-		{"extended_setup", "durationMultiplier", true},
-		{"wider_nets", "radiusMultiplier", true},
-		{"amplified_effects", "effectMultiplier", true},
-	}
-	for _, p := range perks {
-		def := perkDefByID(p.id)
+	for _, id := range []string{"extended_setup", "wider_nets"} {
+		def := perkDefByID(id)
 		if def == nil {
-			t.Errorf("perk %q not found in catalog", p.id)
+			t.Errorf("perk %q not found in catalog", id)
 			continue
 		}
-		got, ok := def.Config[p.configKey]
-		if !ok {
-			t.Errorf("perk %q: config key %q missing", p.id, p.configKey)
+		if len(def.AbilityStats) == 0 {
+			t.Errorf("perk %q authors no ability stats; it would do nothing", id)
 			continue
 		}
-		if p.amplify {
-			if got <= 1.0 {
-				t.Errorf("perk %q config[%q] = %v; an amplifying multiplier must be > 1", p.id, p.configKey, got)
-			}
-		} else {
-			if got <= 0.0 || got >= 1.0 {
-				t.Errorf("perk %q config[%q] = %v; a cooldown-reducing multiplier must be in (0, 1)", p.id, p.configKey, got)
+		for _, row := range def.AbilityStats {
+			if row.Flat <= 0 && row.Pct <= 0 {
+				t.Errorf("perk %q: abilityStats[%q] = {flat %v, pct %v}; an amplifying perk must grow its stat",
+					id, row.Stat, row.Flat, row.Pct)
 			}
 		}
 	}

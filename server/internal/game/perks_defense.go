@@ -86,6 +86,27 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 		s.perkShareDamageToMarkedLocked(target, origDamage, src)
 		return 0
 	}
+	// Step 2c: attacker-side outgoing-damage multiplier (Weaken). The mirror of
+	// the damageTaken fold below, resolved on the ATTACKER instead of the
+	// target: a status/aura/perk that makes a unit hit softer (or harder) is
+	// read here via the shared stat vocabulary, so it applies to every damage
+	// instance the attacker deals — basic attack, ability, proc or trap — with
+	// no per-source code. Identity (1.0) unless something contributes, so this
+	// is a no-op for every attacker that has nothing on it. Applied before the
+	// target's own amplifications so "deal less" scales the base the victim then
+	// amplifies. src.AttackerUnitID is 0 for non-unit damage (buildings, some
+	// anonymous sources) ⇒ nil attacker ⇒ effectiveStatLocked returns base.
+	if src.AttackerUnitID != 0 {
+		if attacker := s.getUnitByIDLocked(src.AttackerUnitID); attacker != nil {
+			if mult := s.effectiveStatLocked(attacker, 1.0, statDamageDealt); mult != 1.0 {
+				damage = maxInt(0, int(math.Round(float64(damage)*mult)))
+				if damage == 0 {
+					s.perkShareDamageToMarkedLocked(target, origDamage, src)
+					return 0
+				}
+			}
+		}
+	}
 	// Step 3: Mark amplification.
 	if totalMult := target.PerkState.totalMarkMultiplier(); totalMult > 0 {
 		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+totalMult))))
@@ -191,6 +212,10 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	// client only splits when the entries reconcile with the MAJOR remainder,
 	// so mixed-in minors just fall back to the single number.
 	s.recordHitDamageLocked(target, damage)
+	// Ability-preview trace: the editor's floating damage numbers and event log
+	// are trace-driven, and until this existed the trace only knew about damage
+	// the ability under test dealt ITSELF. See the helper for the split.
+	s.recordPreviewDamageTraceLocked(target, damage, src)
 	// Forensic combat-event log (debug-only; gated inside the helper on the map's
 	// battle-tracker flag): capture attacker + target positions, center-to-center
 	// distance, and the attacker's range at the instant this hit lands, plus

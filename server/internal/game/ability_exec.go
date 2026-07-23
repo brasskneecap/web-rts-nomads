@@ -122,9 +122,11 @@ type RuntimeAbilityContext struct {
 	// entry point wherever top-level execution begins; tests set it directly
 	// since this field is package-internal.
 	program *AbilityProgram
-	// abilityDef is set at top-level cast resolution so deal_damage applies
-	// the caster's spell-modifiers for this ability's school/tags; nil ⇒ raw
-	// amount (e.g. zone-tick/DoT, which legacy also applies raw).
+	// abilityDef is the def whose program is executing, set at top-level cast
+	// resolution. Prefer resolvedAbilityDef() over reading this directly: a
+	// context built for a ZONE TICK or a STATUS TICK carries only AbilityID,
+	// and reading this field alone silently skipped the damage fold for every
+	// one of them.
 	abilityDef *AbilityDef
 	// damageEffectivenessMultiplier scales deal_damage's resolved amount for a
 	// program run whose caller supplied a customized EffectiveSpell (today:
@@ -168,9 +170,8 @@ type RuntimeAbilityContext struct {
 	// ("deliver", "burn", ...), saved/restored alongside currentActionPath.
 	// Unlike currentActionPath — which is a positional flow path that shifts
 	// whenever an action is reordered — an id is stable identity, so it is the
-	// right key for anything the EDITOR names a specific node by. Today that is
-	// exactly one thing: previewConditionalOverrides (see state.go), which the
-	// conditional action reads to force a branch during a preview run.
+	// right key for anything the EDITOR names a specific node by (the preview's
+	// event log, and the flow selection it drives).
 	currentActionID string
 	// currentActionHasAttachInput records whether the action currently
 	// executing declared Input["attach"] (a unit-set context ref). Set by
@@ -350,7 +351,7 @@ func (s *GameState) executeActionLocked(ctx *RuntimeAbilityContext, a *AbilityAc
 	caster := s.getUnitByIDLocked(ctx.CasterID)
 	rawConfig := ctx.resolveConfigVars(a.Config)
 	rawConfig = s.applyAbilityFieldModsToConfigLocked(caster, ctx.AbilityID, a.ID, rawConfig)
-	rawConfig = s.applyAbilityStatsToConfigLocked(caster, a.Type, rawConfig)
+	rawConfig = s.applyAbilityStatsToConfigLocked(caster, ctx.AbilityID, a.Type, rawConfig)
 	cfg, err := desc.Decode(rawConfig)
 	if err != nil {
 		ctx.trace("validation_error", apath, map[string]any{"error": err.Error()})
@@ -429,6 +430,37 @@ func (s *GameState) triggerConditionsPassLocked(ctx *RuntimeAbilityContext, trg 
 	return true
 }
 
+// resolvedAbilityDef returns the def whose program is executing.
+//
+// NOTE: deal_damage does NOT use this to pick its damage fold — it branches on
+// ctx.abilityDef directly, because cast scope and zone/status scope apply
+// deliberately different folds (see abilityDamageStatOnlyLocked). This helper is
+// for anything that just needs the def, whatever built the context.
+//
+// Prefers the def carried on the context (set at cast resolution, and the ONLY
+// way a preview's edited-but-unsaved def is reachable), falling back to the
+// catalog by id. The fallback is what makes the fold work in a ZONE TICK or a
+// STATUS TICK: those contexts are built from an AbilityZone / AbilityStatus,
+// which carry the ability id but no def pointer.
+//
+// This used to be a bare `ctx.abilityDef != nil` check, deliberately, for parity
+// with the legacy trap runtime — which applied DoT damage raw. That parity
+// stopped being worth anything once abilityDamage became how a perk says "my
+// abilities hit harder": every trap's damage is a zone tick, so the stat did
+// nothing on precisely the abilities it was meant to scale.
+//
+// A preview registers its def under a generated id (RunAbilityPreview), so the
+// catalog lookup resolves there too.
+func (ctx *RuntimeAbilityContext) resolvedAbilityDef() (AbilityDef, bool) {
+	if ctx.abilityDef != nil {
+		return *ctx.abilityDef, true
+	}
+	if ctx.AbilityID == "" {
+		return AbilityDef{}, false
+	}
+	return getAbilityDef(ctx.AbilityID)
+}
+
 // resolveTargetRef reads a ContextRef into a set of unit ids: a Named binding,
 // or the special keys "selected"/"previous_action_targets" (ctx.Selected) and
 // "initial_target" (ctx.InitialTarget). Unknown ⇒ empty.
@@ -439,6 +471,24 @@ func (ctx *RuntimeAbilityContext) resolveTargetRef(ref ContextRef) []int {
 	case "initial_target":
 		if ctx.InitialTarget != 0 {
 			return []int{ctx.InitialTarget}
+		}
+		return nil
+	case "current_event":
+		// The unit a trigger's event centers on — the enemy that just entered a
+		// zone, the unit a status is attached to, the victim of a projectile
+		// impact. Bound as a FIELD (ctx.CurrentEventUnitID) rather than as a
+		// Named entry, so without this case a `{"key": "current_event"}` input
+		// ref fell through to the Named lookup, found nothing, and resolved to
+		// ZERO targets.
+		//
+		// That is not hypothetical: marker_trap's mark is authored exactly that
+		// way and silently never applied — the zone spawned, nothing was ever
+		// marked. "current_event" is already the name of this binding everywhere
+		// else in the vocabulary (TargetQueryDef's SrcCurrentEvent,
+		// ExcludeCurrentEvent), so a ref by that name resolving to nothing was a
+		// trap for anyone authoring against what the editor offers.
+		if ctx.CurrentEventUnitID != 0 {
+			return []int{ctx.CurrentEventUnitID}
 		}
 		return nil
 	}

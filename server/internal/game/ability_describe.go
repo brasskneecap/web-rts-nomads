@@ -156,26 +156,199 @@ func describeVisibleZoneAbility(a AbilityDef) string {
 	if cfg.Radius > 0 {
 		fmt.Fprintf(&b, " (%s radius)", trimFloat(cfg.Radius))
 	}
-	if amount, dmgType, interval, found := firstZoneTickDamage(cfg); found {
-		word := damageTypeWord(dmgType)
-		if interval == 1 {
-			fmt.Fprintf(&b, " that deals %s%s damage per second", trimFloat(amount), word)
-		} else if interval > 0 {
-			fmt.Fprintf(&b, " that deals %s%s damage every %ss", trimFloat(amount), word, trimFloat(interval))
-		} else {
-			fmt.Fprintf(&b, " that deals %s%s damage", trimFloat(amount), word)
-		}
-	}
-	if cfg.Duration > 0 {
-		fmt.Fprintf(&b, ". Lasts %ss", trimFloat(cfg.Duration))
+
+	// What the zone does to whoever is standing in it, every tick.
+	tick := scanZoneTrigger(cfg, TriggerOnTick, cfg.TickInterval)
+	if len(tick.clauses) > 0 {
+		b.WriteString(" that " + joinTrapEffectClauses(tick.clauses))
 	}
 	b.WriteString(".")
+
+	// What it does the moment something walks in. A separate sentence rather
+	// than another "that ..." clause: the two fire at different times, and
+	// running them together reads as if they both happened continuously.
+	enter := scanZoneTrigger(cfg, TriggerOnZoneEnter, 0)
+	if len(enter.clauses) > 0 {
+		sentence := "When an enemy enters, " + joinTrapEffectClauses(enter.clauses)
+		if enter.consumesZone {
+			sentence += ", then vanishes"
+		}
+		fmt.Fprintf(&b, " %s.", sentence)
+	}
+
+	if cfg.Duration > 0 {
+		fmt.Fprintf(&b, " Lasts %ss.", trimFloat(cfg.Duration))
+	}
 
 	// Variant branches (a conditional on has_perk) are deliberately NOT listed
 	// here: the branch names its perk inline in the program, and the PERK's own
 	// description is where "what Lasting Flames does to your fire pit" belongs.
 	// Describing it from both sides would drift.
 	return b.String()
+}
+
+// zoneEffectScan is what one of a zone's triggers does, as prose fragments
+// plus the one structural fact a fragment cannot carry (whether the zone
+// spends itself).
+type zoneEffectScan struct {
+	clauses      []string
+	consumesZone bool
+}
+
+// scanZoneTrigger describes the actions of every trigger of type `want` on the
+// zone, in authored order. `rate` is the repeat interval to attach to a damage
+// clause (a zone's TickInterval for on_tick, 0 for a one-shot entry trigger).
+//
+// This walks the SAME action vocabulary the executor runs rather than looking
+// for one specific shape, which is why all four Trapper traps — a damage tick,
+// a damage tick plus a slow, a one-shot detonation, a pure debuff mark —
+// describe themselves through it with no per-trap branch.
+func scanZoneTrigger(cfg createZoneConfig, want TriggerType, rate float64) zoneEffectScan {
+	var out zoneEffectScan
+	for _, trg := range cfg.Triggers {
+		if trg.Type == want {
+			scanZoneActions(trg.Actions, rate, &out)
+		}
+	}
+	return out
+}
+
+// scanZoneActions appends a clause for every action that carries a
+// player-visible magnitude. Targeting and presentation actions contribute
+// nothing, matching every other generator here (an ability's tooltip does not
+// narrate its VFX).
+func scanZoneActions(actions []AbilityActionDef, rate float64, out *zoneEffectScan) {
+	for _, act := range actions {
+		if !act.IsEnabled() {
+			continue
+		}
+		switch act.Type {
+		case ActionDealDamage:
+			var dc dealDamageConfig
+			decodeActionConfig(act.Config, &dc)
+			if dc.Amount > 0 {
+				out.clauses = append(out.clauses,
+					fmt.Sprintf("deals %d%s damage%s", dc.Amount, damageTypeWord(string(dc.Type)), rateSuffix(rate)))
+			}
+		case ActionApplyStatusDuration:
+			var sc applyStatusDurationConfig
+			decodeActionConfig(act.Config, &sc)
+			out.clauses = append(out.clauses, describeZoneStatusClauses(sc)...)
+		case ActionConsumeZone:
+			out.consumesZone = true
+		case ActionConditional:
+			// Describe the DEFAULT branch — the one a caster with no
+			// contributing source gets. For a has_perk gate that is `else`;
+			// for anything else the `then` side is the ordinary reading.
+			var cc conditionalConfig
+			decodeActionConfig(act.Config, &cc)
+			scanZoneActions(conditionalDefaultBranch(cc), rate, out)
+		}
+	}
+}
+
+// conditionalDefaultBranch picks the branch that describes the ability's
+// baseline behavior. A has_perk condition is a VARIANT gate: the perk is the
+// thing that is not there by default, so `else` is what the tooltip should
+// promise. Every other condition reads the ordinary way round.
+func conditionalDefaultBranch(cc conditionalConfig) []AbilityActionDef {
+	gated := len(cc.Conditions) > 0
+	for _, c := range cc.Conditions {
+		if c.Op != condOpHasPerk {
+			gated = false
+			break
+		}
+	}
+	if gated && len(cc.Else) > 0 {
+		return cc.Else
+	}
+	return cc.Then
+}
+
+// describeZoneStatusClauses renders an apply_status_duration as one or more
+// clauses, by reading the change_stat / deal_damage actions nested in its own
+// triggers — the status container owns the duration, its nested actions own the
+// magnitudes.
+//
+// A moveSpeed multiply gets the dedicated "slows enemies by N%" wording rather
+// than the generic stat clause, for the same reason the legacy generator has a
+// slow clause: "-65% Move Speed applied" is accurate and unreadable.
+func describeZoneStatusClauses(cfg applyStatusDurationConfig) []string {
+	var (
+		clauses []string
+		mods    []PerkStatModifier
+	)
+	for _, trg := range cfg.Triggers {
+		for _, act := range trg.Actions {
+			if !act.IsEnabled() {
+				continue
+			}
+			switch act.Type {
+			case ActionChangeStat:
+				var csc changeStatConfig
+				decodeActionConfig(act.Config, &csc)
+				if csc.Stat == statMoveSpeed && csc.Op == statOpMultiply && csc.Value < 1 {
+					clauses = append(clauses, fmt.Sprintf("slows enemies by %s%s",
+						signedPercent(1-csc.Value)[1:], forSecondsSuffix(cfg.Duration)))
+					continue
+				}
+				mods = append(mods, PerkStatModifier{Stat: csc.Stat, Op: csc.Op, Value: csc.Value, Stage: csc.Stage})
+			case ActionDealDamage:
+				// A status that damages on its own tick is a damage-over-time
+				// (fire_pit's Lasting Flames burn).
+				var dc dealDamageConfig
+				decodeActionConfig(act.Config, &dc)
+				if dc.Amount > 0 {
+					clauses = append(clauses, fmt.Sprintf("burns for %d%s damage%s%s",
+						dc.Amount, damageTypeWord(string(dc.Type)), rateSuffix(cfg.TickInterval), forSecondsSuffix(cfg.Duration)))
+				}
+			}
+		}
+	}
+	if len(mods) > 0 {
+		parts := make([]string, 0, len(mods))
+		for _, m := range mods {
+			stage := m.Stage
+			if stage == "" {
+				stage = statStageBase
+			}
+			parts = append(parts, describeStatModifierClause(m, stage))
+		}
+		clauses = append(clauses, fmt.Sprintf("applies %s (%s)%s",
+			statusDisplayName(cfg), strings.Join(parts, ", "), forSecondsSuffix(cfg.Duration)))
+	}
+	return clauses
+}
+
+// statusDisplayName is what the prose calls the status: its authored name, or
+// a neutral fallback so an unnamed status still reads as a sentence.
+func statusDisplayName(cfg applyStatusDurationConfig) string {
+	if n := strings.TrimSpace(cfg.Name); n != "" {
+		return n
+	}
+	return "a debuff"
+}
+
+// rateSuffix renders a repeat interval as an inline qualifier: 1s reads as
+// "per second", anything else names the interval, and 0 (a one-shot) adds
+// nothing.
+func rateSuffix(interval float64) string {
+	switch {
+	case interval == 1:
+		return " per second"
+	case interval > 0:
+		return fmt.Sprintf(" every %ss", trimFloat(interval))
+	default:
+		return ""
+	}
+}
+
+// forSecondsSuffix renders a duration as " for Ns", or "" when unset.
+func forSecondsSuffix(d float64) string {
+	if d <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" for %ss", trimFloat(d))
 }
 
 // zoneDisplayNoun is the noun the prose calls the zone: its authored zone name
@@ -216,43 +389,6 @@ func findVisibleZoneConfig(prog *AbilityProgram) (createZoneConfig, bool) {
 		return createZoneConfig{}, false
 	}
 	return walk(prog.Triggers)
-}
-
-// firstZoneTickDamage finds the damage a zone deals on tick, looking through
-// conditional branches so a capability-gated default branch still describes.
-// The FIRST deal_damage encountered wins, which is why an ability should author
-// its default branch first — the same convention the rest of the describe code
-// uses for "primary" effects.
-func firstZoneTickDamage(cfg createZoneConfig) (amount float64, dmgType string, interval float64, found bool) {
-	var scan func(actions []AbilityActionDef) (float64, string, bool)
-	scan = func(actions []AbilityActionDef) (float64, string, bool) {
-		for _, act := range actions {
-			switch act.Type {
-			case ActionDealDamage:
-				var dc dealDamageConfig
-				decodeActionConfig(act.Config, &dc)
-				if dc.Amount > 0 {
-					return float64(dc.Amount), string(dc.Type), true
-				}
-			case ActionConditional:
-				var cc conditionalConfig
-				decodeActionConfig(act.Config, &cc)
-				if amt, t, ok := scan(cc.Then); ok {
-					return amt, t, ok
-				}
-			}
-		}
-		return 0, "", false
-	}
-	for _, trg := range cfg.Triggers {
-		if trg.Type != TriggerOnTick {
-			continue
-		}
-		if amt, t, ok := scan(trg.Actions); ok {
-			return amt, t, cfg.TickInterval, true
-		}
-	}
-	return 0, "", 0, false
 }
 
 // damageTypeWord renders a damage type as a leading-space-prefixed adjective

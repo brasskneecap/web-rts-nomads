@@ -6,7 +6,7 @@ import SchemaField from './SchemaField.vue'
 import type { AbilityBuilderCatalogs } from './useAbilityBuilder'
 
 function emptyCatalogs(): AbilityBuilderCatalogs {
-  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [] }
+  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], perks: [] }
 }
 
 function mountField(

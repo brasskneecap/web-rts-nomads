@@ -17,7 +17,7 @@ const t1ActionA1Path: NodePath = [{ kind: 'trigger', id: 't1' }, { kind: 'action
 const t1Path: NodePath = [{ kind: 'trigger', id: 't1' }]
 
 function emptyCatalogs(): AbilityBuilderCatalogs {
-  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [] }
+  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], perks: [] }
 }
 
 function makeProgram(): AbilityProgram {
@@ -158,6 +158,145 @@ describe('InspectorBar', () => {
     expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, { amount: 42 })
   })
 
+
+  // The condition that gates a conditional's branches is edited HERE, in the
+  // action panel, using the same labeled-select idiom change_stat's "Stat"
+  // field uses — not a bespoke widget elsewhere. has_perk is a selectable op
+  // and the perk it names is chosen from the catalog and changeable.
+  describe('conditional: condition editor', () => {
+    function conditionalProgram(conditions: unknown[]): AbilityProgram {
+      return {
+        entry: { type: 'unit', range: 300 },
+        triggers: [
+          {
+            id: 't1',
+            type: 'on_cast_complete',
+            actions: [{ id: 'a1', type: 'conditional', config: { conditions, then: [], else: [] } }],
+          },
+        ],
+      }
+    }
+    function perkCatalogs(): AbilityBuilderCatalogs {
+      return {
+        ...emptyCatalogs(),
+        perks: [
+          { id: 'lasting_flames', label: 'Lasting Flames' },
+          { id: 'exposed_weakness', label: 'Exposed Weakness' },
+        ],
+      }
+    }
+
+    it('renders an op selector with has_perk selected and the perk ops among the options', () => {
+      const builder = makeBuilderStub({
+        program: conditionalProgram([{ op: 'has_perk', right: 'lasting_flames' }]),
+        catalogs: perkCatalogs(),
+        selected: { kind: 'action', path: t1ActionA1Path },
+      })
+      const wrapper = mountInspectorBar(builder)
+      const op = wrapper.find('[data-test="condition-op"]')
+      expect(op.exists()).toBe(true)
+      expect((op.element as HTMLSelectElement).value).toBe('has_perk')
+      const opts = op.findAll('option').map((o) => (o.element as HTMLOptionElement).value)
+      expect(opts).toContain('has_perk')
+      expect(opts).toContain('not_perk')
+      expect(opts).toContain('gte')
+    })
+
+    it('renders a perk picker populated from the catalog with the current perk selected', () => {
+      const builder = makeBuilderStub({
+        program: conditionalProgram([{ op: 'has_perk', right: 'lasting_flames' }]),
+        catalogs: perkCatalogs(),
+        selected: { kind: 'action', path: t1ActionA1Path },
+      })
+      const wrapper = mountInspectorBar(builder)
+      const perk = wrapper.find('[data-test="condition-perk"]')
+      expect(perk.exists()).toBe(true)
+      expect((perk.element as HTMLSelectElement).value).toBe('lasting_flames')
+      const perkOpts = perk.findAll('option').map((o) => (o.element as HTMLOptionElement).value)
+      expect(perkOpts).toContain('lasting_flames')
+      expect(perkOpts).toContain('exposed_weakness')
+      // The label a designer reads is the display name, not the raw id.
+      expect(perk.text()).toContain('Exposed Weakness')
+    })
+
+    it('changing the perk commits the new perk id into the condition', async () => {
+      const builder = makeBuilderStub({
+        program: conditionalProgram([{ op: 'has_perk', right: 'lasting_flames' }]),
+        catalogs: perkCatalogs(),
+        selected: { kind: 'action', path: t1ActionA1Path },
+      })
+      const wrapper = mountInspectorBar(builder)
+      await wrapper.find('[data-test="condition-perk"]').setValue('exposed_weakness')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, {
+        conditions: [{ op: 'has_perk', right: 'exposed_weakness' }],
+      })
+    })
+
+    it('switching the op to not_perk keeps the chosen perk', async () => {
+      const builder = makeBuilderStub({
+        program: conditionalProgram([{ op: 'has_perk', right: 'lasting_flames' }]),
+        catalogs: perkCatalogs(),
+        selected: { kind: 'action', path: t1ActionA1Path },
+      })
+      const wrapper = mountInspectorBar(builder)
+      await wrapper.find('[data-test="condition-op"]').setValue('not_perk')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, {
+        conditions: [{ op: 'not_perk', right: 'lasting_flames' }],
+      })
+    })
+
+    it('adds a condition defaulting to has_perk with the first catalog perk', async () => {
+      const builder = makeBuilderStub({
+        program: conditionalProgram([]),
+        catalogs: perkCatalogs(),
+        selected: { kind: 'action', path: t1ActionA1Path },
+      })
+      const wrapper = mountInspectorBar(builder)
+      await wrapper.find('[data-test="condition-add"]').trigger('click')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, {
+        conditions: [{ op: 'has_perk', right: 'lasting_flames' }],
+      })
+    })
+
+    it('removes a condition', async () => {
+      const builder = makeBuilderStub({
+        program: conditionalProgram([{ op: 'has_perk', right: 'lasting_flames' }]),
+        catalogs: perkCatalogs(),
+        selected: { kind: 'action', path: t1ActionA1Path },
+      })
+      const wrapper = mountInspectorBar(builder)
+      await wrapper.find('[data-test="condition-remove"]').trigger('click')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, { conditions: [] })
+    })
+
+    it('a selected_count comparison shows a threshold input instead of a perk picker', async () => {
+      const builder = makeBuilderStub({
+        program: conditionalProgram([{ op: 'gte', left: { key: 'selected_count' }, right: 2 }]),
+        catalogs: perkCatalogs(),
+        selected: { kind: 'action', path: t1ActionA1Path },
+      })
+      const wrapper = mountInspectorBar(builder)
+      expect(wrapper.find('[data-test="condition-perk"]').exists()).toBe(false)
+      const right = wrapper.find('[data-test="condition-right"]')
+      expect((right.element as HTMLInputElement).value).toBe('2')
+      const el = right.element as HTMLInputElement
+      el.value = '3'
+      await right.trigger('change')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(t1ActionA1Path, {
+        conditions: [{ op: 'gte', left: { key: 'selected_count' }, right: 3 }],
+      })
+    })
+
+    it('is not shown for a non-conditional action', () => {
+      const builder = makeBuilderStub({
+        program: makeProgram(),
+        schema: makeSchema(),
+        selected: { kind: 'action', path: t1ActionA1Path },
+      })
+      const wrapper = mountInspectorBar(builder)
+      expect(wrapper.find('[data-test="condition-editor"]').exists()).toBe(false)
+    })
+  })
 
   it('shows a "Save result as" field for a producing action and commits outputs.targets', async () => {
     const builder = makeBuilderStub({

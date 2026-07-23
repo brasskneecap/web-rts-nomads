@@ -112,12 +112,89 @@
               <p v-if="actionSchema && !actionSchema.runnable" class="ib-display-only">
                 This action isn't executed by the runtime yet — display-only.
               </p>
-              <p v-if="fieldSections.length === 0" class="ib-hint">No configurable fields for this action type.</p>
+              <p v-if="fieldSections.length === 0 && !isConditionalAction" class="ib-hint">No configurable fields for this action type.</p>
               <p v-if="unreadSavedNames.length" class="ib-warning" data-test="ib-unread-save">
                 Nothing reads {{ unreadSavedNames.length > 1 ? 'these saved names' : 'the saved name' }}
                 <strong>{{ unreadSavedNames.map((n) => `"${n}"`).join(', ') }}</strong> back — the save has
                 no effect. Reference it via Saved Value or Exclude Saved Set on a later query, or remove it.
               </p>
+            </SectionCard>
+
+            <!-- Conditional's GATE. Edited with the same labeled-select idiom the
+                 change_stat "Stat" field uses above — has_perk is a selectable
+                 op and the perk it names comes from the catalog, changeable. -->
+            <SectionCard v-if="isConditionalAction" title="Condition" class="ib-card" data-test="condition-editor">
+              <p class="ib-hint">Runs THEN when these hold (all must match); otherwise ELSE.</p>
+              <p v-if="!conditionRows.length" class="ib-hint" data-test="condition-empty">Always runs.</p>
+              <div v-for="(c, i) in conditionRows" :key="i" class="ib-condition" data-test="condition-row">
+                <EditorField label="When" :for-id="`ib-cond-op-${i}`">
+                  <select
+                    :id="`ib-cond-op-${i}`"
+                    data-test="condition-op"
+                    aria-label="Condition operator"
+                    :value="c.op"
+                    @change="(e) => setConditionOp(i, (e.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="op in CONDITION_OPS" :key="op" :value="op">{{ CONDITION_OP_LABELS[op] }}</option>
+                  </select>
+                </EditorField>
+
+                <EditorField v-if="isPerkOp(c.op)" label="Perk" :for-id="`ib-cond-perk-${i}`">
+                  <select
+                    :id="`ib-cond-perk-${i}`"
+                    data-test="condition-perk"
+                    aria-label="Condition perk"
+                    :value="typeof c.right === 'string' ? c.right : ''"
+                    @change="(e) => setConditionPerk(i, (e.target as HTMLSelectElement).value)"
+                  >
+                    <option v-if="!perkOptionsList.length" value="">No perks loaded</option>
+                    <option v-for="p in perkOptionsList" :key="p.id" :value="p.id">{{ p.label }}</option>
+                  </select>
+                </EditorField>
+
+                <EditorField v-else-if="isPresenceOp(c.op)" label="Context key" :for-id="`ib-cond-key-${i}`">
+                  <input
+                    :id="`ib-cond-key-${i}`"
+                    data-test="condition-left"
+                    type="text"
+                    :value="c.left?.key ?? ''"
+                    @change="(e) => setConditionLeftKey(i, (e.target as HTMLInputElement).value)"
+                  />
+                </EditorField>
+
+                <template v-else>
+                  <EditorField label="Context key" :for-id="`ib-cond-key-${i}`">
+                    <input
+                      :id="`ib-cond-key-${i}`"
+                      data-test="condition-left"
+                      type="text"
+                      :value="c.left?.key ?? 'selected_count'"
+                      @change="(e) => setConditionLeftKey(i, (e.target as HTMLInputElement).value)"
+                    />
+                  </EditorField>
+                  <EditorField label="Value" :for-id="`ib-cond-val-${i}`">
+                    <input
+                      :id="`ib-cond-val-${i}`"
+                      data-test="condition-right"
+                      type="number"
+                      :value="typeof c.right === 'number' ? c.right : 0"
+                      @change="(e) => setConditionRight(i, e)"
+                    />
+                  </EditorField>
+                </template>
+
+                <button
+                  type="button"
+                  class="ib-condition__remove"
+                  data-test="condition-remove"
+                  @click="removeCondition(i)"
+                >
+                  Remove condition
+                </button>
+              </div>
+              <button type="button" class="ib-condition__add" data-test="condition-add" @click="addCondition">
+                + Condition
+              </button>
             </SectionCard>
 
             <SectionCard v-for="[section, fields] in fieldSections" :key="section" :title="section" class="ib-card">
@@ -230,7 +307,7 @@
 // The action section stays fully schema-driven via schemaForAction — adding
 // a new action config field server-side needs no client change here.
 import { computed, ref, watch } from 'vue'
-import type { AbilityActionDef, AbilityTriggerDef, TargetQueryDef, TriggerType } from '@/game/abilities/program/abilityProgram'
+import type { AbilityActionDef, AbilityConditionDef, AbilityTriggerDef, TargetQueryDef, TriggerType } from '@/game/abilities/program/abilityProgram'
 import { fieldVisible, schemaForAction, type SchemaField as SchemaFieldDescriptor } from '@/game/abilities/program/programSchema'
 import { issuesForPath, type ValidationIssue } from '@/game/abilities/program/programValidation'
 import { selfStatDefs } from '@/game/stats/statRegistry'
@@ -565,6 +642,88 @@ const isApplyMarkAction = computed(() => selectedAction.value?.type === 'apply_m
 const selfStatDefsList = selfStatDefs()
 const changeStatStatFieldId = 'ib-changestat-stat'
 
+// ── conditional: condition editor ─────────────────────────────────────────────
+// The GATE on a conditional's branches, edited here in the action panel with the
+// same labeled-select idiom change_stat's "Stat" field uses above — not a
+// bespoke widget elsewhere. Before this the has_perk op was baked into JSON by
+// hand and the perk it named couldn't be chosen or changed; now the op is a
+// dropdown and the perk comes from the catalog (the same builder.catalogs.perks
+// list the preview's grant control draws from) and is changeable. Ops mirror
+// exactly what evaluateOneConditionLocked runs (ability_exec_flow.go): perk ops
+// name a perk directly, presence ops read a named-context key, scalar ops
+// compare a key (usually selected_count) against a number.
+const PERK_OPS = ['has_perk', 'not_perk']
+const PRESENCE_OPS = ['has', 'not']
+const SCALAR_OPS = ['eq', 'ne', 'lt', 'lte', 'gt', 'gte']
+const CONDITION_OPS = [...PERK_OPS, ...PRESENCE_OPS, ...SCALAR_OPS]
+const CONDITION_OP_LABELS: Record<string, string> = {
+  has_perk: 'has perk',
+  not_perk: 'missing perk',
+  has: 'is set',
+  not: 'is unset',
+  eq: '==',
+  ne: '!=',
+  lt: '<',
+  lte: '<=',
+  gt: '>',
+  gte: '>=',
+}
+function isPerkOp(op: string): boolean {
+  return PERK_OPS.includes(op)
+}
+function isPresenceOp(op: string): boolean {
+  return PRESENCE_OPS.includes(op)
+}
+
+const isConditionalAction = computed(() => selectedAction.value?.type === 'conditional')
+const conditionRows = computed<AbilityConditionDef[]>(() => {
+  const raw = (selectedAction.value?.config as { conditions?: unknown } | undefined)?.conditions
+  return Array.isArray(raw) ? (raw as AbilityConditionDef[]) : []
+})
+const perkOptionsList = computed(() => builder.catalogs.value.perks)
+
+function commitConditions(next: AbilityConditionDef[]) {
+  if (!selectedAction.value || selected.value.kind !== 'action') return
+  builder.updateActionConfig(selected.value.path, { conditions: next })
+}
+
+// conditionForOp builds a clean condition for a chosen op, carrying whatever of
+// the previous one still applies: a perk id survives a has_perk↔not_perk switch,
+// a context key survives any switch, a scalar threshold defaults to
+// selected_count. Switching families drops the now-meaningless field.
+function conditionForOp(op: string, prev?: AbilityConditionDef): AbilityConditionDef {
+  if (isPerkOp(op)) {
+    const right = typeof prev?.right === 'string' && prev.right ? prev.right : (perkOptionsList.value[0]?.id ?? '')
+    return { op, right } as AbilityConditionDef
+  }
+  if (isPresenceOp(op)) {
+    return { op, left: { key: prev?.left?.key ?? '' } } as AbilityConditionDef
+  }
+  const right = typeof prev?.right === 'number' ? prev.right : 0
+  return { op, left: { key: prev?.left?.key ?? 'selected_count' }, right } as AbilityConditionDef
+}
+
+function setConditionOp(i: number, op: string) {
+  commitConditions(conditionRows.value.map((c, idx) => (idx === i ? conditionForOp(op, c) : c)))
+}
+function setConditionPerk(i: number, perkId: string) {
+  commitConditions(conditionRows.value.map((c, idx) => (idx === i ? { ...c, right: perkId } : c)))
+}
+function setConditionLeftKey(i: number, key: string) {
+  commitConditions(conditionRows.value.map((c, idx) => (idx === i ? { ...c, left: { key } } : c)))
+}
+function setConditionRight(i: number, e: Event) {
+  const n = Number((e.target as HTMLInputElement).value)
+  if (!Number.isFinite(n)) return
+  commitConditions(conditionRows.value.map((c, idx) => (idx === i ? { ...c, right: Math.round(n) } : c)))
+}
+function addCondition() {
+  commitConditions([...conditionRows.value, conditionForOp('has_perk')])
+}
+function removeCondition(i: number) {
+  commitConditions(conditionRows.value.filter((_, idx) => idx !== i))
+}
+
 // ── Save result (outputs.targets) ────────────────────────────────────────────
 // Action types whose Execute returns a meaningful target SET worth naming
 // inline — the selection producers. Other actions' returns aren't a
@@ -642,6 +801,42 @@ function commitActionOutput(name: string) {
 .ib-card {
   flex: 0 0 auto;
   width: 100%;
+}
+
+/* One condition of a conditional's gate: its fields stacked, with a hairline
+   rule + remove control, so several ANDed conditions read as distinct rows. */
+.ib-condition {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--ed-line);
+}
+.ib-condition:first-of-type {
+  border-top: 0;
+}
+
+.ib-condition__remove {
+  align-self: flex-start;
+  padding: 2px 6px;
+  background: none;
+  border: 0;
+  font-size: 0.72rem;
+  color: var(--ed-text-dim);
+}
+.ib-condition__remove:hover {
+  color: var(--ed-danger);
+}
+
+.ib-condition__add {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 3px 10px;
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+  font-size: 0.75rem;
+  color: var(--ed-text);
 }
 
 .ib-issues {

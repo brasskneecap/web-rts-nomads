@@ -1,55 +1,11 @@
 {
   "id": "amplified_effects",
   "displayName": "Amplified Effects",
-  "description": "Your traps hit 35% harder \u2014 more damage, stronger slows, stronger marks.",
-  "tooltipTemplate": "Trap damage, slow strength, and mark bonus all increased by {effectMultiplier+%}.",
+  "description": "Your traps hit harder — more damage, stronger slows, stronger marks.",
+  "tooltipTemplate": "Trap damage, slow strength, and mark bonus all increase.",
   "icon": "perk-amplified-effects",
-  "config": {
-    "effectMultiplier": 1.35
-  },
+  "config": {},
   "abilityFields": [
-    {
-      "target": "fire_pit",
-      "action": "burn_dmg",
-      "field": "amount",
-      "op": "multiply",
-      "value": 1.35
-    },
-    {
-      "target": "fire_pit",
-      "action": "direct_dmg",
-      "field": "amount",
-      "op": "multiply",
-      "value": 1.35
-    },
-    {
-      "target": "caltrops",
-      "action": "spikes",
-      "field": "amount",
-      "op": "multiply",
-      "value": 1.35
-    },
-    {
-      "target": "caltrops",
-      "action": "slow_move",
-      "field": "value",
-      "op": "amplify",
-      "value": 1.35
-    },
-    {
-      "target": "explosive_trap",
-      "action": "blast",
-      "field": "amount",
-      "op": "multiply",
-      "value": 1.35
-    },
-    {
-      "target": "marker_trap",
-      "action": "vulnerable",
-      "field": "value",
-      "op": "multiply",
-      "value": 1.35
-    },
     {
       "target": "marker_trap",
       "action": "mark",
@@ -57,5 +13,23 @@
       "op": "multiply",
       "value": 1.35
     }
-  ]
+  ],
+  "abilityStats": [
+    {
+      "stat": "damageTaken",
+      "flat": 0.15
+    },
+    {
+      "stat": "moveSpeed",
+      "flat": -0.15
+    }
+  ],
+  "statModifiers": [
+    {
+      "stat": "abilityDamage",
+      "op": "multiply",
+      "value": 1.35
+    }
+  ],
+  "wired": false
 }

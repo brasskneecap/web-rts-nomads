@@ -33,7 +33,7 @@ func TestPathAbilityStats_ApplyAtRank(t *testing.T) {
 	// 110.00000000000001 in binary floating point). Determinism is not at risk —
 	// identical inputs always give identical bits.
 	radius := func() float64 {
-		raw := s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, mustJSON(map[string]any{"radius": 100.0}))
+		raw := s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, mustJSON(map[string]any{"radius": 100.0}))
 		v, _ := decodedConfig(t, raw)["radius"].(float64)
 		return v
 	}
@@ -248,7 +248,7 @@ func TestPathRankStats_InheritIndependentOfPromotionOrder(t *testing.T) {
 		if got := unitBaseStat(caster, statAbilityPower); got != 15 {
 			t.Errorf("%s: ability power = %v, want 15 inherited from bronze", rank, got)
 		}
-		raw := s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, mustJSON(map[string]any{"radius": 100.0}))
+		raw := s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, mustJSON(map[string]any{"radius": 100.0}))
 		if got, _ := decodedConfig(t, raw)["radius"].(float64); math.Abs(got-120) > 1e-9 {
 			t.Errorf("%s: radius = %v, want 120 inherited from bronze", rank, got)
 		}

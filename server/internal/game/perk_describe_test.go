@@ -547,3 +547,92 @@ func TestDescribePerk_RegistryDefsNeverCarryGeneratedDescription(t *testing.T) {
 		}
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AbilityStats / AbilityFields
+//
+// These two authoring forms produced NOTHING for a long time: a perk whose only
+// contribution was an ability-stat row generated an empty description, which is
+// exactly how wider_nets and extended_setup ended up depending on a hand-written
+// tooltipTemplate and a config block to say what they did.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestDescribePerkAbilityStats(t *testing.T) {
+	t.Run("a kinded row reads as a percentage of that shape", func(t *testing.T) {
+		got := describePerkAbilityStats([]PerkAbilityStat{{Stat: "create_zone.radius", Pct: 0.5}})
+		if got != "+50% Zone Radius." {
+			t.Errorf("got %q, want %q", got, "+50% Zone Radius.")
+		}
+	})
+
+	t.Run("naming an ability scopes the clause to it", func(t *testing.T) {
+		got := describePerkAbilityStats([]PerkAbilityStat{{Ability: "fire_pit", Stat: "duration", Flat: 2}})
+		if !strings.HasPrefix(got, "Fire Pit:") {
+			t.Errorf("got %q, want a clause naming Fire Pit", got)
+		}
+	})
+
+	// An INFLICTED row changes what the ability does TO a unit, and its sign is
+	// the whole meaning — a negative Move Speed contribution is a STRONGER slow.
+	// A fixed-1.0-baseline stat reads in percentage points; anything else raw.
+	t.Run("an inflicted row reads as applied, with its sign intact", func(t *testing.T) {
+		got := describePerkAbilityStats([]PerkAbilityStat{
+			{Stat: statDamageTaken, Flat: 0.15},
+			{Stat: "moveSpeed", Flat: -0.15},
+		})
+		want := "+15% Vulnerable applied. -0.15 Move Speed applied."
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("a row with no value contributes no clause", func(t *testing.T) {
+		if got := describePerkAbilityStats([]PerkAbilityStat{{Stat: "duration"}}); got != "" {
+			t.Errorf("got %q, want empty", got)
+		}
+	})
+}
+
+func TestDescribePerkAbilityFields(t *testing.T) {
+	got := describePerkAbilityFields([]AbilityFieldModifier{
+		{Target: "marker_trap", Action: "mark", Field: "duration", Op: statOpMultiply, Value: 1.35},
+	})
+	if got != "Marker Trap: +35% duration." {
+		t.Errorf("got %q, want %q", got, "Marker Trap: +35% duration.")
+	}
+
+	// An identity contribution says nothing rather than "+0%".
+	if got := describePerkAbilityFields([]AbilityFieldModifier{
+		{Target: "marker_trap", Action: "mark", Field: "duration", Op: statOpMultiply, Value: 1},
+	}); got != "" {
+		t.Errorf("identity modifier described as %q, want empty", got)
+	}
+}
+
+// "+35% Ability Damage %" reads as a typo. The trailing % earns its place in a
+// PICKER, where it is what separates the stat from Ability Power at a glance.
+func TestDescribePerk_DoesNotDoubleThePercentSign(t *testing.T) {
+	got := describePerkStatModifiers([]PerkStatModifier{
+		{Stat: statAbilityDamage, Op: statOpMultiply, Value: 1.35},
+	})
+	if strings.Contains(got, "% %") || strings.Contains(got, "Damage %") {
+		t.Errorf("got %q; a percentage clause must not also carry the label's %% suffix", got)
+	}
+}
+
+// Every perk that contributes SOMETHING must describe itself. A silent perk is
+// how a hand-written tooltip becomes load-bearing.
+func TestCatalog_EveryContributingPerkDescribesItself(t *testing.T) {
+	for _, def := range ListPerkDefs() {
+		contributes := len(def.StatModifiers) > 0 || len(def.Auras) > 0 ||
+			len(def.AbilityModifiers) > 0 || len(def.AbilityRiders) > 0 ||
+			len(def.GrantsAbilities) > 0 || len(def.AbilityStats) > 0 ||
+			len(def.AbilityFields) > 0
+		if !contributes {
+			continue // a Go-wired perk describes itself in prose, not from data
+		}
+		if describePerk(def) == "" {
+			t.Errorf("perk %q authors data contributions but generates an empty description", def.ID)
+		}
+	}
+}

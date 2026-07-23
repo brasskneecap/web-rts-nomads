@@ -173,6 +173,128 @@
         <button type="button" class="perk-editor__row-add" @click="addAbilityModifierRow">+ Add Ability Modifier</button>
       </section>
 
+      <!-- Ability Stats -->
+      <section class="perk-editor__section">
+        <h3 class="perk-editor__section-title">Ability Stats</h3>
+        <p class="perk-editor__hint-line">
+          Broad improvements by STAT rather than by naming an action and a field —
+          "+50% zone radius" is one row here instead of one per ability.
+          Leave <em>Ability</em> blank to improve every ability the unit has;
+          name one to improve only that ability.
+          <br />
+          <em>Applies to target</em> stats (Vulnerable, Move Speed…) add to whatever
+          the ability already does to that stat — negative strengthens a slow.
+        </p>
+        <p v-if="abilityStatRows.length === 0" class="perk-editor__hint-line">No ability stats.</p>
+        <div v-for="(row, idx) in abilityStatRows" :key="idx" class="perk-editor__ability-stat-row">
+          <label class="perk-editor__ability-stat-stat">
+            Stat
+            <select v-model="row.stat" :aria-label="`Ability Stat ${idx + 1} stat`" :data-test="`perk-ability-stat-${idx}`">
+              <option value="">Pick a stat…</option>
+              <!-- Two families, grouped: what an ability's SHAPE is (radius,
+                   duration) and what it DOES to a unit (Vulnerable, Move
+                   Speed). The second finds its effect wherever it lives in the
+                   program, so it survives an action being renamed. -->
+              <optgroup label="Ability shape">
+                <option v-for="def in abilityStatDefs.filter((d) => !d.inflicted)" :key="def.id" :value="def.id">{{ def.label }}</option>
+              </optgroup>
+              <optgroup label="Applies to target">
+                <option v-for="def in abilityStatDefs.filter((d) => d.inflicted)" :key="def.id" :value="def.id">{{ def.label }}</option>
+              </optgroup>
+              <!-- An id the server no longer offers still renders, so an
+                   authored row is never silently dropped on save. -->
+              <option v-if="row.stat && !abilityStatDefs.some((d) => d.id === row.stat)" :value="row.stat">{{ row.stat }}</option>
+            </select>
+          </label>
+          <label class="perk-editor__ability-stat-ability">
+            Ability
+            <input
+              v-model="row.ability"
+              list="perk-editor-ability-ids"
+              placeholder="(all abilities)"
+              :aria-label="`Ability Stat ${idx + 1} ability`"
+              :data-test="`perk-ability-stat-ability-${idx}`"
+            />
+          </label>
+          <label>Flat <input v-model.number="row.flat" type="number" step="0.5" placeholder="—" :aria-label="`Ability Stat ${idx + 1} flat`" :data-test="`perk-ability-stat-flat-${idx}`" /></label>
+          <label v-if="abilityStatAllowsPct(row.stat)">% <input v-model.number="row.pct" type="number" step="5" placeholder="—" :aria-label="`Ability Stat ${idx + 1} percent`" :data-test="`perk-ability-stat-pct-${idx}`" /></label>
+          <button type="button" class="perk-editor__row-del" title="Remove" @click="removeAbilityStatRow(idx)">✕</button>
+        </div>
+        <button type="button" class="perk-editor__row-add" @click="addAbilityStatRow">+ Add Ability Stat</button>
+      </section>
+
+      <!-- Ability Fields -->
+      <section class="perk-editor__section">
+        <h3 class="perk-editor__section-title">Ability Fields</h3>
+        <p class="perk-editor__hint-line">
+          The precise form: ONE field of ONE action of one ability. Reach for this
+          only when a broad Ability Stat would hit too much — "Marker Trap's
+          <em>mark</em> lasts 35% longer" needs this, because a
+          <em>duration</em> stat would stretch the zone as well.
+          <br />
+          Actions and fields are read from the chosen ability's own program, so a
+          row can only address something that exists.
+        </p>
+        <p v-if="abilityFieldRows.length === 0" class="perk-editor__hint-line">No ability fields.</p>
+        <div v-for="(row, idx) in abilityFieldRows" :key="idx" class="perk-editor__ability-field-row">
+          <label class="perk-editor__ability-field-target">
+            Ability
+            <input
+              v-model="row.target"
+              list="perk-editor-ability-ids"
+              placeholder="ability or tag:trap"
+              :aria-label="`Ability Field ${idx + 1} ability`"
+              :data-test="`perk-ability-field-target-${idx}`"
+            />
+          </label>
+          <label class="perk-editor__ability-field-action">
+            Action
+            <select v-model="row.action" :aria-label="`Ability Field ${idx + 1} action`" :data-test="`perk-ability-field-action-${idx}`">
+              <option value="">Pick an action…</option>
+              <option v-for="a in actionsForTarget(row.target)" :key="a.id" :value="a.id">{{ a.label }}</option>
+              <!-- An action the ability no longer has still renders, so an
+                   authored row is never silently emptied on save. -->
+              <option v-if="row.action && !actionsForTarget(row.target).some((a) => a.id === row.action)" :value="row.action">
+                {{ row.action }} (not in this ability)
+              </option>
+            </select>
+          </label>
+          <label class="perk-editor__ability-field-field">
+            Field
+            <select v-model="row.field" :aria-label="`Ability Field ${idx + 1} field`" :data-test="`perk-ability-field-field-${idx}`">
+              <option value="">Pick a field…</option>
+              <option v-for="f in fieldsForAction(row.target, row.action)" :key="f" :value="f">{{ f }}</option>
+              <option v-if="row.field && !fieldsForAction(row.target, row.action).includes(row.field)" :value="row.field">
+                {{ row.field }} (not on this action)
+              </option>
+            </select>
+          </label>
+          <label>
+            Op
+            <select v-model="row.op" :aria-label="`Ability Field ${idx + 1} op`" :data-test="`perk-ability-field-op-${idx}`">
+              <option value="multiply">× multiply</option>
+              <option value="add">+ add</option>
+              <option value="amplify">amplify</option>
+            </select>
+          </label>
+          <label>
+            Value
+            <input v-model.number="row.value" type="number" step="0.05" :aria-label="`Ability Field ${idx + 1} value`" :data-test="`perk-ability-field-value-${idx}`" />
+          </label>
+          <label>
+            Stage
+            <select v-model="row.stage" :aria-label="`Ability Field ${idx + 1} stage`" :data-test="`perk-ability-field-stage-${idx}`">
+              <option value="">Base</option>
+              <option value="intrinsic">Intrinsic</option>
+              <option value="final">Final</option>
+            </select>
+          </label>
+          <span class="perk-editor__ability-field-preview">{{ abilityFieldRowPreview(row) }}</span>
+          <button type="button" class="perk-editor__row-del" title="Remove" @click="removeAbilityFieldRow(idx)">✕</button>
+        </div>
+        <button type="button" class="perk-editor__row-add" @click="addAbilityFieldRow">+ Add Ability Field</button>
+      </section>
+
       <!-- Unit Stat Modifiers -->
       <section class="perk-editor__section">
         <h3 class="perk-editor__section-title">Unit Stat Modifiers</h3>
@@ -283,7 +405,7 @@ import { confirmDelete } from '@/components/editor/confirmDelete'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createBlankForm, formFromDef, saveRequestFromForm,
-  type AbilityModifier, type AbilityRider, type AuthoredPerkDef, type PerkAura, type PerkEditorForm, type PerkStatModifier,
+  type AbilityFieldModifier, type AbilityModifier, type AbilityRider, type AuthoredPerkDef, type PerkAbilityStat, type PerkAura, type PerkEditorForm, type PerkStatModifier,
 } from '@/game/perks/perkEditorForm'
 import { allStatDefs, selfStatDefs } from '@/game/stats/statRegistry'
 import {
@@ -434,6 +556,212 @@ function abilityModifiersFromRows(rows: AbilityModifierRow[]): AbilityModifier[]
   }
   return out
 }
+
+// Ability Stats: same rows-synced-by-deep-watch idiom as the modifiers above.
+//
+// The PERCENT field is whole percent in the UI and a FRACTION on the wire (15 vs
+// 0.15) — the same boundary conversion AbilityStatsEditor does for units and
+// items, kept here rather than shared because this shape is a LIST with an
+// optional ability, not a stat-keyed map.
+interface AbilityStatRow {
+  stat: string
+  ability: string
+  flat?: number | ''
+  pct?: number | ''
+}
+const abilityStatRows = ref<AbilityStatRow[]>([])
+
+// Stat rows come from the SERVER (/catalog/ability-stats), derived from the
+// action registry — a kind becomes offerable the moment a field claims it. A
+// failed fetch offers nothing rather than a stale wrong set.
+const abilityStatDefs = ref<{ id: string; label: string; flatOnly?: boolean; inflicted?: boolean }[]>([])
+async function loadAbilityStatDefs() {
+  try {
+    const res = await fetch('/catalog/ability-stats')
+    if (!res.ok) return
+    const body = (await res.json()) as { stats?: { id: string; label: string; flatOnly?: boolean; inflicted?: boolean }[] }
+    abilityStatDefs.value = body.stats ?? []
+  } catch {
+    // Offline / server down: leave empty.
+  }
+}
+void loadAbilityStatDefs()
+
+// A whole quantity (bounce count, summon count) takes no percentage — the
+// server rejects one outright, so offering the input would offer a save error.
+function abilityStatAllowsPct(stat: string): boolean {
+  const def = abilityStatDefs.value.find((d) => d.id === stat)
+  return !def?.flatOnly
+}
+
+function rowsFromAbilityStats(rows?: PerkAbilityStat[]): AbilityStatRow[] {
+  return (rows ?? []).map((r) => ({
+    stat: r.stat,
+    ability: r.ability ?? '',
+    flat: r.flat ?? '',
+    pct: r.pct === undefined ? '' : Math.round(r.pct * 1000) / 10,
+  }))
+}
+
+function abilityStatsFromRows(rows: AbilityStatRow[]): PerkAbilityStat[] {
+  const out: PerkAbilityStat[] = []
+  for (const row of rows) {
+    const stat = row.stat.trim()
+    if (!stat) continue // a half-made row (added, never picked) contributes nothing
+    const entry: PerkAbilityStat = { stat }
+    const ability = row.ability.trim()
+    if (ability) entry.ability = ability
+    let hasAny = false
+    if (typeof row.flat === 'number' && !Number.isNaN(row.flat) && row.flat !== 0) {
+      entry.flat = row.flat
+      hasAny = true
+    }
+    if (abilityStatAllowsPct(stat) && typeof row.pct === 'number' && !Number.isNaN(row.pct) && row.pct !== 0) {
+      entry.pct = row.pct / 100
+      hasAny = true
+    }
+    if (!hasAny) continue // stat picked but no value yet — nothing to save
+    out.push(entry)
+  }
+  return out
+}
+
+// ── Ability Fields (the PRECISE form) ───────────────────────────────────────
+// A row is edited with `value` possibly blank (a freshly added row), which is
+// why the row type is not AbilityFieldModifier itself — see
+// abilityFieldsFromRows for what survives to the wire.
+interface AbilityFieldRow {
+  target: string
+  action: string
+  field: string
+  op: string
+  value: number | ''
+  stage: string
+}
+const abilityFieldRows = ref<AbilityFieldRow[]>([])
+
+// Every ability def by id, kept so a row can offer the ACTIONS and FIELDS that
+// actually exist on the ability it targets rather than asking the author to
+// remember authoring ids. Empty when the fetch failed — the selects then offer
+// only whatever the row already holds, which still round-trips.
+const abilityDefsById = ref<Record<string, { id: string; program?: unknown }>>({})
+
+// walkProgramActions yields every action in an ability's program, at any depth:
+// nested children, a create_zone's own triggers, an apply_status_duration's
+// triggers. A perk targets by AUTHORED ACTION ID, and those ids live at every
+// level — marker_trap's "mark" sits two levels down inside a zone trigger.
+function walkProgramActions(program: unknown): { id: string; type: string; config?: Record<string, unknown> }[] {
+  const out: { id: string; type: string; config?: Record<string, unknown> }[] = []
+  const seen = new Set<unknown>()
+  const visitActions = (actions: unknown) => {
+    if (!Array.isArray(actions)) return
+    for (const raw of actions) {
+      const a = raw as { id?: string; type?: string; config?: Record<string, unknown>; children?: unknown }
+      if (!a || typeof a !== 'object') continue
+      if (a.id) out.push({ id: a.id, type: String(a.type ?? ''), config: a.config })
+      visitTriggers(a.children)
+      // A config can itself carry triggers (create_zone, apply_status_duration,
+      // launch_projectile) — that is where a trap's real work is authored.
+      if (a.config && typeof a.config === 'object') visitTriggers((a.config as { triggers?: unknown }).triggers)
+    }
+  }
+  const visitTriggers = (triggers: unknown) => {
+    if (!Array.isArray(triggers) || seen.has(triggers)) return
+    seen.add(triggers)
+    for (const raw of triggers) {
+      const t = raw as { actions?: unknown }
+      if (t && typeof t === 'object') visitActions(t.actions)
+    }
+  }
+  const p = program as { triggers?: unknown; namedTriggers?: Record<string, unknown> } | undefined
+  visitTriggers(p?.triggers)
+  for (const t of Object.values(p?.namedTriggers ?? {})) visitTriggers([t])
+  return out
+}
+
+// actionsForTarget lists the actions of the ability a row targets. A "tag:"
+// target addresses many abilities at once, so no single program can be shown —
+// the row keeps whatever action id it holds and the select stays open.
+function actionsForTarget(target: string): { id: string; label: string }[] {
+  const def = abilityDefsById.value[target.trim()]
+  if (!def) return []
+  return walkProgramActions(def.program).map((a) => ({
+    id: a.id,
+    label: a.type ? `${a.id} (${a.type})` : a.id,
+  }))
+}
+
+// fieldsForAction lists the NUMERIC config keys of one action, plus the
+// "target.radius" pseudo-field for an action carrying a target query. Numeric
+// only, because a field modifier scales a number — offering `name` or `sprite`
+// would offer a save error.
+function fieldsForAction(target: string, actionID: string): string[] {
+  const def = abilityDefsById.value[target.trim()]
+  if (!def || !actionID) return []
+  const action = walkProgramActions(def.program).find((a) => a.id === actionID)
+  if (!action) return []
+  const out = Object.entries(action.config ?? {})
+    .filter(([, v]) => typeof v === 'number')
+    .map(([k]) => k)
+  const raw = action as unknown as { target?: { radius?: unknown } }
+  if (typeof raw.target?.radius === 'number') out.push('target.radius')
+  return out.sort()
+}
+
+// abilityFieldRowPreview says in words what the row will do, so an author can
+// see "+35%" without translating a 1.35 multiplier in their head.
+function abilityFieldRowPreview(row: AbilityFieldRow): string {
+  if (typeof row.value !== 'number' || Number.isNaN(row.value)) return ''
+  if (row.op === 'add') return row.value >= 0 ? `+${row.value}` : `${row.value}`
+  const pct = Math.round((row.value - 1) * 1000) / 10
+  if (pct === 0) return 'no change'
+  return pct > 0 ? `+${pct}%` : `${pct}%`
+}
+
+function rowsFromAbilityFields(mods?: AbilityFieldModifier[]): AbilityFieldRow[] {
+  return (mods ?? []).map((m) => ({
+    target: m.target ?? '',
+    action: m.action ?? '',
+    field: m.field ?? '',
+    op: m.op || 'multiply',
+    value: m.value ?? '',
+    stage: m.stage ?? '',
+  }))
+}
+
+// A row missing any of ability/action/field/value contributes nothing — the
+// server rejects a partial row, so a half-made one must not reach the save.
+function abilityFieldsFromRows(rows: AbilityFieldRow[]): AbilityFieldModifier[] {
+  const out: AbilityFieldModifier[] = []
+  for (const row of rows) {
+    const target = row.target.trim()
+    const action = row.action.trim()
+    const field = row.field.trim()
+    if (!target || !action || !field) continue
+    if (typeof row.value !== 'number' || Number.isNaN(row.value)) continue
+    const entry: AbilityFieldModifier = { target, action, field, value: row.value }
+    if (row.op && row.op !== 'multiply') entry.op = row.op
+    if (row.stage) entry.stage = row.stage
+    out.push(entry)
+  }
+  return out
+}
+
+function addAbilityFieldRow() {
+  abilityFieldRows.value.push({ target: '', action: '', field: '', op: 'multiply', value: '', stage: '' })
+}
+function removeAbilityFieldRow(idx: number) { abilityFieldRows.value.splice(idx, 1) }
+watch(abilityFieldRows, (rows) => {
+  const mods = abilityFieldsFromRows(rows)
+  form.value.abilityFields = mods.length ? mods : undefined
+}, { deep: true })
+
+function addAbilityStatRow() { abilityStatRows.value.push({ stat: '', ability: '', flat: '', pct: '' }) }
+function removeAbilityStatRow(idx: number) { abilityStatRows.value.splice(idx, 1) }
+watch(abilityStatRows, (rows) => {
+  const stats = abilityStatsFromRows(rows)
+  form.value.abilityStats = stats.length ? stats : undefined
+}, { deep: true })
 
 function addAbilityModifierRow() { abilityModifierRows.value.push({ target: '' }) }
 function removeAbilityModifierRow(idx: number) { abilityModifierRows.value.splice(idx, 1) }
@@ -590,6 +918,9 @@ watch(auraRows, (rows) => {
 const riderSchema = ref<ActionSchemaBundle | null>(null)
 const riderCatalogs = ref<AbilityBuilderCatalogs>({
   effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [],
+  // Riders never offer a perk picker (the preview's caster-perk control is the
+  // only consumer), so this stays empty rather than costing another fetch.
+  perks: [],
 })
 
 async function reload() {
@@ -682,6 +1013,8 @@ function selectPerk(def: AuthoredPerkDef) {
   syncConfigByRankText(def.configByRank)
   syncEffectDraft(def.effect)
   abilityModifierRows.value = rowsFromAbilityModifiers(def.abilityModifiers)
+  abilityStatRows.value = rowsFromAbilityStats(def.abilityStats)
+  abilityFieldRows.value = rowsFromAbilityFields(def.abilityFields)
   statModifierRows.value = rowsFromStatModifiers(def.statModifiers)
   auraRows.value = rowsFromAuras(def.auras)
   saveError.value = ''
@@ -695,6 +1028,10 @@ function newPerk() {
   syncConfigByRankText(undefined)
   syncEffectDraft(undefined)
   abilityModifierRows.value = []
+  // abilityStatRows was already missing here: a new perk inherited the last
+  // one's ability-stat rows, which then saved onto it.
+  abilityStatRows.value = []
+  abilityFieldRows.value = []
   statModifierRows.value = []
   auraRows.value = []
   saveError.value = ''
@@ -745,9 +1082,14 @@ onMounted(async () => {
     pathsByUnit.value = {} // non-fatal: fall back to Generic-only grouping
   }
   try {
-    abilityIds.value = (await fetchAuthoredAbilityDefs()).map((a) => a.id)
+    const defs = await fetchAuthoredAbilityDefs()
+    abilityIds.value = defs.map((a) => a.id)
+    // The full defs, not just ids: the Ability Fields rows read each ability's
+    // own program to offer its real action ids and their numeric config keys.
+    abilityDefsById.value = Object.fromEntries(defs.map((a) => [a.id, a]))
   } catch {
     abilityIds.value = [] // non-fatal: target-ability input just loses autocomplete
+    abilityDefsById.value = {}
   }
   try {
     const [schema, effects, projectiles, damageTypes, categories, autoCastSelectors, units] = await Promise.all([
@@ -763,6 +1105,7 @@ onMounted(async () => {
     riderCatalogs.value = {
       effects, projectiles, damageTypes, categories, autoCastSelectors,
       unitTypes: units.map((u) => u.type),
+      perks: [],
     }
   } catch {
     // non-fatal: Ability Riders' trigger/action pickers fall back to their
@@ -1010,6 +1353,58 @@ onMounted(async () => {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+}
+
+/* Same framed row as an ability modifier — the two sections sit next to each
+   other and must not read as different kinds of thing. */
+.perk-editor__ability-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+/* Stat and Ability take the slack; the number inputs stay at their natural
+   width so a row of them lines up down the section. */
+.perk-editor__ability-stat-stat {
+  flex: 1 1 180px;
+}
+
+.perk-editor__ability-stat-ability {
+  flex: 1 1 160px;
+}
+
+/* Same framed row again — Ability Fields sits directly under Ability Stats and
+   is the precise sibling of it, not a different kind of thing. */
+.perk-editor__ability-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+/* The three address parts take the slack; op/value/stage stay compact. */
+.perk-editor__ability-field-target,
+.perk-editor__ability-field-action,
+.perk-editor__ability-field-field {
+  flex: 1 1 150px;
+}
+
+/* The plain-language read-back of the row's op+value ("+35%"), so a 1.35
+   multiplier never has to be translated in the author's head. */
+.perk-editor__ability-field-preview {
+  align-self: center;
+  font-size: 0.8rem;
+  color: var(--ed-brass, #d6b06a);
+  white-space: nowrap;
 }
 
 .perk-editor__ability-mod-row {

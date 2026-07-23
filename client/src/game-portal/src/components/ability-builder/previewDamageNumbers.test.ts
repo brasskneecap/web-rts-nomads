@@ -142,4 +142,19 @@ describe('damageNumbersForFrameIndex', () => {
   it('returns [] when the trace is empty', () => {
     expect(damageNumbersForFrameIndex([], 2, units, CASTER_X, CASTER_Y)).toEqual([])
   })
+
+  // Damage the ability under test did not deal itself — an ally's basic attack,
+  // recorded by the damage pipeline rather than by the executor. It carries no
+  // action `path` and names its `attacker`, and it must float a number exactly
+  // like an ability hit: it is the only thing on screen when previewing an
+  // ability whose whole effect is on somebody else's damage.
+  it('spawns a number for a pipeline-recorded hit (an ally basic attack)', () => {
+    const trace: AbilityExecutionTraceEvent[] = [{
+      t: 0.1,
+      type: 'damage_applied',
+      payload: { unit: 3, amount: 14, type: 'physical', attacker: 4, category: 'basic_attack' },
+    }]
+    const [spec] = damageNumbersForFrameIndex(trace, 2, units, CASTER_X, CASTER_Y)
+    expect(spec).toMatchObject({ unitId: 3, amount: 14, kind: 'normal', damageType: 'physical' })
+  })
 })

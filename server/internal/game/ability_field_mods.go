@@ -135,6 +135,9 @@ func (s *GameState) collectAbilityFieldModsLocked(caster *Unit, def AbilityDef) 
 	if caster == nil {
 		return nil
 	}
+	// def is a value copy, so rewriting the id here only affects this match
+	// pass. A no-op outside the preview harness — see authoredAbilityIDLocked.
+	def.ID = s.authoredAbilityIDLocked(def.ID)
 	var out []abilityFieldSource
 
 	if len(caster.AbilityFields) > 0 {
@@ -319,7 +322,7 @@ func (s *GameState) foldTargetQueryRadiusLocked(ctx *RuntimeAbilityContext, a *A
 	if def, ok := getAbilityDef(ctx.AbilityID); ok {
 		radius = s.foldOneFieldLocked(caster, def, a.ID, targetQueryRadiusField, radius)
 	}
-	flat, pct := s.abilityStatFoldLocked(caster, a.Type, abilityStatKindRadius)
+	flat, pct := s.abilityStatFoldLocked(caster, ctx.AbilityID, a.Type, abilityStatKindRadius)
 	if flat != 0 || pct != 0 {
 		radius = foldAbilityStat(radius, flat, pct)
 	}
@@ -432,6 +435,54 @@ func programActionTypes(def AbilityDef) map[string]ActionType {
 // used to provide: before, a tooltip asked the params block; now it asks the
 // program directly, which is strictly better because the program is the thing
 // that runs. Load/debug-path only (a raw-JSON walk), never on the tick path.
+// programActionConfigString reads a STRING config key off one authored action,
+// the sibling of programActionConfigValue. Needed because a change_stat action's
+// numeric `value` cannot be interpreted without its `stat`, which names the unit
+// stat being inflicted.
+func programActionConfigString(def AbilityDef, actionID, field string) (string, bool) {
+	if def.Program == nil {
+		return "", false
+	}
+	raw, err := json.Marshal(def.Program)
+	if err != nil {
+		return "", false
+	}
+	var tree any
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		return "", false
+	}
+	var found bool
+	var value string
+	var walk func(any)
+	walk = func(v any) {
+		if found {
+			return
+		}
+		switch t := v.(type) {
+		case map[string]any:
+			id, hasID := t["id"].(string)
+			typ, hasType := t["type"].(string)
+			if hasID && hasType && id == actionID && isKnownActionType(ActionType(typ)) {
+				if cfg, ok := t["config"].(map[string]any); ok {
+					if str, ok := cfg[field].(string); ok {
+						value, found = str, true
+						return
+					}
+				}
+			}
+			for _, sub := range t {
+				walk(sub)
+			}
+		case []any:
+			for _, sub := range t {
+				walk(sub)
+			}
+		}
+	}
+	walk(tree)
+	return value, found
+}
+
 func programActionConfigValue(def AbilityDef, actionID, field string) (float64, ActionType, bool) {
 	if def.Program == nil {
 		return 0, "", false
@@ -506,16 +557,42 @@ func (s *GameState) EffectiveAbilityFieldLocked(caster *Unit, abilityID, actionI
 		return 0, false
 	}
 	v := s.foldOneFieldLocked(caster, def, actionID, field, base)
-	kind := ""
+	// fieldKind is the field's DECLARED kind; kind is the subset of those that
+	// are ability-stat grid rows. They differ for damage/heal, which are kinded
+	// for the field picker but deliberately not grid rows (they are served by
+	// abilityPower / abilityDamage instead) — and the damage scaling below keys
+	// off the declared kind, not the grid one.
+	fieldKind := ""
 	if field == targetQueryRadiusField {
-		kind = abilityStatKindRadius
+		fieldKind = abilityStatKindRadius
 	} else if desc, ok := lookupActionDescriptor(actionType); ok {
-		if f, ok := schemaFieldByKey(desc, field); ok && isAbilityStatGridKind(f.Kind) {
-			kind = f.Kind
+		if f, ok := schemaFieldByKey(desc, field); ok {
+			fieldKind = f.Kind
+		}
+	}
+	kind := ""
+	if isAbilityStatGridKind(fieldKind) {
+		kind = fieldKind
+	}
+	// A change_stat's `value` has no KIND — it is interpreted by the stat it
+	// inflicts. Fold the inflicted-stat contributions here so this reporting
+	// read matches what executeActionLocked actually applies; without it a
+	// tooltip would under-report every amplified slow and vulnerability, which
+	// is exactly the second-source-of-truth drift reading the program directly
+	// was meant to remove.
+	if actionType == ActionChangeStat && field == "value" {
+		if statID, ok := programActionConfigString(def, actionID, "stat"); ok {
+			var flat float64
+			for _, src := range s.collectAbilityStatSourcesLocked(caster, abilityID) {
+				if m, ok := src.stats[statID]; ok {
+					flat += m.Flat
+				}
+			}
+			v += flat
 		}
 	}
 	if kind != "" {
-		flat, pct := s.abilityStatFoldLocked(caster, actionType, kind)
+		flat, pct := s.abilityStatFoldLocked(caster, abilityID, actionType, kind)
 		if !abilityStatKindAllowsPct(kind) {
 			pct = 0
 		}
@@ -525,6 +602,22 @@ func (s *GameState) EffectiveAbilityFieldLocked(caster *Unit, abilityID, actionI
 				v = math.Round(v)
 			}
 		}
+	}
+	// DAMAGE fields carry two more scaling terms that live in deal_damage's
+	// Execute rather than in any modifier: the caster's attack-damage/ability-
+	// power ratios, and the abilityDamage stat. Neither is addressed by a field
+	// modifier, so without mirroring them here this reporting read silently
+	// under-reports every ability whose damage scales off its caster — which is
+	// what made a perk expressed as `abilityDamage` unusable: the trap panel
+	// would have shown the unscaled number while the trap hit for more.
+	//
+	// Mirrors the exact order of deal_damage's Execute: (amount + ratios), then
+	// spell modifiers and abilityDamage via effectiveAbilityDamageLocked.
+	if fieldKind == abilityStatKindDamage && caster != nil {
+		adRatio, _, _ := programActionConfigValue(def, actionID, "adRatio")
+		apRatio, _, _ := programActionConfigValue(def, actionID, "apRatio")
+		v += s.abilityScalingTermsLocked(caster, adRatio, apRatio)
+		v = float64(s.effectiveAbilityDamageLocked(caster, def, int(math.Round(v))))
 	}
 	return v, true
 }

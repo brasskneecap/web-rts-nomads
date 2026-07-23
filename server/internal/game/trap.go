@@ -140,10 +140,9 @@ type Trap struct {
 	BarbedFieldRampPerSec  float64
 	BarbedFieldMaxBonusDPS float64
 
-	// exposed_weakness (marker_trap): fraction of outgoing-damage reduction
-	// stamped on marked victims alongside the usual mark. Composes via the
-	// shared Weakened* plumbing (see perkOutgoingDamageDebuffMultiplierLocked).
-	ExposedWeakenedMultiplier float64
+	// exposed_weakness migrated to a pure data perk (a has_perk gate in
+	// marker_trap's program adding a damageDealt/Weaken status to the mark), so
+	// the legacy trap runtime no longer carries its multiplier.
 
 	// lasting_flames (fire_pit): when LastingFlamesBurnDuration > 0 on a
 	// fire_pit trap, the trap stops dealing direct DoT and instead applies a
@@ -730,19 +729,9 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				// their own stack when their zones overlap. Same-trap
 				// re-ticks refresh that stack in place.
 				unit.PerkState.applyMarkStack(trap.ID, trap.OwnerUnitID, trap.MarkMultiplier, trap.MarkDuration)
-				// exposed_weakness (silver): piggyback a Weakened debuff on top
-				// of the mark so marked enemies also deal less damage. Reuses
-				// the Vanguard-era Weakened* plumbing — the outgoing-damage
-				// debuff is already wired into perkOutgoingDamageDebuffMultiplierLocked.
-				// Refresh-stronger/refresh-longer per dimension, same as mark.
-				if trap.ExposedWeakenedMultiplier > 0 {
-					if trap.MarkDuration > unit.PerkState.WeakenedRemaining {
-						unit.PerkState.WeakenedRemaining = trap.MarkDuration
-					}
-					if trap.ExposedWeakenedMultiplier > unit.PerkState.WeakenedMultiplier {
-						unit.PerkState.WeakenedMultiplier = trap.ExposedWeakenedMultiplier
-					}
-				}
+				// exposed_weakness migrated to a data perk: the Weaken debuff is
+				// now a has_perk-gated damageDealt status inside marker_trap's
+				// program, not a field on this legacy trap runtime.
 				// ascendant_infusion → Shared Pain: stamp the victim with the
 				// redistribution fraction while they remain marked. Cleared in
 				// state.go when MarkedRemaining decays to 0. Refresh-stronger
@@ -1098,10 +1087,8 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, cfg TrapConfig, bonusIndex in
 		// the mark applied to enemies.
 		trap.MarkMultiplier = cfg.MarkMultiplier * mods.EffectMultiplier
 		trap.MarkDuration = cfg.MarkDuration * mods.EffectMultiplier
-		// exposed_weakness: damage-reduction strength scales with EffectMultiplier
-		// so amplified_effects makes the debuff harsher. Duration aligns with
-		// MarkDuration (stamped together in tickTrapEffectsLocked).
-		trap.ExposedWeakenedMultiplier = specific.ExposedWeakenedMultiplier * mods.EffectMultiplier
+		// exposed_weakness migrated to a data perk (has_perk-gated damageDealt
+		// status in marker_trap's program) — nothing to snapshot here anymore.
 		// ascendant_infusion → Shared Pain (fraction is not scaled — it's a
 		// direct percentage of incoming damage).
 		trap.InfusionSharedPainFraction = specific.InfusionSharedPainFraction

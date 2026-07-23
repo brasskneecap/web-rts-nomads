@@ -13,7 +13,7 @@ import type { NodeRef } from './programTree'
 import { emptyProgram } from './programTree'
 
 function emptyCatalogs(): AbilityBuilderCatalogs {
-  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [] }
+  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], perks: [] }
 }
 
 // makeBuilderStub mirrors ItemInspector.test.ts's precedent: real refs for

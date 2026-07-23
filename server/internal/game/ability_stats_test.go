@@ -71,7 +71,7 @@ func TestApplyAbilityStats_NoSources_IsUntouched(t *testing.T) {
 	caster := spawnProjTestUnit(t, s, "p1", 0, 0)
 
 	in := abilityStatsTestConfig(55, 10)
-	out := s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, in)
+	out := s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, in)
 	if string(out) != string(in) {
 		t.Errorf("config was rewritten for a caster with no ability stats:\n got %s\nwant %s", out, in)
 	}
@@ -93,14 +93,14 @@ func TestApplyAbilityStats_BroadAndScoped(t *testing.T) {
 		caster := spawnProjTestUnit(t, s, "p1", 0, 0)
 		caster.AbilityStats = map[string]AbilityStatMod{"create_zone.duration": {Flat: 2}}
 
-		zone := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, zoneCfg))
+		zone := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, zoneCfg))
 		if zone["duration"] != 12.0 {
 			t.Errorf("zone duration = %v, want 12", zone["duration"])
 		}
 		if zone["radius"] != 55.0 {
 			t.Errorf("radius must be untouched by a duration stat, got %v", zone["radius"])
 		}
-		status := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionApplyStatusDuration, statusCfg))
+		status := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionApplyStatusDuration, statusCfg))
 		if status["duration"] != 8.0 {
 			t.Errorf("status duration = %v, want 8 (a create_zone-scoped stat must not reach it)", status["duration"])
 		}
@@ -110,11 +110,11 @@ func TestApplyAbilityStats_BroadAndScoped(t *testing.T) {
 		caster := spawnProjTestUnit(t, s, "p1", 0, 0)
 		caster.AbilityStats = map[string]AbilityStatMod{"apply_status_duration.duration": {Flat: 2}}
 
-		zone := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, zoneCfg))
+		zone := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, zoneCfg))
 		if zone["duration"] != 10.0 {
 			t.Errorf("zone duration = %v, want 10", zone["duration"])
 		}
-		status := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionApplyStatusDuration, statusCfg))
+		status := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionApplyStatusDuration, statusCfg))
 		if status["duration"] != 10.0 {
 			t.Errorf("status duration = %v, want 10", status["duration"])
 		}
@@ -124,11 +124,11 @@ func TestApplyAbilityStats_BroadAndScoped(t *testing.T) {
 		caster := spawnProjTestUnit(t, s, "p1", 0, 0)
 		caster.AbilityStats = map[string]AbilityStatMod{"duration": {Flat: 2}}
 
-		zone := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, zoneCfg))
+		zone := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, zoneCfg))
 		if zone["duration"] != 12.0 {
 			t.Errorf("zone duration = %v, want 12", zone["duration"])
 		}
-		status := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionApplyStatusDuration, statusCfg))
+		status := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionApplyStatusDuration, statusCfg))
 		if status["duration"] != 10.0 {
 			t.Errorf("status duration = %v, want 10", status["duration"])
 		}
@@ -141,7 +141,7 @@ func TestApplyAbilityStats_BroadAndScoped(t *testing.T) {
 			"create_zone.duration": {Pct: 0.5},
 		}
 		// (10 + 2) x (1 + 0.5) = 18 — one fold, not two sequential applications.
-		zone := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, zoneCfg))
+		zone := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, zoneCfg))
 		if zone["duration"] != 18.0 {
 			t.Errorf("zone duration = %v, want 18", zone["duration"])
 		}
@@ -159,7 +159,7 @@ func TestApplyAbilityStats_AbsentFieldStaysAbsent(t *testing.T) {
 	caster.AbilityStats = map[string]AbilityStatMod{"duration": {Flat: 2}, "radius": {Flat: 5}}
 
 	in, _ := json.Marshal(map[string]any{"name": "No Duration", "radius": 55.0})
-	out := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, in))
+	out := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, in))
 	if _, present := out["duration"]; present {
 		t.Errorf("an unauthored duration was materialised: %v", out["duration"])
 	}
@@ -178,7 +178,7 @@ func TestApplyAbilityStats_TickIntervalIsNeverScaled(t *testing.T) {
 	caster := spawnProjTestUnit(t, s, "p1", 0, 0)
 	caster.AbilityStats = map[string]AbilityStatMod{"duration": {Flat: 5, Pct: 1}}
 
-	out := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, abilityStatsTestConfig(55, 10)))
+	out := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, abilityStatsTestConfig(55, 10)))
 	if out["tickInterval"] != 1.0 {
 		t.Errorf("tickInterval = %v, want 1 — it must never carry a duration stat", out["tickInterval"])
 	}
@@ -195,7 +195,7 @@ func TestApplyAbilityStats_UnresolvedRefIsSkipped(t *testing.T) {
 	caster.AbilityStats = map[string]AbilityStatMod{"duration": {Flat: 2}}
 
 	in, _ := json.Marshal(map[string]any{"name": "Z", "duration": "$unbound", "radius": 55.0})
-	out := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, ActionCreateZone, in))
+	out := decodedConfig(t, s.applyAbilityStatsToConfigLocked(caster, "", ActionCreateZone, in))
 	if out["duration"] != "$unbound" {
 		t.Errorf("duration = %v, want the untouched %q", out["duration"], "$unbound")
 	}
@@ -217,7 +217,7 @@ func TestApplyAbilityStats_CountStaysDecodable(t *testing.T) {
 	caster.AbilityStats = map[string]AbilityStatMod{"count": {Flat: 1, Pct: 0.15}}
 
 	in, _ := json.Marshal(map[string]any{"iterations": 3})
-	out := s.applyAbilityStatsToConfigLocked(caster, ActionLoop, in)
+	out := s.applyAbilityStatsToConfigLocked(caster, "", ActionLoop, in)
 
 	got := decodedConfig(t, out)
 	if v, ok := got["iterations"].(float64); !ok || v != math.Trunc(v) {
@@ -262,9 +262,13 @@ func TestValidateAbilityStats_CountIsFlatOnly(t *testing.T) {
 // rows do not.
 func TestAbilityStatDefs_FlatOnlyIsSurfaced(t *testing.T) {
 	for _, d := range AbilityStatDefs() {
-		want := d.Kind == abilityStatKindCount
+		// Two independent reasons a row is flat-only, and the editor renders the
+		// same control for both: a whole quantity (a percentage of 3 bounces
+		// rounds to nothing) and an INFLICTED stat (often inverse-sense, so a
+		// percentage has no single reading).
+		want := d.Kind == abilityStatKindCount || d.Inflicted
 		if d.FlatOnly != want {
-			t.Errorf("stat %q (kind %q) FlatOnly = %v, want %v", d.ID, d.Kind, d.FlatOnly, want)
+			t.Errorf("stat %q (kind %q, inflicted %v) FlatOnly = %v, want %v", d.ID, d.Kind, d.Inflicted, d.FlatOnly, want)
 		}
 	}
 }

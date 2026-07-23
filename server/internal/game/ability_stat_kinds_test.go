@@ -116,8 +116,32 @@ func TestAbilityStatDefs_FirePitIsFullyAddressable(t *testing.T) {
 		}
 	}
 	for _, d := range defs {
+		if d.Inflicted {
+			// An inflicted-stat row addresses a unit stat an ability APPLIES
+			// (folded onto a matching change_stat), not a kinded config field,
+			// so it has no kind to be reachable. Its own invariant is below.
+			continue
+		}
 		if !reachable[d.Kind] {
 			t.Errorf("stat %q is offered but no registered field declares kind %q", d.ID, d.Kind)
+		}
+	}
+
+	// The inflicted family: exactly the registered stats a change_stat can
+	// author. An aura-only stat must never appear — change_stat's own Validate
+	// rejects those, so a row for one could never fold onto anything.
+	for _, d := range defs {
+		if !d.Inflicted {
+			continue
+		}
+		if !isKnownStat(d.ID) {
+			t.Errorf("inflicted row %q is not a registered stat", d.ID)
+		}
+		if isAuraOnlyStat(d.ID) {
+			t.Errorf("inflicted row %q is aura-only — change_stat rejects it, so the row is dead", d.ID)
+		}
+		if !d.FlatOnly {
+			t.Errorf("inflicted row %q must be flat-only: an inflicted value is often inverse-sense, so a percentage has no single reading", d.ID)
 		}
 	}
 

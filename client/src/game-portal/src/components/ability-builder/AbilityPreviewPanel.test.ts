@@ -90,6 +90,17 @@ function makeBuilderStub() {
     // params: read by the panel's `conditionals` computed (collectConditionals),
     // evaluated eagerly since it's passed straight through as a prop.
     params: shallowRef<Record<string, number>>({}),
+    // catalogs: the panel reads `perks` from here to offer the caster-perk
+    // picker. Two entries so a test can assert the list is offered and scoped,
+    // rather than only that an empty list renders nothing.
+    catalogs: shallowRef({
+      effects: [], projectiles: [], damageTypes: [], categories: [],
+      autoCastSelectors: [], unitTypes: [],
+      perks: [
+        { id: 'lasting_flames', label: 'Lasting Flames', path: 'trapper' },
+        { id: 'zealous_march', label: 'Zealous March', path: 'cleric' },
+      ],
+    }),
   }
 }
 

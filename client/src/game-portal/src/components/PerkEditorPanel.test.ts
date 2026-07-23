@@ -710,3 +710,285 @@ function stubFetchGroupedWithGeneratedDescription(savedPerks?: Array<Record<stri
     return { ok: true, status: 200, json: async () => ({}) }
   }) as unknown as typeof fetch)
 }
+
+// Ability Stats: the broad, stat-addressed authoring form. Its whole reason for
+// existing is that "+50% zone radius on my traps" is ONE row here instead of one
+// abilityFields entry per {ability, action, field}.
+describe('PerkEditorPanel ability stats', () => {
+  function stubWithStatDefs(perk: Record<string, unknown>) {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.endsWith('/catalog/perks')) {
+        return { ok: true, status: 200, json: async () => ({ perks: [perk] }) }
+      }
+      if (u.endsWith('/catalog/ability-stats')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            stats: [
+              { id: 'create_zone.radius', label: 'Zone Radius' },
+              { id: 'duration', label: 'Duration' },
+              { id: 'summon_unit.count', label: 'Summon Count', flatOnly: true },
+            ],
+          }),
+        }
+      }
+      if (u.endsWith('/catalog/units')) {
+        return { ok: true, status: 200, json: async () => ({ units: [], paths: [], pathsByUnit: {} }) }
+      }
+      return { ok: true, status: 200, json: async () => ({}) }
+    }) as unknown as typeof fetch)
+  }
+
+  async function openPerk(perk: Record<string, unknown>) {
+    stubWithStatDefs(perk)
+    const wrapper = mount(PerkEditorPanel)
+    await flushPromises()
+    await clickHeader(wrapper, 'Generic')
+    await wrapper.findAll('[data-test="perk-row"]')[0].trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  // The wire carries a FRACTION, a designer thinks in whole percent. The
+  // conversion lives at this boundary so neither side knows about the other.
+  it('shows a stored fraction as whole percent', async () => {
+    const wrapper = await openPerk({
+      id: 'wider_nets',
+      abilityStats: [{ stat: 'create_zone.radius', pct: 0.5 }],
+    })
+    const pct = wrapper.find('[data-test="perk-ability-stat-pct-0"]')
+    expect((pct.element as HTMLInputElement).value).toBe('50')
+    expect((wrapper.find('[data-test="perk-ability-stat-0"]').element as HTMLSelectElement).value)
+      .toBe('create_zone.radius')
+  })
+
+  it('stores typed percent back as a fraction', async () => {
+    const wrapper = await openPerk({ id: 'p', abilityStats: [{ stat: 'duration', pct: 0.1 }] })
+    await wrapper.find('[data-test="perk-ability-stat-pct-0"]').setValue('35')
+    const vm = wrapper.vm as unknown as { form: { abilityStats?: { pct?: number }[] } }
+    expect(vm.form.abilityStats?.[0].pct).toBeCloseTo(0.35)
+  })
+
+  // Blank ability = every ability the unit has. That is the default and has to
+  // survive a round-trip as ABSENT, not as an empty string.
+  it('omits the ability entirely when the field is left blank', async () => {
+    const wrapper = await openPerk({ id: 'p', abilityStats: [{ stat: 'duration', pct: 0.2 }] })
+    const vm = wrapper.vm as unknown as { form: { abilityStats?: { ability?: string }[] } }
+    expect(vm.form.abilityStats?.[0]).not.toHaveProperty('ability')
+  })
+
+  it('keeps a named ability so the row scopes to it', async () => {
+    const wrapper = await openPerk({ id: 'p', abilityStats: [{ stat: 'duration', pct: 0.2 }] })
+    await wrapper.find('[data-test="perk-ability-stat-ability-0"]').setValue('fire_pit')
+    const vm = wrapper.vm as unknown as { form: { abilityStats?: { ability?: string }[] } }
+    expect(vm.form.abilityStats?.[0].ability).toBe('fire_pit')
+  })
+
+  // A whole quantity takes no percentage — the server rejects one outright, so
+  // offering the input would be offering a save error.
+  it('offers no percent field for a flat-only stat', async () => {
+    const wrapper = await openPerk({
+      id: 'p',
+      abilityStats: [{ stat: 'summon_unit.count', flat: 2 }],
+    })
+    expect(wrapper.find('[data-test="perk-ability-stat-flat-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="perk-ability-stat-pct-0"]').exists()).toBe(false)
+  })
+
+  // A row added but never filled in must not reach the wire — the server would
+  // reject a stat-less entry and the author would see a save error for a row
+  // they had not finished typing.
+  it('drops a row with no stat picked and a row with no value', async () => {
+    const wrapper = await openPerk({ id: 'p', abilityStats: [] })
+    const vm = wrapper.vm as unknown as {
+      abilityStatRows: { stat: string; ability: string; flat?: number | ''; pct?: number | '' }[]
+      form: { abilityStats?: unknown[] }
+    }
+    vm.abilityStatRows.push({ stat: '', ability: '', flat: '', pct: '' })
+    await flushPromises()
+    expect(vm.form.abilityStats).toBeUndefined()
+
+    vm.abilityStatRows[0].stat = 'duration'
+    await flushPromises()
+    expect(vm.form.abilityStats).toBeUndefined()
+
+    vm.abilityStatRows[0].pct = 25
+    await flushPromises()
+    expect(vm.form.abilityStats).toHaveLength(1)
+  })
+
+  // An id the server no longer offers must still render rather than vanishing
+  // and taking the authored value with it on the next save.
+  it('keeps an unknown authored stat id selectable', async () => {
+    const wrapper = await openPerk({ id: 'p', abilityStats: [{ stat: 'gone.radius', pct: 0.5 }] })
+    const opts = wrapper.find('[data-test="perk-ability-stat-0"]').findAll('option').map((o) => o.attributes('value'))
+    expect(opts).toContain('gone.radius')
+  })
+})
+
+// Ability Fields: the PRECISE authoring form. This section exists because the
+// row it edits was JSON-only — amplified_effects carried a
+// {marker_trap, mark, duration, ×1.35} row the editor could not show, so the
+// author could not tell it existed and authored a second row to do the same
+// job. Anything that configures a perk has to be reachable here.
+describe('PerkEditorPanel ability fields', () => {
+  const markerTrap = {
+    id: 'marker_trap',
+    program: {
+      triggers: [{
+        id: 'cast',
+        type: 'on_cast_complete',
+        actions: [{
+          id: 'zone',
+          type: 'create_zone',
+          config: {
+            name: 'Marker Zone',
+            radius: 115,
+            duration: 12,
+            triggers: [{
+              id: 'entered',
+              type: 'on_tick',
+              actions: [
+                { id: 'pick_enemy', type: 'select_targets', target: { radius: 110 } },
+                { id: 'mark', type: 'apply_status_duration', config: { name: 'Marked', duration: 4 } },
+              ],
+            }],
+          },
+        }],
+      }],
+    },
+  }
+
+  function stubWithAbilities(perk: Record<string, unknown>) {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.endsWith('/catalog/perks')) {
+        return { ok: true, status: 200, json: async () => ({ perks: [perk] }) }
+      }
+      if (u.endsWith('/catalog/abilities')) {
+        return { ok: true, status: 200, json: async () => ({ abilities: [markerTrap] }) }
+      }
+      if (u.endsWith('/catalog/units')) {
+        return { ok: true, status: 200, json: async () => ({ units: [], paths: [], pathsByUnit: {} }) }
+      }
+      return { ok: true, status: 200, json: async () => ({}) }
+    }) as unknown as typeof fetch)
+  }
+
+  async function openPerk(perk: Record<string, unknown>) {
+    stubWithAbilities(perk)
+    const wrapper = mount(PerkEditorPanel)
+    await flushPromises()
+    await clickHeader(wrapper, 'Generic')
+    await wrapper.findAll('[data-test="perk-row"]')[0].trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  const amplified = {
+    id: 'amplified_effects',
+    abilityFields: [{ target: 'marker_trap', action: 'mark', field: 'duration', op: 'multiply', value: 1.35 }],
+  }
+
+  // THE regression: this row used to be invisible.
+  it('shows an authored row', async () => {
+    const wrapper = await openPerk(amplified)
+    expect((wrapper.find('[data-test="perk-ability-field-target-0"]').element as HTMLInputElement).value)
+      .toBe('marker_trap')
+    expect((wrapper.find('[data-test="perk-ability-field-action-0"]').element as HTMLSelectElement).value)
+      .toBe('mark')
+    expect((wrapper.find('[data-test="perk-ability-field-field-0"]').element as HTMLSelectElement).value)
+      .toBe('duration')
+  })
+
+  // A 1.35 multiplier is not something an author should have to translate.
+  it('reads the multiplier back as a percentage', async () => {
+    const wrapper = await openPerk(amplified)
+    expect(wrapper.find('.perk-editor__ability-field-preview').text()).toBe('+35%')
+  })
+
+  // Actions come from the ability's OWN program, including ones nested inside a
+  // zone's triggers — which is where every trap's real work is authored.
+  it('offers the targeted abilitys nested action ids', async () => {
+    const wrapper = await openPerk(amplified)
+    const opts = wrapper.find('[data-test="perk-ability-field-action-0"]').findAll('option')
+      .map((o) => o.attributes('value'))
+    expect(opts).toContain('zone')
+    expect(opts).toContain('mark') // two levels down, inside the zone's on_tick
+    expect(opts).toContain('pick_enemy')
+  })
+
+  // Numeric config keys only: a field modifier scales a number, so offering
+  // `name` would be offering a save error.
+  it('offers only the numeric fields of the chosen action', async () => {
+    const wrapper = await openPerk(amplified)
+    const opts = wrapper.find('[data-test="perk-ability-field-field-0"]').findAll('option')
+      .map((o) => o.attributes('value'))
+    expect(opts).toContain('duration')
+    expect(opts).not.toContain('name')
+  })
+
+  it('offers a target-query radius when the action has one', async () => {
+    const wrapper = await openPerk({
+      id: 'p',
+      abilityFields: [{ target: 'marker_trap', action: 'pick_enemy', field: 'target.radius', value: 1.5 }],
+    })
+    const opts = wrapper.find('[data-test="perk-ability-field-field-0"]').findAll('option')
+      .map((o) => o.attributes('value'))
+    expect(opts).toContain('target.radius')
+  })
+
+  it('round-trips an edited value back onto the form', async () => {
+    const wrapper = await openPerk(amplified)
+    await wrapper.find('[data-test="perk-ability-field-value-0"]').setValue('1.5')
+    const vm = wrapper.vm as unknown as { form: { abilityFields?: { value: number; op?: string }[] } }
+    expect(vm.form.abilityFields?.[0].value).toBe(1.5)
+    // multiply is the default and stays off the wire.
+    expect(vm.form.abilityFields?.[0]).not.toHaveProperty('op')
+  })
+
+  it('keeps a non-default op', async () => {
+    const wrapper = await openPerk(amplified)
+    await wrapper.find('[data-test="perk-ability-field-op-0"]').setValue('add')
+    const vm = wrapper.vm as unknown as { form: { abilityFields?: { op?: string }[] } }
+    expect(vm.form.abilityFields?.[0].op).toBe('add')
+  })
+
+  // A half-made row must not reach the wire — the server rejects a partial
+  // address and the author would see an error for a row they were mid-way
+  // through typing.
+  it('drops a row until ability, action, field and value are all set', async () => {
+    const wrapper = await openPerk({ id: 'p', abilityFields: [] })
+    const vm = wrapper.vm as unknown as {
+      abilityFieldRows: { target: string; action: string; field: string; op: string; value: number | ''; stage: string }[]
+      form: { abilityFields?: unknown[] }
+    }
+    vm.abilityFieldRows.push({ target: '', action: '', field: '', op: 'multiply', value: '', stage: '' })
+    await flushPromises()
+    expect(vm.form.abilityFields).toBeUndefined()
+
+    vm.abilityFieldRows[0].target = 'marker_trap'
+    vm.abilityFieldRows[0].action = 'mark'
+    vm.abilityFieldRows[0].field = 'duration'
+    await flushPromises()
+    expect(vm.form.abilityFields).toBeUndefined() // still no value
+
+    vm.abilityFieldRows[0].value = 1.35
+    await flushPromises()
+    expect(vm.form.abilityFields).toHaveLength(1)
+  })
+
+  // An action the ability no longer has must still render, or the next save
+  // silently drops the authored row.
+  it('keeps an action id the ability no longer has', async () => {
+    const wrapper = await openPerk({
+      id: 'p',
+      abilityFields: [{ target: 'marker_trap', action: 'gone', field: 'duration', value: 1.2 }],
+    })
+    const opts = wrapper.find('[data-test="perk-ability-field-action-0"]').findAll('option')
+      .map((o) => o.attributes('value'))
+    expect(opts).toContain('gone')
+  })
+})

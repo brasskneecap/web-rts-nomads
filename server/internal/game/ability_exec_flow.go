@@ -382,18 +382,15 @@ func init() {
 		Schema: ActionFieldSchema{Fields: []SchemaField{}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(conditionalConfig)
-			// A preview run may FORCE this conditional's outcome (keyed by the
-			// action's authored id — see GameState.previewConditionalOverrides).
-			// The preview harness's caster owns no perks, so without this the
-			// THEN side of every has_perk branch is unreachable in the editor.
-			// The override is traced with a distinct `forced` payload so the
-			// event log never claims a condition was evaluated when it wasn't.
-			taken, forced := s.previewConditionalOverrides[ctx.currentActionID]
-			if !forced {
-				taken = s.evaluateConditionsLocked(ctx, c.Conditions)
-			}
+			// Always the real evaluator. A preview run used to be able to FORCE
+			// this outcome, because its synthetic caster owned no perks and the
+			// THEN side of a has_perk branch was otherwise unreachable in the
+			// editor. The preview now GRANTS perks instead
+			// (PreviewRequest.CasterPerks), which tests the condition rather
+			// than bypassing it.
+			taken := s.evaluateConditionsLocked(ctx, c.Conditions)
 			if taken {
-				ctx.trace("conditional_taken", ctx.currentActionPath, map[string]any{"count": len(c.Then), "forced": forced})
+				ctx.trace("conditional_taken", ctx.currentActionPath, map[string]any{"count": len(c.Then)})
 				for i := range c.Then {
 					if ctx.opsExhausted() {
 						break
@@ -401,7 +398,7 @@ func init() {
 					s.executeActionLocked(ctx, &c.Then[i], "conditional.then")
 				}
 			} else {
-				ctx.trace("condition_failed", ctx.currentActionPath, map[string]any{"elseCount": len(c.Else), "forced": forced})
+				ctx.trace("condition_failed", ctx.currentActionPath, map[string]any{"elseCount": len(c.Else)})
 				for i := range c.Else {
 					if ctx.opsExhausted() {
 						break

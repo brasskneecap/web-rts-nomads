@@ -28,7 +28,7 @@ import {
   validateAbilityProgram,
 } from '@/game/abilities/abilityEditorApi'
 import { fetchAuthoredUnitDefs } from '@/game/units/unitEditorApi'
-import { fetchActionIcons } from '@/game/maps/catalog'
+import { fetchActionIcons, fetchPerkDefs } from '@/game/maps/catalog'
 import { ACTION_ICON_MAP, initActionIcons } from '@/game/maps/actionIconDefs'
 import * as tree from './programTree'
 import type { NodePath, NodeRef } from './programTree'
@@ -45,6 +45,10 @@ export interface AbilityBuilderCatalogs {
   categories: string[]
   autoCastSelectors: string[]
   unitTypes: string[]
+  /** Perks the preview can grant the caster, so a perk-gated branch can be
+   *  exercised by owning the perk rather than by forcing the branch.
+   *  `path` scopes a perk to one promotion path (absent = any). */
+  perks: { id: string; label: string; path?: string }[]
 }
 
 interface Snapshot {
@@ -54,7 +58,7 @@ interface Snapshot {
 }
 
 function emptyCatalogs(): AbilityBuilderCatalogs {
-  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [] }
+  return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [], perks: [] }
 }
 
 function errorMessage(e: unknown): string {
@@ -309,7 +313,7 @@ export function useAbilityBuilder() {
   async function load() {
     loadError.value = ''
     try {
-      const [abilityDefs, schemaBundle, effects, projectiles, damageTypes, categories, autoCastSelectors, units, actionIcons] =
+      const [abilityDefs, schemaBundle, effects, projectiles, damageTypes, categories, autoCastSelectors, units, actionIcons, perkDefs] =
         await Promise.all([
           fetchAuthoredAbilityDefs(),
           fetchActionSchema(),
@@ -320,6 +324,7 @@ export function useAbilityBuilder() {
           fetchAutoCastSelectors(),
           fetchAuthoredUnitDefs(),
           fetchActionIcons(),
+          fetchPerkDefs(),
         ])
       abilities.value = abilityDefs
       schema.value = schemaBundle
@@ -339,6 +344,7 @@ export function useAbilityBuilder() {
         categories,
         autoCastSelectors,
         unitTypes: units.map((u) => u.type),
+        perks: perkDefs.map((p) => ({ id: p.id, label: p.displayName || p.id, path: p.path })),
       }
     } catch (e) {
       loadError.value = errorMessage(e)

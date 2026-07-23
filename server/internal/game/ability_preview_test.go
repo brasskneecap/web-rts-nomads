@@ -763,28 +763,32 @@ func TestRunAbilityPreview_ChargeFirePassive_FiresWhenSeeded(t *testing.T) {
 	}
 }
 
-// TestRunAbilityPreview_ConditionalOverrides proves the editor can preview
-// BOTH sides of a perk-gated branch. The preview harness's caster owns no
-// perks, so fire_pit's `has_perk lasting_flames` conditional always evaluates
-// false on its own — without an override the THEN branch (the lingering burn)
-// would be unreachable in the editor no matter what the author did.
-func TestRunAbilityPreview_ConditionalOverrides(t *testing.T) {
+// TestRunAbilityPreview_CasterPerksDriveConditionals proves the editor can
+// preview both sides of a perk-gated branch by GRANTING the perk, which is what
+// replaced the old ConditionalOverrides map.
+//
+// The distinction matters. An override proved the THEN branch produced some
+// effect; it could not tell you whether the CONDITION was authored correctly. A
+// has_perk naming a perk that does not exist — or naming the wrong one —
+// previewed identically to a correct one. Granting the perk runs the real
+// evaluator, so a typo shows up as the branch simply not being taken.
+func TestRunAbilityPreview_CasterPerksDriveConditionals(t *testing.T) {
 	def, ok := getAbilityDef("fire_pit")
 	if !ok {
 		t.Fatal(`getAbilityDef("fire_pit") = _, false`)
 	}
-	// The id of the conditional inside fire_pit's program — read from the
-	// catalog rather than hardcoded, so renaming the node fails this test
-	// loudly instead of silently making it assert nothing.
-	condID := onlyConditionalActionID(t, def)
+	// Read the gating perk out of the ability's own condition rather than
+	// hardcoding it, so renaming either side fails this test loudly instead of
+	// silently making it assert nothing.
+	perkID := onlyConditionalPerkID(t, def)
 
-	run := func(overrides map[string]bool) PreviewResult {
+	run := func(perks []string) PreviewResult {
 		t.Helper()
 		res, err := RunAbilityPreview(PreviewRequest{
 			Ability: def, Seed: 1, CasterX: 0, CasterY: 0, CastX: 40, CastY: 0, Target: -1,
-			DurationSeconds:      1,
-			Units:                []PreviewSceneUnit{{Team: "enemy", X: 40, Y: 0, HP: 500, MaxHP: 500}},
-			ConditionalOverrides: overrides,
+			DurationSeconds: 1,
+			Units:           []PreviewSceneUnit{{Team: "enemy", X: 40, Y: 0, HP: 500, MaxHP: 500}},
+			CasterPerks:     perks,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -795,67 +799,46 @@ func TestRunAbilityPreview_ConditionalOverrides(t *testing.T) {
 		return res
 	}
 
-	t.Run("no override evaluates normally (perkless caster takes ELSE)", func(t *testing.T) {
+	t.Run("no perks takes ELSE", func(t *testing.T) {
 		res := run(nil)
 		if !previewTraceHasType(res.Trace, "condition_failed") {
-			t.Error("expected the ELSE branch: a perkless preview caster fails has_perk")
+			t.Error("expected the ELSE branch: a perkless caster fails has_perk")
 		}
 		if previewTraceHasType(res.Trace, "conditional_taken") {
-			t.Error("THEN branch taken without an override")
+			t.Error("THEN branch taken by a caster that owns no perks")
 		}
 	})
 
-	t.Run("forcing true takes THEN", func(t *testing.T) {
-		res := run(map[string]bool{condID: true})
+	t.Run("granting the gating perk takes THEN", func(t *testing.T) {
+		res := run([]string{perkID})
 		if !previewTraceHasType(res.Trace, "conditional_taken") {
-			t.Fatal("override true did not take the THEN branch")
-		}
-		// The trace must not claim the condition passed on its own merits.
-		for _, e := range res.Trace {
-			if e.Type == "conditional_taken" {
-				if forced, _ := e.Payload["forced"].(bool); !forced {
-					t.Error(`conditional_taken payload should carry forced:true so the event log doesn't imply the condition was evaluated`)
-				}
-			}
+			t.Fatalf("granting %q did not take the THEN branch", perkID)
 		}
 	})
 
-	t.Run("forcing false is a real forced value, not merely an absent key", func(t *testing.T) {
-		// Observationally the ELSE branch runs either way here (a perkless
-		// caster fails has_perk on its own), so the thing that distinguishes a
-		// FORCED false from an unset key is the trace payload — which is also
-		// what the editor's event log reads to say "forced" instead of
-		// "evaluated". Assert exactly that, rather than a branch outcome the
-		// two cases genuinely share.
-		res := run(map[string]bool{condID: false})
-		saw := false
-		for _, e := range res.Trace {
-			if e.Type == "condition_failed" {
-				saw = true
-				if forced, _ := e.Payload["forced"].(bool); !forced {
-					t.Error("condition_failed payload should carry forced:true when the outcome was overridden")
-				}
+	t.Run("granting an unrelated perk still takes ELSE", func(t *testing.T) {
+		// The whole point: the branch responds to WHICH perk is owned, which an
+		// override could never demonstrate.
+		other := ""
+		for _, d := range ListPerkDefs() {
+			if d.ID != perkID {
+				other = d.ID
+				break
 			}
 		}
-		if !saw {
-			t.Fatal("no condition_failed event recorded")
+		if other == "" {
+			t.Skip("catalog has only one perk")
 		}
-
-		// ... and the unset case must report the opposite, or "forced" would
-		// be a constant rather than a signal.
-		for _, e := range run(nil).Trace {
-			if e.Type == "condition_failed" {
-				if forced, _ := e.Payload["forced"].(bool); forced {
-					t.Error("an unset override must report forced:false")
-				}
-			}
-		}
-	})
-
-	t.Run("an id matching no conditional is ignored", func(t *testing.T) {
-		res := run(map[string]bool{"no_such_action": true})
+		res := run([]string{other})
 		if previewTraceHasType(res.Trace, "conditional_taken") {
-			t.Error("a stale override id must not affect an unrelated conditional")
+			t.Errorf("owning %q took a branch gated on %q", other, perkID)
+		}
+	})
+
+	t.Run("an unknown perk id is ignored rather than failing the run", func(t *testing.T) {
+		res := run([]string{"no_such_perk"})
+		if res.Error != "" {
+			t.Errorf("a stale perk id failed the run: %q", res.Error)
 		}
 	})
 }
@@ -864,9 +847,9 @@ func TestRunAbilityPreview_ConditionalOverrides(t *testing.T) {
 // behind "the burning effect never shows up in the preview". Two independent
 // things had to be true for the editor to render it, and neither was:
 //
-//  1. The burn lives behind a has_perk branch, and the preview caster owns no
-//     perks — so the THEN side was unreachable until ConditionalOverrides
-//     existed. Nothing the author did to the visual could have mattered.
+//  1. The burn lives behind a has_perk branch, and the preview caster owned no
+//     perks — so the THEN side was unreachable. Nothing the author did to the
+//     visual could have mattered. The preview now grants perks instead.
 //  2. The visual is only anchored to the afflicted unit when play_presentation
 //     sets bindToStatusDuration; without it the same action renders one effect
 //     at the CAST POINT instead of on the enemy.
@@ -874,18 +857,16 @@ func TestRunAbilityPreview_ConditionalOverrides(t *testing.T) {
 // Asserting on captured FRAMES (not just the trace) is deliberate: frames are
 // literally what the preview canvas draws, so this fails if the effect is
 // produced but never reaches the wire.
-func TestRunAbilityPreview_ForcedBranchRendersItsVisual(t *testing.T) {
+func TestRunAbilityPreview_PerkGatedBranchRendersItsVisual(t *testing.T) {
 	def, ok := getAbilityDef("fire_pit")
 	if !ok {
 		t.Fatal(`getAbilityDef("fire_pit") = _, false`)
 	}
-	condID := onlyConditionalActionID(t, def)
-
 	res, err := RunAbilityPreview(PreviewRequest{
 		Ability: def, Seed: 1, CasterX: 0, CasterY: 0, CastX: 40, CastY: 0, Target: -1,
-		DurationSeconds:      2,
-		Units:                []PreviewSceneUnit{{Team: "enemy", X: 40, Y: 0, HP: 500, MaxHP: 500}},
-		ConditionalOverrides: map[string]bool{condID: true},
+		DurationSeconds: 2,
+		Units:           []PreviewSceneUnit{{Team: "enemy", X: 40, Y: 0, HP: 500, MaxHP: 500}},
+		CasterPerks:     []string{onlyConditionalPerkID(t, def)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -929,6 +910,63 @@ func TestRunAbilityPreview_ForcedBranchRendersItsVisual(t *testing.T) {
 // Tests key overrides off this rather than a hardcoded string so that renaming
 // (or adding a second) conditional in the catalog surfaces as a loud failure
 // instead of a test that quietly stops exercising the override path.
+// onlyConditionalPerkID returns the perk id the ability's single conditional
+// gates on, read from the authored condition. Reading it (rather than
+// hardcoding "lasting_flames") is what makes a rename fail loudly.
+func onlyConditionalPerkID(t *testing.T, def AbilityDef) string {
+	t.Helper()
+	id := onlyConditionalActionID(t, def)
+	var perkID string
+	var walk func(any)
+	raw, err := json.Marshal(def.Program)
+	if err != nil {
+		t.Fatalf("marshal program: %v", err)
+	}
+	var tree any
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		t.Fatalf("unmarshal program: %v", err)
+	}
+	walk = func(v any) {
+		if perkID != "" {
+			return
+		}
+		switch node := v.(type) {
+		case map[string]any:
+			if node["id"] == id {
+				if cfg, ok := node["config"].(map[string]any); ok {
+					if conds, ok := cfg["conditions"].([]any); ok {
+						for _, c := range conds {
+							cm, ok := c.(map[string]any)
+							if !ok {
+								continue
+							}
+							if op, _ := cm["op"].(string); op != condOpHasPerk && op != condOpNotPerk {
+								continue
+							}
+							if right, ok := cm["right"].(string); ok {
+								perkID = right
+								return
+							}
+						}
+					}
+				}
+			}
+			for _, sub := range node {
+				walk(sub)
+			}
+		case []any:
+			for _, sub := range node {
+				walk(sub)
+			}
+		}
+	}
+	walk(tree)
+	if perkID == "" {
+		t.Fatalf("ability %q conditional %q gates on no perk", def.ID, id)
+	}
+	return perkID
+}
+
 func onlyConditionalActionID(t *testing.T, def AbilityDef) string {
 	t.Helper()
 	if def.Program == nil {
@@ -1016,5 +1054,375 @@ func TestRunAbilityPreview_AKillLeavesACorpseInTheFrames(t *testing.T) {
 	}
 	if !sawCorpse {
 		t.Error("no frame contained a corpse — the preview does not mirror what a match shows")
+	}
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AlliesAttack — previewing an ability whose effect lands on someone ELSE'S
+// damage (PreviewRequest.AlliesAttack)
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Off by default: the preview's baseline contract is that only the ability
+// under test moves or deals damage.
+func TestRunAbilityPreview_AlliesAreInertByDefault(t *testing.T) {
+	def, ok := getAbilityDef("marker_trap")
+	if !ok {
+		t.Fatal(`getAbilityDef("marker_trap") = _, false`)
+	}
+	res, err := RunAbilityPreview(PreviewRequest{
+		Ability: def, Seed: 1, CasterX: 600, CasterY: 500, Target: 0, DurationSeconds: 4,
+		Units: []PreviewSceneUnit{
+			{Team: "enemy", X: 720, Y: 500, HP: 500, MaxHP: 500},
+			{Team: "ally", X: 520, Y: 500, HP: 100, MaxHP: 100},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Units[0].HPAfter != res.Units[0].HPBefore {
+		t.Errorf("enemy HP changed (%d -> %d) with no attacker; marker_trap deals no damage of its own",
+			res.Units[0].HPBefore, res.Units[0].HPAfter)
+	}
+}
+
+// THE reason AlliesAttack exists. marker_trap's whole effect is that its victim
+// takes more damage FROM OTHER SOURCES — it deals none itself. With every scene
+// unit frozen and disarmed there was nothing in a preview that could show the
+// mark working, so this asserts the thing an author actually wants to see: the
+// same allied attackers, over the same run, take MORE health off a marked enemy
+// than an unmarked one.
+//
+// The two runs are identical but for the trap, and the magnitude comes from the
+// ability's own authored change_stat rather than a pinned number, so a rebalance
+// moves the expectation with it.
+func TestRunAbilityPreview_AlliesAttack_MarkAmplifiesTheirDamage(t *testing.T) {
+	def, ok := getAbilityDef("marker_trap")
+	if !ok {
+		t.Fatal(`getAbilityDef("marker_trap") = _, false`)
+	}
+	// An ability that does nothing at all, so the control run has the same
+	// caster, same allies, same order and same tick count — only no mark.
+	inert := AbilityDef{
+		ID: "preview_inert_control", DisplayName: "Inert", Type: def.Type,
+		CanTargetEnemies: true, CastRange: def.CastRange, SchemaVersion: 2,
+		Program: &AbilityProgram{
+			Entry:    def.Program.Entry,
+			Triggers: []AbilityTriggerDef{{ID: "cast", Type: TriggerOnCastComplete}},
+		},
+	}
+
+	run := func(a AbilityDef) PreviewUnitResult {
+		t.Helper()
+		res, err := RunAbilityPreview(PreviewRequest{
+			Ability: a, Seed: 1, CasterX: 600, CasterY: 500, Target: 0, DurationSeconds: 8,
+			AlliesAttack: true,
+			Units: []PreviewSceneUnit{
+				{Team: "enemy", X: 720, Y: 500, HP: 2000, MaxHP: 2000},
+				{Team: "ally", X: 660, Y: 500, HP: 200, MaxHP: 200},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Error != "" {
+			t.Fatalf("cast failed: %q", res.Error)
+		}
+		return res.Units[0]
+	}
+
+	control := run(inert)
+	marked := run(def)
+
+	controlDealt := control.HPBefore - control.HPAfter
+	markedDealt := marked.HPBefore - marked.HPAfter
+	if controlDealt <= 0 {
+		t.Fatalf("the allies never attacked at all (enemy %d -> %d); AlliesAttack is not engaging them",
+			control.HPBefore, control.HPAfter)
+	}
+	if markedDealt <= controlDealt {
+		t.Errorf("marked enemy took %d damage, unmarked took %d — the mark changed nothing",
+			markedDealt, controlDealt)
+	}
+}
+
+// The mirror of the AlliesAttack test, and THE reason EnemiesAttack exists:
+// exposed_weakness's whole effect is that a marked enemy deals LESS damage — a
+// change to the enemy's own outgoing damage, invisible unless that enemy swings.
+// EnemiesAttack sends it at an (inert) ally; the same marked enemy, over the same
+// run, takes LESS health off the ally when its caster owns exposed_weakness than
+// when it does not. Both runs cast the identical marker_trap (so the enemy is
+// marked either way — Vulnerable is incoming and does not touch its OUTGOING
+// damage); only the perk that adds the Weaken differs. Magnitude is asserted as
+// an inequality, not a pinned number, so a rebalance carries the test.
+func TestRunAbilityPreview_EnemiesAttack_ExposedWeaknessReducesTheirDamage(t *testing.T) {
+	def, ok := getAbilityDef("marker_trap")
+	if !ok {
+		t.Fatal(`getAbilityDef("marker_trap") = _, false`)
+	}
+
+	run := func(casterPerks []string) PreviewUnitResult {
+		t.Helper()
+		// The enemy sits between the caster and the ally, but MUCH closer to the
+		// ally, so the raider acquires the ally rather than the (team-mate of the
+		// ally) caster soldier — the HP delta we measure is on the ally, index 1.
+		// The caster stays within cast range (120 < 220) of the enemy, and the
+		// marker zone (radius 115 at the enemy) still covers the ally at 730 so the
+		// mark keeps refreshing through the fight.
+		res, err := RunAbilityPreview(PreviewRequest{
+			Ability: def, Seed: 1, CasterX: 600, CasterY: 500, Target: 0, DurationSeconds: 8,
+			EnemiesAttack: true,
+			CasterPerks:   casterPerks,
+			Units: []PreviewSceneUnit{
+				{Team: "enemy", X: 700, Y: 500, HP: 2000, MaxHP: 2000},
+				{Team: "ally", X: 730, Y: 500, HP: 2000, MaxHP: 2000},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Error != "" {
+			t.Fatalf("cast failed: %q", res.Error)
+		}
+		return res.Units[1] // the ally the enemy is swinging at
+	}
+
+	control := run(nil)                           // enemy marked (Vulnerable) but NOT weakened
+	weakened := run([]string{"exposed_weakness"}) // enemy also Weakened -> deals less
+
+	controlDealt := control.HPBefore - control.HPAfter
+	weakenedDealt := weakened.HPBefore - weakened.HPAfter
+	if controlDealt <= 0 {
+		t.Fatalf("the enemy never attacked the ally (ally %d -> %d); EnemiesAttack is not engaging them",
+			control.HPBefore, control.HPAfter)
+	}
+	if weakenedDealt >= controlDealt {
+		t.Errorf("weakened enemy dealt %d to the ally, un-weakened dealt %d — exposed_weakness changed nothing",
+			weakenedDealt, controlDealt)
+	}
+}
+
+// abilityTraceEvents drops the trace records the DAMAGE PIPELINE emits for the
+// ability preview (recordPreviewDamageTraceLocked — every landed hit in the
+// scene, whoever dealt it), leaving only what the executor itself recorded.
+//
+// The two are distinguishable by Path: an executor event always carries the
+// flow path of the action that produced it, and the pipeline seam has no action
+// to name. Tests that count "what did the ability do" want this; tests about
+// the floating damage numbers want the whole trace.
+func abilityTraceEvents(evs []AbilityExecutionTraceEvent) []AbilityExecutionTraceEvent {
+	out := make([]AbilityExecutionTraceEvent, 0, len(evs))
+	for _, e := range evs {
+		if e.Type == "damage_applied" && e.Path == "" {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// The trace is what the editor's floating damage numbers AND its event log are
+// built from, so an ally's swing has to reach it — otherwise the allies fight
+// invisibly and the whole point of AlliesAttack is lost.
+//
+// It also has to report what LANDED, not what was swung: the same attacker
+// hitting the same target must show a bigger number while the mark is on it.
+// That is the observation an author is actually making, and reporting the
+// pre-mitigation amount would show an identical number either way and look
+// exactly like the mark doing nothing.
+//
+// Compared across two RUNS rather than across one run's own timeline: how long
+// a mark survives is the ability's business (marker_trap refreshes it every
+// tick while the victim stands in the zone), and a test that depends on it
+// expiring breaks the next time that authoring changes.
+func TestRunAbilityPreview_AlliesAttack_HitsReachTheTraceAndShowTheMark(t *testing.T) {
+	def, ok := getAbilityDef("marker_trap")
+	if !ok {
+		t.Fatal(`getAbilityDef("marker_trap") = _, false`)
+	}
+	// An ability that does nothing, so the control run differs only by the mark.
+	inert := AbilityDef{
+		ID: "preview_inert_control", DisplayName: "Inert", Type: def.Type,
+		CanTargetEnemies: true, CastRange: def.CastRange, SchemaVersion: 2,
+		Program: &AbilityProgram{
+			Entry:    def.Program.Entry,
+			Triggers: []AbilityTriggerDef{{ID: "cast", Type: TriggerOnCastComplete}},
+		},
+	}
+
+	hits := func(a AbilityDef) []int {
+		t.Helper()
+		res, err := RunAbilityPreview(PreviewRequest{
+			Ability: a, Seed: 1, CasterX: 600, CasterY: 500, Target: 0, DurationSeconds: 8,
+			AlliesAttack: true,
+			Units: []PreviewSceneUnit{
+				{Team: "enemy", X: 720, Y: 500, HP: 2000, MaxHP: 2000},
+				{Team: "ally", X: 660, Y: 500, HP: 200, MaxHP: 200},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var amounts []int
+		for _, e := range res.Trace {
+			// Pathless damage_applied = the pipeline seam, i.e. damage the
+			// ability under test did not deal itself. See abilityTraceEvents.
+			if e.Type != "damage_applied" || e.Path != "" {
+				continue
+			}
+			if got, _ := e.Payload["category"].(string); got != string(DamageCategoryBasicAttack) {
+				t.Errorf("unexpected damage category %q in the trace", got)
+			}
+			if e.Payload["attacker"] == nil {
+				t.Error("a traced hit names no attacker; the log row cannot say who swung")
+			}
+			if n, ok := e.Payload["amount"].(int); ok {
+				amounts = append(amounts, n)
+			}
+		}
+		return amounts
+	}
+
+	plain := hits(inert)
+	marked := hits(def)
+	if len(plain) < 2 {
+		t.Fatalf("only %d ally hits reached the trace; the editor would show no damage numbers", len(plain))
+	}
+	if len(marked) == 0 {
+		t.Fatal("no ally hits reached the trace on the marked run")
+	}
+	if marked[0] <= plain[0] {
+		t.Errorf("an ally hit landed for %d on a marked enemy vs %d on an unmarked one — either the mark is not "+
+			"amplifying, or the trace is reporting pre-mitigation damage", marked[0], plain[0])
+	}
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Ability-targeted modifiers must work in the preview (the scratch-id alias)
+// ═════════════════════════════════════════════════════════════════════════════
+
+// THE bug this guards. RunAbilityPreview registers the ability under a unique
+// scratch id so concurrent previews cannot collide — and that id is what
+// reached the executor, so every perk row that names an ability BY ID
+// ("target": "marker_trap") silently matched nothing. The whole ability-
+// targeted half of perk authoring did nothing in the one place abilities are
+// tested, which is how a working +35% mark duration came to be re-authored as
+// a second +2 row by an author who had no way to see the first one land.
+//
+// Asserted against the SAME numbers a real cast produces (see
+// TestPreviewAliases_MatchesALiveCast below) rather than against literals, so
+// a rebalance of amplified_effects moves both together.
+func TestRunAbilityPreview_AbilityTargetedPerkRowsApply(t *testing.T) {
+	def, ok := getAbilityDef("marker_trap")
+	if !ok {
+		t.Fatal(`getAbilityDef("marker_trap") = _, false`)
+	}
+	run := func(perks []string) (zoneDuration, markDuration float64) {
+		t.Helper()
+		res, err := RunAbilityPreview(PreviewRequest{
+			Ability: def, Seed: 1, CasterX: 600, CasterY: 500, Target: 0, DurationSeconds: 2,
+			CasterUnitType: "archer", CasterPath: "trapper", CasterRank: "silver",
+			CasterPerks:    perks,
+			Units:          []PreviewSceneUnit{{Team: "enemy", X: 720, Y: 500, HP: 5000, MaxHP: 5000}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range res.Trace {
+			switch e.Type {
+			case "zone_created":
+				if v, ok := e.Payload["duration"].(float64); ok && zoneDuration == 0 {
+					zoneDuration = v
+				}
+			case "status_duration_applied":
+				if v, ok := e.Payload["duration"].(float64); ok && markDuration == 0 {
+					markDuration = v
+				}
+			}
+		}
+		return
+	}
+
+	bareZone, bareMark := run(nil)
+	if bareZone == 0 || bareMark == 0 {
+		t.Fatalf("preview produced no zone/mark at all (zone=%v mark=%v)", bareZone, bareMark)
+	}
+
+	_, perkMark := run([]string{"amplified_effects"})
+	if perkMark <= bareMark {
+		t.Errorf("mark duration with amplified_effects = %v, unmodified = %v — an ability-targeted perk row did not reach the preview",
+			perkMark, bareMark)
+	}
+	// amplified_effects lengthens the MARK (its abilityFields row on
+	// marker_trap.mark.duration), not the zone: it no longer carries a
+	// zone-duration abilityStats row (that row double-counted the duration and
+	// stretched the zone 12s->14s — removed). So the zone duration is
+	// deliberately UNCHANGED by the perk; only the mark assertion above proves
+	// an ability-targeted perk row reaches the preview.
+}
+
+// The preview is only worth trusting if it agrees with a real cast. Same perk,
+// same ability, one run through RunAbilityPreview and one through
+// RequestAbilityCast on an ordinary GameState — the durations must match.
+func TestPreviewAliases_MatchesALiveCast(t *testing.T) {
+	def, ok := getAbilityDef("marker_trap")
+	if !ok {
+		t.Fatal(`getAbilityDef("marker_trap") = _, false`)
+	}
+
+	// ── live cast ──
+	s := newTrapSilverState(t)
+	s.mu.Lock()
+	caster := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	grantTrapAbility(caster, "marker_trap")
+	caster.PerkIDs = []string{"amplified_effects"}
+	caster.CurrentMana, caster.MaxMana = 9999, 9999
+	victim := s.spawnPlayerUnitLocked("raider", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 450, Y: 400})
+	victim.Visible = true
+	victim.MaxHP, victim.HP = 5000, 5000
+	casterID, victimID := caster.ID, victim.ID
+	s.mu.Unlock()
+
+	if ok, reason := s.RequestAbilityCast("p1", casterID, "marker_trap", victimID, 450, 400); !ok {
+		t.Fatalf("live cast failed: %s", reason)
+	}
+	s.Update(0.05)
+
+	s.mu.Lock()
+	var liveMark float64
+	for _, st := range s.AbilityStatuses {
+		if st != nil && st.TargetUnitID == victimID {
+			liveMark = st.Remaining
+		}
+	}
+	s.mu.Unlock()
+	if liveMark == 0 {
+		t.Fatal("the live cast applied no mark; this test's setup is wrong, not the alias")
+	}
+
+	// ── preview ──
+	res, err := RunAbilityPreview(PreviewRequest{
+		Ability: def, Seed: 1, CasterX: 600, CasterY: 500, Target: 0, DurationSeconds: 1,
+		CasterUnitType: "archer", CasterPath: "trapper", CasterRank: "silver",
+		CasterPerks:    []string{"amplified_effects"},
+		Units:          []PreviewSceneUnit{{Team: "enemy", X: 720, Y: 500, HP: 5000, MaxHP: 5000}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var previewMark float64
+	for _, e := range res.Trace {
+		if e.Type == "status_duration_applied" {
+			if v, ok := e.Payload["duration"].(float64); ok {
+				previewMark = v
+				break
+			}
+		}
+	}
+
+	// The live figure is one tick into its life; compare against the authored
+	// duration the preview reports, allowing that single tick.
+	if diff := previewMark - liveMark; diff < 0 || diff > 0.06 {
+		t.Errorf("preview mark duration %v disagrees with the live cast's %v (one tick elapsed); the preview is not showing what a match does",
+			previewMark, liveMark)
 	}
 }

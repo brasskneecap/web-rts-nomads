@@ -9,6 +9,8 @@
     "trap"
   ],
   "category": "offensive",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
@@ -43,14 +45,29 @@
               "triggers": [
                 {
                   "id": "entered",
-                  "type": "on_zone_enter",
+                  "type": "on_tick",
                   "actions": [
+                    {
+                      "id": "pick_enemy",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radius": 110,
+                        "origin": "zone_center"
+                      },
+                      "outputs": {
+                        "targets": "marked_unit"
+                      }
+                    },
                     {
                       "id": "mark",
                       "type": "apply_status_duration",
                       "input": {
                         "targets": {
-                          "key": "current_event"
+                          "key": "marked_unit"
                         }
                       },
                       "config": {
@@ -77,6 +94,29 @@
                                 "config": {
                                   "icon": "debuff-marked",
                                   "iconKind": "debuff"
+                                }
+                              },
+                              {
+                                "id": "expose",
+                                "type": "conditional",
+                                "config": {
+                                  "conditions": [
+                                    {
+                                      "op": "has_perk",
+                                      "right": "exposed_weakness"
+                                    }
+                                  ],
+                                  "then": [
+                                    {
+                                      "id": "weaken",
+                                      "type": "change_stat",
+                                      "config": {
+                                        "stat": "damageDealt",
+                                        "op": "add",
+                                        "value": -0.2
+                                      }
+                                    }
+                                  ]
                                 }
                               }
                             ]

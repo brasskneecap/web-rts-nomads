@@ -116,6 +116,13 @@ type AbilityStatDef struct {
 	// abilityStatKindAllowsPct). Surfaced rather than re-derived client-side so
 	// the rule lives in one place.
 	FlatOnly bool `json:"flatOnly,omitempty"`
+	// Inflicted marks a row that addresses a UNIT STAT this ability applies to
+	// its targets (folded onto a matching change_stat action) rather than a
+	// kinded config field. Kind and Action are empty for these — they are not
+	// tied to any one action's schema, which is the point: they find the effect
+	// wherever it lives in the program. Surfaced so the editor can group and
+	// explain them separately from radius/duration rows.
+	Inflicted bool `json:"inflicted,omitempty"`
 }
 
 // scopedAbilityStatID builds the "<actionType>.<kind>" form.
@@ -180,7 +187,49 @@ func AbilityStatDefs() []AbilityStatDef {
 		}
 	}
 	sort.Slice(scoped, func(i, j int) bool { return scoped[i].ID < scoped[j].ID })
-	return append(out, scoped...)
+	out = append(out, scoped...)
+
+	// INFLICTED-STAT rows: one per registered unit stat.
+	//
+	// A third way to address an ability's numbers, and the one that reads the
+	// way a designer talks. The other two address the SHAPE of an action — the
+	// radius field, the duration field. This addresses what the ability DOES TO
+	// A UNIT: "whatever this ability does to Vulnerable, add 0.15 to it";
+	// "whatever it does to Move Speed, add -0.15". It folds onto every
+	// change_stat action whose `stat` matches, wherever it sits in the program.
+	//
+	// Why it is better than the precise {action, field} form for this job: it
+	// survives a program refactor. Renaming marker_trap's "vulnerable" action id
+	// silently breaks an abilityFields row pointing at it; an inflicted-stat row
+	// keeps working, because it never knew the id.
+	//
+	// FLAT ONLY, deliberately. A percentage of an inflicted value is ambiguous
+	// in a way a radius is not: these values are frequently INVERSE-SENSE (a
+	// moveSpeed multiplier of 0.35 is a STRONGER slow than 0.7), which is what
+	// forced the statOpAmplify op to exist. A flat add has one reading at every
+	// site — negative strengthens a slow, positive strengthens a vulnerability.
+	for _, d := range statRegistry {
+		if d.AuraOnly {
+			// No change_stat can author these (the action's own Validate
+			// rejects them), so a row here could never fold onto anything.
+			continue
+		}
+		out = append(out, AbilityStatDef{
+			ID:        d.ID,
+			Label:     d.Label,
+			FlatOnly:  true,
+			Inflicted: true,
+		})
+	}
+	return out
+}
+
+// isInflictedStatID reports whether an ability-stat id addresses a UNIT stat an
+// ability inflicts (folded onto a matching change_stat) rather than a kinded
+// config field. The two vocabularies cannot collide: ability-stat kinds are
+// radius/duration/count/speed, none of which is a registered unit stat.
+func isInflictedStatID(id string) bool {
+	return isKnownStat(id) && !isAuraOnlyStat(id)
 }
 
 // isAbilityStatGridKind reports whether kind is offered as a broad grid row (and
