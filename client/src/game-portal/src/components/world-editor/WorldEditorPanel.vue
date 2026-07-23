@@ -698,25 +698,8 @@
               <option value="corrupt">Corrupt</option>
             </select>
 
-            <div class="cliff-mode-toggle" role="group" aria-label="Elevation mode">
-              <button
-                type="button"
-                class="cliff-mode-toggle__btn"
-                :class="{ 'cliff-mode-toggle__btn--on': cliffMode === 'raise' }"
-                @click="cliffMode = 'raise'"
-              >Raise</button>
-              <button
-                type="button"
-                class="cliff-mode-toggle__btn"
-                :class="{ 'cliff-mode-toggle__btn--on': cliffMode === 'ramp' }"
-                @click="cliffMode = 'ramp'"
-              >Ramp</button>
-            </div>
-            <span v-if="cliffMode === 'raise'" class="field-hint">
-              Left-drag: paint terrain. Right-drag: raise cliffs (Ctrl+right: lower).
-            </span>
-            <span v-else class="field-hint">
-              Left-drag: paint terrain. Right-drag: add ramp (Ctrl+right: remove).
+            <span class="field-hint">
+              Left-drag: paint terrain. Right-drag: raise cliffs; Ctrl+right-drag: lower.
             </span>
           </div>
 
@@ -1713,7 +1696,6 @@ import {
   DEFAULT_GRASS_COLOR,
   MAP_EDITOR_PRESETS,
   addElevationCells,
-  addRampCells,
   createEditorMapConfig,
   getBuildingColor,
   getObstacleColor,
@@ -1847,11 +1829,6 @@ function tilesetLabel(id: string): string {
   return getTilesetDef(id)?.name ?? id
 }
 
-// 'tile' brush right-drag sub-mode: 'raise' raises/lowers the plateau
-// (model.elevation); 'ramp' toggles walkable openings in the cliff wall
-// (model.ramps). Both share the Terrain Type sheet (see activeCliffTileset)
-// and the brush's Brush Size control.
-const cliffMode = ref<'raise' | 'ramp'>('raise')
 // The cliff atlas newly-raised cells are tagged with, derived from the
 // selected Terrain Type: the flat `-0` sheet's `-25` sibling is its cliff
 // atlas (Wang layout) — e.g. grass-grass-elevation-0 -> grass-grass-elevation-25.
@@ -3729,34 +3706,25 @@ function getBrushCells(cx: number, cy: number, size: number): Array<{ x: number;
   return cells
 }
 
-// Right-button stroke for the Tile brush: applies elevation (Raise mode) or
-// ramps (Ramp mode) continuously along the drag, per the Elevation Mode
-// toggle (cliffMode). Direction is fixed for the whole stroke by the ctrlKey
-// state captured at mousedown (see onMouseDown), so releasing/pressing Ctrl
-// mid-drag can't flip a stroke halfway through: Raise mode not-ctrl raises /
-// ctrl lowers; Ramp mode not-ctrl adds / ctrl removes. The raised cliff atlas
-// is always the active Terrain Type's cliff sheet (activeCliffTileset).
-// Mirrors paintAtScreen's same-cell dedupe via lastPaintKey so drag-move
-// doesn't re-fire per frame, but uses its own key namespace so it can't
-// collide with a concurrent left-drag key (the two buttons are never both
-// driving a stroke at once, but keeping the namespaces distinct is cheap and
-// avoids any doubt).
+// Right-button stroke for the Tile brush: raises elevation continuously along
+// the drag, or lowers it when Ctrl is held. Direction is fixed for the whole
+// stroke by the ctrlKey state captured at mousedown (see onMouseDown), so
+// pressing/releasing Ctrl mid-drag can't flip a stroke halfway through. The
+// raised cliff atlas is always the active Terrain Type's cliff sheet
+// (activeCliffTileset). Uses its own lastPaintKey namespace so drag-move
+// doesn't re-fire per frame.
 function paintElevationAtScreen(screenX: number, screenY: number, isCtrl: boolean) {
   const cell = getGridCellAtScreen(screenX, screenY)
   if (!cell) return
 
-  const paintKey = `${cell.x}:${cell.y}:elevation:${cliffMode.value}:${isCtrl}:${brushSize.value}`
+  const paintKey = `${cell.x}:${cell.y}:elevation:${isCtrl}:${brushSize.value}`
   if (paintKey === lastPaintKey) return
   lastPaintKey = paintKey
 
   const cells = getBrushCells(cell.x, cell.y, brushSize.value)
-  if (cliffMode.value === 'ramp') {
-    model.value = isCtrl ? removeRampCells(model.value, cells) : addRampCells(model.value, cells)
-  } else {
-    model.value = isCtrl
-      ? removeElevationCells(model.value, cells)
-      : addElevationCells(model.value, cells, activeCliffTileset.value)
-  }
+  model.value = isCtrl
+    ? removeElevationCells(model.value, cells)
+    : addElevationCells(model.value, cells, activeCliffTileset.value)
 }
 
 function paintAtScreen(screenX: number, screenY: number) {
@@ -5800,36 +5768,6 @@ onBeforeUnmount(() => {
   font-size: 0.76rem;
   color: #94a3b8;
   line-height: 1.4;
-}
-
-.cliff-mode-toggle {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.cliff-mode-toggle__btn {
-  padding: 6px 4px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #cbd5e1;
-  background: rgba(148, 163, 184, 0.1);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 8px;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.cliff-mode-toggle__btn:hover {
-  background: rgba(148, 163, 184, 0.18);
-}
-
-.cliff-mode-toggle__btn--on {
-  color: #0b1220;
-  background: #e7c88a;
-  border-color: #f2d79a;
-  box-shadow: 0 0 0 1px rgba(231, 200, 138, 0.5), 0 6px 16px rgba(231, 200, 138, 0.22);
 }
 
 .undo-bar {
