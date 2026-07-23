@@ -1,0 +1,13 @@
+{
+  "id": "dirt-cliff",
+  "name": "Dirt Cliff",
+  "image": "dirt-cliff.png",
+  "cols": 4,
+  "rows": 4,
+  "offsetX": 0,
+  "offsetY": 0,
+  "tileWidth": 160,
+  "tileHeight": 160,
+  "spacingX": 0,
+  "spacingY": 0
+}
