@@ -7,24 +7,28 @@ import type { GridCoord, TileCoord } from '@/game/network/protocol'
 // chosen by which of its 4 corners lie inside the raised plateau, which makes
 // faces, lips and corners connect seamlessly and recompute across neighbours.
 //
-// Keep this table identical to WANG_GRASS_DIRT_COORDS (col/row per mask). The
-// mask bits are corners: bit0=TL, bit1=TR, bit2=BL, bit3=BR.
+// Mask bits are corners: bit0=TL, bit1=TR, bit2=BL, bit3=BR. The -25 cliff art
+// reads vertically INVERTED from the base grass/dirt sheet (its tall rock face
+// is drawn south-facing — it belongs on the FRONT/bottom edge), so this table
+// is WANG_GRASS_DIRT_COORDS with the vertical corners swapped
+// (WANG[verticalFlip(mask)]): the plateau's south edge gets the tall face, its
+// north edge a subtle lip, left/right faces and interior unchanged.
 const WANG_LAYOUT: ReadonlyArray<{ col: number; row: number }> = [
   { col: 0, row: 3 }, // 0  ----
-  { col: 3, row: 3 }, // 1  T---
-  { col: 0, row: 2 }, // 2  -T--
-  { col: 1, row: 2 }, // 3  TT--
-  { col: 0, row: 0 }, // 4  --B-
+  { col: 0, row: 0 }, // 1  T---
+  { col: 1, row: 3 }, // 2  -T--
+  { col: 3, row: 0 }, // 3  TT--  (south edge → tall rock face)
+  { col: 3, row: 3 }, // 4  --B-
   { col: 3, row: 2 }, // 5  T-B-
-  { col: 2, row: 3 }, // 6  -TB-
-  { col: 3, row: 1 }, // 7  TTB-
-  { col: 1, row: 3 }, // 8  ---B
-  { col: 0, row: 1 }, // 9  T--B
+  { col: 0, row: 1 }, // 6  -TB-
+  { col: 2, row: 0 }, // 7  TTB-
+  { col: 0, row: 2 }, // 8  ---B
+  { col: 2, row: 3 }, // 9  T--B
   { col: 1, row: 0 }, // 10 -T-B
-  { col: 2, row: 2 }, // 11 TT-B
-  { col: 3, row: 0 }, // 12 --BB
-  { col: 2, row: 0 }, // 13 T-BB
-  { col: 1, row: 1 }, // 14 -TBB
+  { col: 1, row: 1 }, // 11 TT-B
+  { col: 1, row: 2 }, // 12 --BB  (north edge → subtle lip)
+  { col: 3, row: 1 }, // 13 T-BB
+  { col: 2, row: 2 }, // 14 -TBB
   { col: 2, row: 1 }, // 15 TTBB (full interior)
 ]
 

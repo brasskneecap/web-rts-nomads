@@ -8,11 +8,13 @@ import "webrts/server/pkg/protocol"
 // is chosen by which of its 4 corners lie inside the raised plateau. Mirrors
 // the client's cliffAutotile.ts — keep cliffWangLayout + the mask rule identical.
 //
-// mask bits are corners: bit0=TL, bit1=TR, bit2=BL, bit3=BR. Table matches
-// WANG_GRASS_DIRT_COORDS (and the client's WANG_LAYOUT) col/row per mask.
+// mask bits are corners: bit0=TL, bit1=TR, bit2=BL, bit3=BR. The -25 cliff art
+// reads vertically inverted from the base sheet (tall rock face is south-
+// facing), so this is WANG_GRASS_DIRT_COORDS with the vertical corners swapped
+// — matches the client's WANG_LAYOUT. Index = mask.
 var cliffWangLayout = [16][2]int{
-	{0, 3}, {3, 3}, {0, 2}, {1, 2}, {0, 0}, {3, 2}, {2, 3}, {3, 1},
-	{1, 3}, {0, 1}, {1, 0}, {2, 2}, {3, 0}, {2, 0}, {1, 1}, {2, 1},
+	{0, 3}, {0, 0}, {1, 3}, {3, 0}, {3, 3}, {3, 2}, {0, 1}, {2, 0},
+	{0, 2}, {2, 3}, {1, 0}, {1, 1}, {1, 2}, {3, 1}, {2, 2}, {2, 1},
 }
 
 // cliffWangMask returns the Wang mask for cell (x, y): a corner is "inside"
