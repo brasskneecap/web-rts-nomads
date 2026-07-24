@@ -45,6 +45,10 @@ func TestActionTargetingShape_MatchesExecuteUsage(t *testing.T) {
 		// already produced.
 		ActionDealDamage:    false, // deal_damage's Execute (ability_program_registry.go)
 		ActionRestoreHealth: false, // restore_health's Execute (ability_program_registry.go)
+		// siphon_heal ignores `targets`: it heals the CASTER (and cascades to
+		// allies) via distributeSiphonHealLocked, off ctx.lastAppliedDamage —
+		// never a per-unit query (ability_exec_siphon_heal.go).
+		ActionSiphonHeal: false,
 		ActionApplyStatus:   false, // apply_status's Execute (ability_exec_actions.go)
 		// apply_status_duration reads its incoming `targets` (fed via a
 		// preceding select_targets), spawning one AbilityStatus per unit —

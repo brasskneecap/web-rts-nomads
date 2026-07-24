@@ -345,13 +345,15 @@ func TestDescribePerk_ManaConduit_MentionsRadiusTargetsAndMaxWinsRule(t *testing
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AbilityModifiers — real catalog perks (beam_mastery: all four scalars;
-// soul_leech: only damage + heal). Expectations derived from the loaded
-// def's own AbilityModifiers, never pinned balance literals.
+// AbilityModifiers — real catalog perks. AbilityModifier now carries only the
+// ability-level scalars (mana cost, range, cooldown); beam_mastery is the
+// shipped consumer (mana + range). soul_leech's damage/heal scalers moved to
+// abilityFields and are described by that path, not here. Expectations derived
+// from the loaded def's own AbilityModifiers, never pinned balance literals.
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestDescribePerk_AbilityModifiers_RealCatalogPerks(t *testing.T) {
-	for _, id := range []string{"beam_mastery", "soul_leech"} {
+	for _, id := range []string{"beam_mastery"} {
 		t.Run(id, func(t *testing.T) {
 			def := requirePerkDef(t, id)
 			if len(def.AbilityModifiers) == 0 {
@@ -368,8 +370,6 @@ func TestDescribePerk_AbilityModifiers_RealCatalogPerks(t *testing.T) {
 					mult  float64
 					label string
 				}{
-					{m.DamageMult, "damage"},
-					{m.HealMult, "healing"},
 					{m.ManaCostMult, "mana cost"},
 					{m.RangeMult, "range"},
 				}
@@ -391,9 +391,10 @@ func TestDescribePerk_AbilityModifiers_RealCatalogPerks(t *testing.T) {
 	}
 }
 
-// beam_mastery sets all four AbilityModifier scalars; soul_leech sets only
-// two. Pin that STRUCTURAL difference (not the tuning values) so a future
-// edit that accidentally adds/removes a scalar on either fixture is caught.
+// soul_leech scales only Siphon Life's damage and healing (abilityFields on
+// the dmg / heal actions), never its mana cost or range. Pin that STRUCTURAL
+// difference (not the tuning values) so a future edit that accidentally adds a
+// mana/range scalar or drops the damage/heal fields is caught.
 func TestDescribePerk_AbilityModifiers_SoulLeechOmitsUnsetScalars(t *testing.T) {
 	def := requirePerkDef(t, "soul_leech")
 	got := describePerk(def)
@@ -472,7 +473,7 @@ func TestDescribePerk_Deterministic_SameInputSameOutput(t *testing.T) {
 			{Stat: statMoveSpeed, Op: statOpAdd, Value: 1, Stage: statStageIntrinsic},
 		},
 		AbilityModifiers: []AbilityModifier{
-			{Target: "siphon_life", DamageMult: 1.3, HealMult: 1.1, ManaCostMult: 0.9, RangeMult: 1.05},
+			{Target: "siphon_life", ManaCostMult: 0.9, RangeMult: 1.05, CooldownMult: 0.95},
 		},
 		AbilityRiders: []AbilityRider{
 			{

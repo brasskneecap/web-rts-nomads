@@ -176,35 +176,37 @@ func findChannelBeamConfig(prog *AbilityProgram) (beamConfig, bool) {
 }
 
 // fireChannelBeamTickLocked fires a converted (SchemaVersion>=2) channel
-// ability's compiled on_beam_tick trigger for exactly one tick — the
-// authored, per-tick DAMAGE step (a single deal_damage action against the
-// channel's one target, compileChannelBeamTickTrigger in ability_compile.go)
-// — and returns the total damage it actually applied
-// (ctx.lastAppliedDamage), clamped to >= 0. tickUnitChannelLocked reads this
-// return value as tickDamage, driving heal distribution and every Siphoner
-// perk hook off it exactly as it already does for a legacy-computed
-// tickDamage — the channel LIFECYCLE stays entirely in Go; only this one
-// number is authored.
+// ability's compiled on_beam_tick trigger for exactly one tick and returns
+// (tickDamage, tickHeal), each clamped to >= 0. The trigger holds two authored
+// actions (compileChannelBeamTickTrigger in ability_compile.go):
 //
-// ctx.damageEffectivenessMultiplier is set to damageMult (the caller's
-// mods.DamageMult) so deal_damage folds the caster's Siphoner perk scaler
-// exactly ONCE, through the same ctx.effectiveDamageMultiplier() seam every
-// other deal_damage call uses — see RuntimeAbilityContext.lastAppliedDamage's
-// doc comment (ability_exec.go) and dealDamageConfig's Execute
-// (ability_program_registry.go) for the fold-once arithmetic
-// (round(DamagePerTick * mods.DamageMult), byte-identical to the legacy
-// inline computation this replaces since effectiveAbilityDamageLocked is
-// identity for siphon_life and FlatOffset is 0).
+//   - deal_damage ("dmg") against the channel's one target — its applied total
+//     lands in ctx.lastAppliedDamage;
+//   - siphon_heal ("heal"), which reads that damage and distributes the tick's
+//     heal via distributeSiphonHealLocked, recording it in ctx.lastAppliedHeal.
 //
-// Returns 0 (no damage) if def's Program has no compiled on_beam_tick
-// trigger at all — an authoring gap degrades to "no damage this tick",
-// mirroring what an absent legacy DamagePerTick would do.
+// tickUnitChannelLocked reads the returned pair to drive chain_siphon and every
+// other Siphoner perk hook off the SAME numbers the actions actually applied.
+//
+// Both the damage scaler (soul_leech / beam_mastery) and the heal scaler are
+// now abilityFields modifiers folded inside executeActionLocked — the damage on
+// deal_damage's `amount`, the heal on siphon_heal's `healMult` — so no
+// per-tick effectiveness multiplier is threaded in here anymore
+// (damageEffectivenessMultiplier is left at its 1.0 default). This is
+// byte-identical to the legacy inline computation for siphon_life because its
+// DamagePerTick × mult stays integral, effectiveAbilityDamageLocked is
+// identity, and the heal preserves the exact `damage × healingMultiplier ×
+// healMult` order.
+//
+// Returns (0, 0) if def's Program has no compiled on_beam_tick trigger at all —
+// an authoring gap degrades to "no damage/heal this tick", mirroring what an
+// absent legacy DamagePerTick would do.
 //
 // Caller holds s.mu write lock.
-func (s *GameState) fireChannelBeamTickLocked(caster, target *Unit, def AbilityDef, damageMult float64) int {
+func (s *GameState) fireChannelBeamTickLocked(caster, target *Unit, def AbilityDef) (int, int) {
 	cfg, ok := findChannelBeamConfig(def.Program)
 	if !ok {
-		return 0
+		return 0, 0
 	}
 	var actions []AbilityActionDef
 	for _, trig := range cfg.Triggers {
@@ -214,20 +216,19 @@ func (s *GameState) fireChannelBeamTickLocked(caster, target *Unit, def AbilityD
 		}
 	}
 	if len(actions) == 0 {
-		return 0
+		return 0, 0
 	}
 
 	ctx := &RuntimeAbilityContext{
-		CasterID:                      caster.ID,
-		AbilityID:                     def.ID,
-		InitialTarget:                 target.ID,
-		CurrentEventUnitID:            target.ID,
-		program:                       def.Program,
-		abilityDef:                    &def,
-		Named:                         map[string]ContextValue{},
-		Trace:                         s.previewTrace,
-		now:                           s.previewClock,
-		damageEffectivenessMultiplier: damageMult,
+		CasterID:           caster.ID,
+		AbilityID:          def.ID,
+		InitialTarget:      target.ID,
+		CurrentEventUnitID: target.ID,
+		program:            def.Program,
+		abilityDef:         &def,
+		Named:              map[string]ContextValue{},
+		Trace:              s.previewTrace,
+		now:                s.previewClock,
 	}
 	path := "on_tick"
 	for i := range actions {
@@ -236,10 +237,15 @@ func (s *GameState) fireChannelBeamTickLocked(caster, target *Unit, def AbilityD
 		}
 		s.executeActionLocked(ctx, &actions[i], path)
 	}
-	if ctx.lastAppliedDamage < 0 {
-		return 0
+	dmg := ctx.lastAppliedDamage
+	if dmg < 0 {
+		dmg = 0
 	}
-	return ctx.lastAppliedDamage
+	heal := ctx.lastAppliedHeal
+	if heal < 0 {
+		heal = 0
+	}
+	return dmg, heal
 }
 
 // startChannelLocked performs the MECHANICAL channel-start step only: state
@@ -455,17 +461,34 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 			return
 		}
 
-		// Per-tick DAMAGE: for a converted (SchemaVersion>=2) def, the amount
-		// is authored (on_beam_tick/deal_damage, see fireChannelBeamTickLocked
-		// and this file's "composable migration" doc comment); for a legacy
-		// def it stays the original inline computation, byte-for-byte
-		// unchanged. Either way tickDamage lands as the SAME single number
-		// the heal + perk hooks below read.
-		var tickDamage int
+		// Per-tick DAMAGE and HEAL.
+		//
+		// Converted (SchemaVersion>=2) def: both are authored actions on the
+		// on_beam_tick trigger — deal_damage applies the damage, siphon_heal
+		// distributes the heal (via distributeSiphonHealLocked) — and
+		// fireChannelBeamTickLocked hands back the numbers each applied. The
+		// perk scalers that used to live on mods.DamageMult / mods.HealMult are
+		// now abilityFields modifiers folded inside those actions (soul_leech /
+		// beam_mastery), so nothing is threaded in here.
+		//
+		// Legacy def: the original inline computation, minus those two perk
+		// mults (no legacy channel ability has a perk authoring them — the only
+		// consumers were siphon_life, which is converted — so their removal is
+		// identity here). tickDamage / healAmount land as the SAME single
+		// numbers the chain + perk hooks below read.
+		var tickDamage, healAmount int
 		if def.SchemaVersion >= 2 && def.Program != nil {
-			tickDamage = s.fireChannelBeamTickLocked(unit, target, def, mods.DamageMult)
+			tickDamage, healAmount = s.fireChannelBeamTickLocked(unit, target, def)
 		} else {
-			tickDamage = int(math.Round(float64(spec.DamagePerTick) * mods.DamageMult))
+			// Fold the SAME perk abilityFields the executor path folds — on the
+			// dmg action's `amount` and the heal action's `healMult` — so this
+			// compatibility path stays equivalent to the authored program for any
+			// caster. A no-op in production: a real legacy (SchemaVersion<2)
+			// channel has no authored dmg/heal action for a field-mod to target,
+			// so load-time validation blocks any perk from addressing it. The
+			// only caller that folds anything here is the golden test's legacy
+			// fixture, which borrows the real "siphon_life" id.
+			tickDamage = int(math.Round(s.foldOneFieldLocked(unit, def, "dmg", "amount", float64(spec.DamagePerTick))))
 			if tickDamage < 0 {
 				tickDamage = 0
 			}
@@ -485,15 +508,16 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 					SourceAbilityID: def.ID,
 				})
 			}
-		}
 
-		// Compute heal amount from the SAME tickDamage (so Soul Leech's
-		// damage multiplier feeds through proportionally) and distribute
-		// via siphon heal logic. HealingMultiplier (ability-level) stacks
-		// multiplicatively with mods.HealMult (perk-level).
-		healAmount := int(math.Round(float64(tickDamage) * spec.HealingMultiplier * mods.HealMult))
-		if healAmount > 0 {
-			s.distributeSiphonHealLocked(unit, healAmount, spec.AllyHealRadius)
+			// Heal from the SAME tickDamage (so a damage multiplier feeds
+			// through proportionally), scaled by the ability's healingMultiplier
+			// and the folded healMult, then distribute via the siphon heal logic
+			// — the exact order siphon_heal's Execute uses on the authored path.
+			healMult := s.foldOneFieldLocked(unit, def, "heal", "healMult", 1.0)
+			healAmount = int(math.Round(float64(tickDamage) * spec.HealingMultiplier * healMult))
+			if healAmount > 0 {
+				s.distributeSiphonHealLocked(unit, healAmount, spec.AllyHealRadius)
+			}
 		}
 
 		// ── Silver Siphoner perks ──────────────────────────────────────────

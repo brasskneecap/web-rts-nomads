@@ -189,6 +189,18 @@ func compileChannelBeamTickTrigger(def AbilityDef) AbilityTriggerDef {
 				Target: &TargetQueryDef{Source: SrcInitialTarget},
 				Config: marshalConfig(dealDamageConfig{Amount: def.DamagePerTick, Type: def.DamageType}),
 			},
+			// Per-tick HEAL: runs right after dmg and reads the damage it just
+			// applied (ctx.lastAppliedDamage) to compute the Siphon Life heal,
+			// distributing it via distributeSiphonHealLocked. healMult (base 1.0)
+			// is the field-mod target that replaced AbilityModifier.HealMult —
+			// see siphonHealConfig / ActionSiphonHeal. No target query: the
+			// action heals the caster (and cascades to allies), never a target
+			// set, so it needs none.
+			{
+				ID:     "heal",
+				Type:   ActionSiphonHeal,
+				Config: marshalConfig(siphonHealConfig{HealingMultiplier: def.HealingMultiplier, HealMult: 1, AllyHealRadius: def.AllyHealRadius}),
+			},
 		},
 	}
 }

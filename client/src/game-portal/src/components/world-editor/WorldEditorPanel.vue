@@ -1617,7 +1617,14 @@
       <AbilityBuilderPanel v-else-if="activeScreen === 'abilities'" />
       <EffectEditorPanel v-else-if="activeScreen === 'effects'" />
       <ProjectileEditorPanel v-else-if="activeScreen === 'projectiles'" />
-      <PerkEditorPanel v-else-if="activeScreen === 'perks'" />
+      <template v-else-if="activeScreen === 'perks'">
+        <div class="world-editor__perk-mode" role="group" aria-label="Perk editor mode">
+          <button type="button" :class="{ 'is-on': perkMode === 'builder' }" @click="perkMode = 'builder'">New Builder</button>
+          <button type="button" :class="{ 'is-on': perkMode === 'classic' }" @click="perkMode = 'classic'">Classic</button>
+        </div>
+        <PerkBuilderPanel v-if="perkMode === 'builder'" />
+        <PerkEditorPanel v-else />
+      </template>
       <CampaignEditorPanel v-else-if="activeScreen === 'campaigns'" />
     </section>
   </div>
@@ -1640,6 +1647,7 @@ import AbilityBuilderPanel from '@/components/ability-builder/AbilityBuilderPane
 import EffectEditorPanel from '@/components/EffectEditorPanel.vue'
 import ProjectileEditorPanel from '@/components/ProjectileEditorPanel.vue'
 import PerkEditorPanel from '@/components/PerkEditorPanel.vue'
+import PerkBuilderPanel from '@/components/perk-editor/PerkBuilderPanel.vue'
 import CampaignEditorPanel from '@/components/CampaignEditorPanel.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
 import InGameHud from '@/components/InGameHud.vue'
@@ -2061,6 +2069,7 @@ function backToLanding() {
 // catalog editors have room for their lists and forms.
 type EditorScreen = 'map' | 'items' | 'unit-types' | 'abilities' | 'effects' | 'projectiles' | 'perks' | 'campaigns'
 const activeScreen = ref<EditorScreen>('map')
+const perkMode = ref<'builder' | 'classic'>('builder')
 const router = useRouter()
 
 function onToolbarSelect(id: string) {
@@ -6723,4 +6732,8 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(166, 191, 255, 0.25);
   border-radius: 8px;
 }
+
+.world-editor__perk-mode { display: flex; gap: 6px; margin-bottom: 8px; }
+.world-editor__perk-mode button { padding: 3px 10px; font-size: 0.72rem; background: var(--ed-field); color: var(--ed-text-dim); border: 1px solid var(--ed-line); border-radius: 5px; }
+.world-editor__perk-mode button.is-on { background: rgba(212, 168, 71, 0.18); color: var(--ed-brass); border-color: var(--ed-line-strong); }
 </style>

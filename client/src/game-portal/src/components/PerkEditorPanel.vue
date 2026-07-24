@@ -162,8 +162,6 @@
             />
           </label>
           <div class="perk-editor__ability-mod-mults">
-            <label>Dmg× <input v-model.number="row.damageMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} damage mult`" /></label>
-            <label>Heal× <input v-model.number="row.healMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} heal mult`" /></label>
             <label>Mana× <input v-model.number="row.manaCostMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} mana cost mult`" /></label>
             <label>Range× <input v-model.number="row.rangeMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} range mult`" /></label>
             <label>CD× <input v-model.number="row.cooldownMult" type="number" step="0.05" placeholder="—" :aria-label="`Ability Modifier ${idx + 1} cooldown mult`" /></label>
@@ -360,6 +358,47 @@
         <button type="button" class="perk-editor__row-add" @click="addRider">+ Add Rider</button>
       </section>
 
+      <!-- Perk Modifiers -->
+      <section class="perk-editor__section">
+        <h3 class="perk-editor__section-title">Perk Modifiers</h3>
+        <p class="perk-editor__hint-line">
+          Enhance ANOTHER perk the owner also has — multiply (×) or add (+) to that perk's
+          config, drawing the value from THIS perk's Config block via <em>Source key</em>.
+          E.g. Ascended Corruption boosts whichever Silver Siphoner perk you own. Takes effect
+          only when the owner also has the target perk.
+        </p>
+        <p v-if="perkModifierRows.length === 0" class="perk-editor__hint-line">No perk modifiers.</p>
+        <div v-for="(pm, mIdx) in perkModifierRows" :key="mIdx" class="perk-editor__perkmod-row">
+          <div class="perk-editor__perkmod-head">
+            <label class="perk-editor__perkmod-target">
+              Target Perk
+              <input v-model="pm.target" list="perk-editor-perk-ids" placeholder="perk id" :aria-label="`Perk Modifier ${mIdx + 1} target`" />
+            </label>
+            <button type="button" class="perk-editor__row-del" title="Remove Modifier" @click="removePerkModifierRow(mIdx)">✕</button>
+          </div>
+          <datalist :id="`perk-editor-target-keys-${mIdx}`">
+            <option v-for="k in targetConfigKeys(pm.target)" :key="k" :value="k" />
+          </datalist>
+          <div v-for="(op, oIdx) in pm.ops" :key="oIdx" class="perk-editor__perkmod-op">
+            <label>Target key
+              <input v-model="op.targetKey" :list="`perk-editor-target-keys-${mIdx}`" placeholder="target's config key" />
+            </label>
+            <label>Op
+              <select v-model="op.op">
+                <option value="mult">× multiply</option>
+                <option value="add">+ add</option>
+              </select>
+            </label>
+            <label>Source key
+              <input v-model="op.sourceKey" list="perk-editor-own-config-keys" placeholder="this perk's config key" />
+            </label>
+            <button type="button" class="perk-editor__row-del" title="Remove Op" @click="removePerkModifierOp(mIdx, oIdx)">✕</button>
+          </div>
+          <button type="button" class="perk-editor__row-add" @click="addPerkModifierOp(mIdx)">+ Add Op</button>
+        </div>
+        <button type="button" class="perk-editor__row-add" @click="addPerkModifierRow">+ Add Perk Modifier</button>
+      </section>
+
       <!-- Auras -->
       <section class="perk-editor__section">
         <h3 class="perk-editor__section-title">Auras</h3>
@@ -397,6 +436,9 @@
     <datalist id="perk-editor-ability-ids">
       <option v-for="id in abilityIds" :key="id" :value="id" />
     </datalist>
+    <datalist id="perk-editor-own-config-keys">
+      <option v-for="k in ownConfigKeys" :key="k" :value="k" />
+    </datalist>
   </div>
 </template>
 
@@ -405,7 +447,7 @@ import { confirmDelete } from '@/components/editor/confirmDelete'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createBlankForm, formFromDef, saveRequestFromForm,
-  type AbilityFieldModifier, type AbilityModifier, type AbilityRider, type AuthoredPerkDef, type PerkAbilityStat, type PerkAura, type PerkEditorForm, type PerkStatModifier,
+  type AbilityFieldModifier, type AbilityModifier, type AbilityRider, type AuthoredPerkDef, type PerkAbilityStat, type PerkAura, type PerkEditorForm, type PerkModifier, type PerkStatModifier,
 } from '@/game/perks/perkEditorForm'
 import { allStatDefs, selfStatDefs } from '@/game/stats/statRegistry'
 import {
@@ -516,8 +558,6 @@ function updateGrantsAbilities(raw: string) {
 // intentional "always zero this stat" — the correct way to omit is absence).
 interface AbilityModifierRow {
   target: string
-  damageMult?: number | ''
-  healMult?: number | ''
   manaCostMult?: number | ''
   rangeMult?: number | ''
   cooldownMult?: number | ''
@@ -530,7 +570,7 @@ const abilityIds = ref<string[]>([])
 // rebuilds each entry from these keys only), which would quietly delete a
 // shipped perk's behavior.
 const ABILITY_MOD_MULT_KEYS = [
-  'damageMult', 'healMult', 'manaCostMult', 'rangeMult', 'cooldownMult',
+  'manaCostMult', 'rangeMult', 'cooldownMult',
 ] as const
 
 function rowsFromAbilityModifiers(mods?: AbilityModifier[]): AbilityModifierRow[] {
@@ -770,6 +810,48 @@ watch(abilityModifierRows, (rows) => {
   const mods = abilityModifiersFromRows(rows)
   form.value.abilityModifiers = mods.length ? mods : undefined
 }, { deep: true })
+
+// ── Perk Modifiers (perk-modifies-perk overlays) ────────────────────────────
+// PerkModifier is already the wire shape, but has nested ops that need inline
+// editing, so — like abilityModifierRows — it's edited via a deep-watched rows
+// ref that strips blank targets/ops on the way back to form.value.perkModifiers.
+const perkModifierRows = ref<PerkModifier[]>([])
+
+function clonePerkModifiers(mods?: PerkModifier[]): PerkModifier[] {
+  return (mods ?? []).map((m) => ({
+    target: m.target,
+    ops: (m.ops ?? []).map((o) => ({ targetKey: o.targetKey, op: o.op, sourceKey: o.sourceKey })),
+  }))
+}
+function cleanPerkModifiers(rows: PerkModifier[]): PerkModifier[] {
+  const out: PerkModifier[] = []
+  for (const row of rows) {
+    const target = (row.target ?? '').trim()
+    if (!target) continue
+    const ops = (row.ops ?? [])
+      .map((o) => ({ targetKey: (o.targetKey ?? '').trim(), op: o.op, sourceKey: (o.sourceKey ?? '').trim() }))
+      .filter((o) => o.targetKey && o.sourceKey)
+    if (!ops.length) continue // a target with no usable ops contributes nothing — drop it
+    out.push({ target, ops })
+  }
+  return out
+}
+function addPerkModifierRow() { perkModifierRows.value.push({ target: '', ops: [{ targetKey: '', op: 'mult', sourceKey: '' }] }) }
+function removePerkModifierRow(idx: number) { perkModifierRows.value.splice(idx, 1) }
+function addPerkModifierOp(mIdx: number) { perkModifierRows.value[mIdx].ops.push({ targetKey: '', op: 'mult', sourceKey: '' }) }
+function removePerkModifierOp(mIdx: number, oIdx: number) { perkModifierRows.value[mIdx].ops.splice(oIdx, 1) }
+watch(perkModifierRows, (rows) => {
+  const mods = cleanPerkModifiers(rows)
+  form.value.perkModifiers = mods.length ? mods : undefined
+}, { deep: true })
+
+// Config-key suggestions for the op inputs: this perk's own config keys feed
+// Source key; the TARGET perk's config keys (looked up from the loaded catalog)
+// feed Target key — so authoring picks real keys instead of typing them raw.
+const ownConfigKeys = computed(() => Object.keys(form.value.config ?? {}))
+function targetConfigKeys(target: string): string[] {
+  return Object.keys(perks.value.find((p) => p.id === target)?.config ?? {})
+}
 
 // Ability Riders: unlike configRows/abilityModifierRows, AbilityRider is
 // ALREADY the wire shape (no row-transform needed — target/trigger/actions
@@ -1015,6 +1097,7 @@ function selectPerk(def: AuthoredPerkDef) {
   syncConfigByRankText(def.configByRank)
   syncEffectDraft(def.effect)
   abilityModifierRows.value = rowsFromAbilityModifiers(def.abilityModifiers)
+  perkModifierRows.value = clonePerkModifiers(def.perkModifiers)
   abilityStatRows.value = rowsFromAbilityStats(def.abilityStats)
   abilityFieldRows.value = rowsFromAbilityFields(def.abilityFields)
   statModifierRows.value = rowsFromStatModifiers(def.statModifiers)
@@ -1030,6 +1113,7 @@ function newPerk() {
   syncConfigByRankText(undefined)
   syncEffectDraft(undefined)
   abilityModifierRows.value = []
+  perkModifierRows.value = []
   // abilityStatRows was already missing here: a new perk inherited the last
   // one's ability-stat rows, which then saved onto it.
   abilityStatRows.value = []
@@ -1439,6 +1523,42 @@ onMounted(async () => {
   color: rgba(226, 232, 240, 0.86);
   font-size: 0.72rem;
   width: 74px;
+}
+
+.perk-editor__perkmod-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.perk-editor__perkmod-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.perk-editor__perkmod-target {
+  flex: 1 1 auto;
+}
+
+.perk-editor__perkmod-op {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(148, 163, 184, 0.14);
+}
+
+.perk-editor__perkmod-op label {
+  display: grid;
+  gap: 4px;
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 0.72rem;
 }
 
 .perk-editor__stat-mod-row {

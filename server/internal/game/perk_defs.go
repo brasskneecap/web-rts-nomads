@@ -254,6 +254,25 @@ func validatePerkDef(def *PerkDef) error {
 			}
 		}
 	}
+	// PerkModifiers: structural checks only (target/keys non-empty, op is a known
+	// kind). Like AbilityModifiers, a target that no longer exists is not a hard
+	// error — applyPerkModifiersLocked simply finds no such perk and no-ops — so
+	// a renamed target degrades gracefully rather than failing the whole catalog.
+	for _, pm := range def.PerkModifiers {
+		if pm.Target == "" {
+			return fmt.Errorf("perkModifiers entry has empty target")
+		}
+		for i, op := range pm.Ops {
+			if op.TargetKey == "" || op.SourceKey == "" {
+				return fmt.Errorf("perkModifiers %q ops[%d]: targetKey and sourceKey must both be set", pm.Target, i)
+			}
+			switch op.Op {
+			case perkConfigOpMult, perkConfigOpAdd:
+			default:
+				return fmt.Errorf("perkModifiers %q ops[%d]: op %q must be %q or %q", pm.Target, i, op.Op, perkConfigOpMult, perkConfigOpAdd)
+			}
+		}
+	}
 	return nil
 }
 
@@ -277,10 +296,17 @@ type PerkEffect struct {
 // AbilityModifier is a scalar modification a perk applies to a target ability
 // (by id today; ability tags are the planned extension). A zero-valued mult
 // means "unset" (identity 1.0) — perks only set the fields they change.
+//
+// It scales an ability's ABILITY-LEVEL properties — the ones that live outside
+// the action program and so cannot be reached by an abilityFields modifier:
+// mana cost, cast range, and cooldown. A perk that scales an ability's damage
+// or healing instead uses an abilityFields modifier on the owning action's
+// field (deal_damage `amount`, siphon_heal `healMult`, …), which folds through
+// the generic executor; the former DamageMult / HealMult on this struct were
+// retired when the Siphon Life channel's damage and heal became authored
+// actions.
 type AbilityModifier struct {
 	Target       string  `json:"target"` // ability id
-	DamageMult   float64 `json:"damageMult,omitempty"`
-	HealMult     float64 `json:"healMult,omitempty"`
 	ManaCostMult float64 `json:"manaCostMult,omitempty"`
 	RangeMult    float64 `json:"rangeMult,omitempty"`
 	// CooldownMult scales the target ability's effective cooldown. Folded into
@@ -318,6 +344,38 @@ type AbilityRider struct {
 	// through, so a rider action is held to the identical bar.
 	Actions []AbilityActionDef `json:"actions,omitempty"`
 }
+
+// PerkModifier is a data-driven perk→PERK overlay: a perk (e.g.
+// ascended_corruption) declares that it modifies ANOTHER perk's effective
+// config. It is the sibling of AbilityModifier (perk→ability, scalar mults) —
+// where AbilityModifier scales an ability's numbers, PerkModifier scales/offsets
+// a target PERK's config keys. Applied at the target perk's
+// *EffectiveConfigLocked chokepoint by applyPerkModifiersLocked
+// (perks_siphoner.go), so a new perk-overlay needs zero perk-specific Go.
+type PerkModifier struct {
+	// Target is the id of the perk whose config this modifier overlays (only
+	// takes effect when the caster ALSO owns Target).
+	Target string `json:"target"`
+	// Ops are the individual config transforms, applied in order.
+	Ops []PerkConfigOp `json:"ops"`
+}
+
+// PerkConfigOp is one transform in a PerkModifier: take the value at SourceKey
+// in the MODIFYING perk's own config and apply it (multiply or add) to TargetKey
+// in the target perk's effective config. A non-positive source value is a no-op,
+// matching the legacy `if v := acfg[key]; v > 0 { ... }` guard the bespoke Go
+// helpers used — so migrating to data stays byte-identical.
+type PerkConfigOp struct {
+	TargetKey string `json:"targetKey"` // key in the TARGET perk's config
+	Op        string `json:"op"`        // "mult" | "add"
+	SourceKey string `json:"sourceKey"` // key in THIS perk's config supplying the value
+}
+
+// Perk config op kinds.
+const (
+	perkConfigOpMult = "mult"
+	perkConfigOpAdd  = "add"
+)
 
 // PerkAbilityStat is one perk row: "this stat, on this ability (or on all of
 // them), by this much". Flat is in the field's own units; Pct is a fraction, so
@@ -673,6 +731,14 @@ type PerkDef struct {
 	// validation only today — see AbilityRider's doc comment; the runtime
 	// that executes a rider's Actions is a later task.
 	AbilityRiders []AbilityRider `json:"abilityRiders,omitempty"`
+	// PerkModifiers: data-driven perk-modifies-PERK overlays — the sibling to
+	// AbilityModifiers (which modify an ABILITY's numbers). Each entry names a
+	// TARGET perk and a list of ops that scale/offset that perk's config keys,
+	// with the value sourced from THIS perk's own config. Layered in at the
+	// target perk's *EffectiveConfigLocked chokepoint by applyPerkModifiersLocked
+	// (perks_siphoner.go) — zero perk-specific Go. Pilot: ascended_corruption
+	// ("enhances whichever Silver Siphoner perk you own"). Empty for most perks.
+	PerkModifiers []PerkModifier `json:"perkModifiers,omitempty"`
 	// Wired reports whether this perk actually does something in a match:
 	// either a Go handler exists for its id, or it carries typed data
 	// (StatModifiers/AbilityModifiers/AbilityRiders/GrantsAbilities) the

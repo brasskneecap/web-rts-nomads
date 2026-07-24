@@ -32,6 +32,9 @@
         <UiButton size="sm" variant="active" :disabled="saveDisabled" @click="emit('save')">
           {{ saving ? 'Saving…' : 'Save' }}
         </UiButton>
+        <UiButton v-if="resetLabel" size="sm" variant="secondary" :disabled="resetDisabled" @click="emit('reset')">
+          {{ resetLabel }}
+        </UiButton>
         <!-- The lesser action sits beside Save. Its LABEL is the caller's, so
              an editor can say "Reset" for a shipped def and "Delete" for one
              the author created — the two are not the same act. -->
@@ -70,9 +73,13 @@ defineProps<{
    *  Empty or absent hides the button (e.g. an unsaved draft has nothing to
    *  reset). */
   removeLabel?: string
+  /** Label for the non-destructive "revert unsaved edits" action beside Save
+   *  ("Reset"). Empty or absent hides the button. */
+  resetLabel?: string
+  resetDisabled?: boolean
 }>()
 
-const emit = defineEmits<{ save: []; remove: []; 'update:id': [string] }>()
+const emit = defineEmits<{ save: []; remove: []; reset: []; 'update:id': [string] }>()
 </script>
 
 <style scoped>

@@ -14,10 +14,20 @@
   "abilityModifiers": [
     {
       "target": "siphon_life",
-      "damageMult": 1.5,
-      "healMult": 1.5,
       "manaCostMult": 0.5,
       "rangeMult": 1.25
+    }
+  ],
+  "abilityFields": [
+    { "target": "siphon_life", "action": "dmg", "field": "amount", "op": "multiply", "value": 1.5 },
+    { "target": "siphon_life", "action": "heal", "field": "healMult", "op": "multiply", "value": 1.5 }
+  ],
+  "perkModifiers": [
+    {
+      "target": "chain_siphon",
+      "ops": [
+        { "targetKey": "additionalTargetCount", "op": "add", "sourceKey": "chainAdditionalTargetBonus" }
+      ]
     }
   ],
   "wired": false

@@ -201,7 +201,8 @@ function stubFetchWithRider(savedPerks: Array<Record<string, unknown>>) {
 
 // The real beam_mastery perk (server/internal/game/catalog/perks/siphoner/
 // beam_mastery/beam_mastery.json) — the canonical load/round-trip fixture
-// for abilityModifiers: all 4 mults (damage/heal/mana/range) set.
+// for abilityModifiers: the 2 ability-level mults (mana/range) set; damage and
+// heal are authored as abilityFields, not on the AbilityModifier.
 function beamMasteryPerk() {
   return {
     id: 'beam_mastery',
@@ -216,7 +217,7 @@ function beamMasteryPerk() {
       rangeMultiplier: 1.25,
     },
     abilityModifiers: [
-      { target: 'siphon_life', damageMult: 1.5, healMult: 1.5, manaCostMult: 0.5, rangeMult: 1.25 },
+      { target: 'siphon_life', manaCostMult: 0.5, rangeMult: 1.25 },
     ],
     wired: false,
   }
@@ -481,10 +482,9 @@ describe('PerkEditorPanel', () => {
     await wrapper.find('[data-test="perk-row"]').trigger('click')
     await flushPromises()
 
-    // The row is populated with exactly the 4 authored mults.
+    // The row is populated with exactly the 2 authored ability-level mults
+    // (damage/heal are authored as abilityFields, not on the AbilityModifier).
     expect((wrapper.find('input[aria-label="Ability Modifier 1 target"]').element as HTMLInputElement).value).toBe('siphon_life')
-    expect((wrapper.find('input[aria-label="Ability Modifier 1 damage mult"]').element as HTMLInputElement).value).toBe('1.5')
-    expect((wrapper.find('input[aria-label="Ability Modifier 1 heal mult"]').element as HTMLInputElement).value).toBe('1.5')
     expect((wrapper.find('input[aria-label="Ability Modifier 1 mana cost mult"]').element as HTMLInputElement).value).toBe('0.5')
     expect((wrapper.find('input[aria-label="Ability Modifier 1 range mult"]').element as HTMLInputElement).value).toBe('1.25')
 

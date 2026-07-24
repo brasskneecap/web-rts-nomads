@@ -24,5 +24,39 @@
     "sharedDamageSharePercentBonus": 0.2,
     "sharedRadiusMultiplier": 1.5
   },
+  "perkModifiers": [
+    {
+      "target": "chain_siphon",
+      "ops": [
+        { "targetKey": "additionalTargetCount", "op": "add", "sourceKey": "chainAdditionalTargetCountBonus" },
+        { "targetKey": "chainRange", "op": "mult", "sourceKey": "chainRangeMultiplier" },
+        { "targetKey": "secondaryDamageMultiplier", "op": "add", "sourceKey": "chainSecondaryDamageMultiplierBonus" },
+        { "targetKey": "secondaryHealingMultiplier", "op": "add", "sourceKey": "chainSecondaryHealingMultiplierBonus" }
+      ]
+    },
+    {
+      "target": "amplify_damage",
+      "ops": [
+        { "targetKey": "radius", "op": "mult", "sourceKey": "amplifyRadiusMultiplier" },
+        { "targetKey": "durationSeconds", "op": "mult", "sourceKey": "amplifyDurationMultiplier" },
+        { "targetKey": "damageTakenMultiplier", "op": "add", "sourceKey": "amplifyDamageTakenMultiplierBonus" }
+      ]
+    },
+    {
+      "target": "dark_renewal",
+      "ops": [
+        { "targetKey": "maxSelfShield", "op": "add", "sourceKey": "darkMaxSelfShieldBonus" },
+        { "targetKey": "maxAllyShield", "op": "add", "sourceKey": "darkMaxAllyShieldBonus" },
+        { "targetKey": "allyTargetCount", "op": "add", "sourceKey": "darkAdditionalAllyShieldTargets" }
+      ]
+    },
+    {
+      "target": "shared_suffering",
+      "ops": [
+        { "targetKey": "radius", "op": "mult", "sourceKey": "sharedRadiusMultiplier" },
+        { "targetKey": "damageSharePercent", "op": "add", "sourceKey": "sharedDamageSharePercentBonus" }
+      ]
+    }
+  ],
   "wired": false
 }

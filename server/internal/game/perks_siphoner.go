@@ -1130,27 +1130,10 @@ func (s *GameState) chainSiphonEffectiveConfigLocked(caster *Unit) map[string]fl
 	if caster == nil {
 		return cfg
 	}
-	if beam := perkDefByID("beam_mastery"); beam != nil && containsString(caster.PerkIDs, "beam_mastery") {
-		bcfg := beam.ConfigForRank(caster.Rank)
-		if v := bcfg["chainAdditionalTargetBonus"]; v > 0 {
-			cfg["additionalTargetCount"] = cfg["additionalTargetCount"] + v
-		}
-	}
-	if asc := perkDefByID("ascended_corruption"); asc != nil && containsString(caster.PerkIDs, "ascended_corruption") {
-		acfg := asc.ConfigForRank(caster.Rank)
-		if v := acfg["chainAdditionalTargetCountBonus"]; v > 0 {
-			cfg["additionalTargetCount"] = cfg["additionalTargetCount"] + v
-		}
-		if v := acfg["chainRangeMultiplier"]; v > 0 {
-			cfg["chainRange"] = cfg["chainRange"] * v
-		}
-		if v := acfg["chainSecondaryDamageMultiplierBonus"]; v > 0 {
-			cfg["secondaryDamageMultiplier"] = cfg["secondaryDamageMultiplier"] + v
-		}
-		if v := acfg["chainSecondaryHealingMultiplierBonus"]; v > 0 {
-			cfg["secondaryHealingMultiplier"] = cfg["secondaryHealingMultiplier"] + v
-		}
-	}
+	// beam_mastery (+chainAdditionalTargetBonus) and ascended_corruption
+	// (+targets, ×range, +2° dmg/heal) are both data-authored PerkModifiers
+	// targeting chain_siphon — layered generically here.
+	s.applyPerkModifiersLocked(caster, "chain_siphon", cfg)
 	return cfg
 }
 
@@ -1170,18 +1153,9 @@ func (s *GameState) amplifyDamageEffectiveConfigLocked(caster *Unit) map[string]
 	if caster == nil {
 		return cfg
 	}
-	if asc := perkDefByID("ascended_corruption"); asc != nil && containsString(caster.PerkIDs, "ascended_corruption") {
-		acfg := asc.ConfigForRank(caster.Rank)
-		if v := acfg["amplifyRadiusMultiplier"]; v > 0 {
-			cfg["radius"] = cfg["radius"] * v
-		}
-		if v := acfg["amplifyDurationMultiplier"]; v > 0 {
-			cfg["durationSeconds"] = cfg["durationSeconds"] * v
-		}
-		if v := acfg["amplifyDamageTakenMultiplierBonus"]; v > 0 {
-			cfg["damageTakenMultiplier"] = cfg["damageTakenMultiplier"] + v
-		}
-	}
+	// ascended_corruption (×radius, ×duration, +damageTaken) is a data-authored
+	// PerkModifier targeting amplify_damage.
+	s.applyPerkModifiersLocked(caster, "amplify_damage", cfg)
 	return cfg
 }
 
@@ -1206,18 +1180,10 @@ func (s *GameState) darkRenewalEffectiveConfigLocked(caster *Unit) map[string]fl
 	if caster == nil {
 		return cfg
 	}
-	if asc := perkDefByID("ascended_corruption"); asc != nil && containsString(caster.PerkIDs, "ascended_corruption") {
-		acfg := asc.ConfigForRank(caster.Rank)
-		if v := acfg["darkMaxSelfShieldBonus"]; v > 0 {
-			cfg["maxSelfShield"] = cfg["maxSelfShield"] + v
-		}
-		if v := acfg["darkMaxAllyShieldBonus"]; v > 0 {
-			cfg["maxAllyShield"] = cfg["maxAllyShield"] + v
-		}
-		if v := acfg["darkAdditionalAllyShieldTargets"]; v > 0 {
-			cfg["allyTargetCount"] = cfg["allyTargetCount"] + v
-		}
-	}
+	// ascended_corruption (+maxSelfShield, +maxAllyShield, +allyTargetCount) is a
+	// data-authored PerkModifier targeting dark_renewal. The allyTargetCount base
+	// of 1 above is dark_renewal's own logic, not part of the overlay.
+	s.applyPerkModifiersLocked(caster, "dark_renewal", cfg)
 	return cfg
 }
 
@@ -1236,16 +1202,54 @@ func (s *GameState) sharedSufferingEffectiveConfigLocked(caster *Unit) map[strin
 	if caster == nil {
 		return cfg
 	}
-	if asc := perkDefByID("ascended_corruption"); asc != nil && containsString(caster.PerkIDs, "ascended_corruption") {
-		acfg := asc.ConfigForRank(caster.Rank)
-		if v := acfg["sharedRadiusMultiplier"]; v > 0 {
-			cfg["radius"] = cfg["radius"] * v
+	// ascended_corruption (×radius, +damageSharePercent) is a data-authored
+	// PerkModifier targeting shared_suffering.
+	s.applyPerkModifiersLocked(caster, "shared_suffering", cfg)
+	return cfg
+}
+
+// applyPerkModifiersLocked layers every PerkModifier the caster owns that TARGETS
+// targetPerkID onto cfg (the target perk's effective config), in place. This is
+// the generic engine behind the data-driven perk-modifies-perk overlay
+// (PerkModifier / PerkConfigOp, perk_defs.go): each op reads its value from the
+// MODIFYING perk's ConfigForRank(caster.Rank) and multiplies/adds it onto the
+// named target key. A non-positive source value is skipped, matching the legacy
+// per-helper `if v := acfg[key]; v > 0` guard so the migration is byte-identical.
+//
+// Owned perks are visited in caster.PerkIDs slice order (deterministic, per the
+// sim's no-map-iteration rule); ordering never changes the result for today's
+// data since same-key ops are all commutative adds/mults.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) applyPerkModifiersLocked(caster *Unit, targetPerkID string, cfg map[string]float64) {
+	if caster == nil || cfg == nil {
+		return
+	}
+	for _, pid := range caster.PerkIDs {
+		def := perkDefByID(pid)
+		if def == nil || len(def.PerkModifiers) == 0 {
+			continue
 		}
-		if v := acfg["sharedDamageSharePercentBonus"]; v > 0 {
-			cfg["damageSharePercent"] = cfg["damageSharePercent"] + v
+		src := def.ConfigForRank(caster.Rank)
+		for i := range def.PerkModifiers {
+			mod := &def.PerkModifiers[i]
+			if mod.Target != targetPerkID {
+				continue
+			}
+			for _, op := range mod.Ops {
+				v := src[op.SourceKey]
+				if v <= 0 {
+					continue
+				}
+				switch op.Op {
+				case perkConfigOpMult:
+					cfg[op.TargetKey] *= v
+				case perkConfigOpAdd:
+					cfg[op.TargetKey] += v
+				}
+			}
 		}
 	}
-	return cfg
 }
 
 // copyConfigMap returns a shallow copy of a perk config map so callers can

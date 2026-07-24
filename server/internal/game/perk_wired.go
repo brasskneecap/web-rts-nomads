@@ -160,8 +160,10 @@ var wiredPerkIDs = map[string]struct{}{
 	"chain_siphon":        {},
 	"dark_renewal":        {},
 	"beam_mastery":        {},
-	"ascended_corruption": {},
-	"amplify_damage":      {}, // also perks.go
+	// ascended_corruption is NOT listed: its "enhance your Silver perk" overlay
+	// is now data-authored PerkModifiers (perk_defs.go / applyPerkModifiersLocked),
+	// so it is wired purely via perkHasTypedBehavior — see perk_wired_test.go.
+	"amplify_damage": {}, // also perks.go
 	"shared_suffering":    {},
 	"repurposed_life":     {},
 
@@ -196,6 +198,7 @@ func perkHasTypedBehavior(def PerkDef) bool {
 		len(def.AbilityFields) > 0 ||
 		len(def.AbilityStats) > 0 ||
 		len(def.AbilityRiders) > 0 ||
+		len(def.PerkModifiers) > 0 ||
 		len(def.GrantsAbilities) > 0 ||
 		auras
 }

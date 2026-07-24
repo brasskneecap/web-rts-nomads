@@ -32,7 +32,7 @@
     "top": -72,
     "bottom": 31,
     "ringOffsetX": 1,
-    "ringOffsetY": 9
+    "ringOffsetY": 6
   },
   "visionRange": 400,
   "requiresBuildings": [

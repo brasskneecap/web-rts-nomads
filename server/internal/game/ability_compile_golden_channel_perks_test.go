@@ -12,21 +12,22 @@ import (
 // TestAbilityCompileGolden_SiphonLife (ability_compile_golden_channel_test.go)
 // already proves per-tick parity between the legacy-fixture channel path and
 // the shipped schemaVersion-2 executor path for a PLAIN (no-perk) caster.
-// That test cannot exercise the fold path the migration actually changed:
-// the channel loop now sets ctx.damageEffectivenessMultiplier = mods.DamageMult
-// and reads the applied amount back from the AUTHORED on_beam_tick/deal_damage
-// action as tickDamage — for a plain caster mods.DamageMult is always the
-// identity 1.0, so a double-fold or missing-fold bug in that plumbing would
-// be invisible there.
+// That test cannot exercise the fold path a perk actually changes: the per-tick
+// damage and heal scalers are abilityFields modifiers on the authored
+// on_beam_tick actions (deal_damage's `amount`, siphon_heal's `healMult`), and
+// for a plain caster those folds are the identity, so a double-fold or
+// missing-fold bug would be invisible there.
 //
 // This file extends the same legacy-fixture-vs-executor comparison, run once
 // per Siphoner perk loadout, with a caster that actually owns the perk(s) on
-// BOTH legs. Two of the seven perks (soul_leech, beam_mastery) scale
-// mods.DamageMult directly — those are the ones that can prove or disprove
-// the fold. The other five read the post-fold tickDamage the channel loop
-// hands them, so a parity break in their own math would still show up as a
-// tick-by-tick divergence between legs even though DamageMult itself stays
-// at 1.0 for them.
+// BOTH legs. Two of the seven perks (soul_leech, beam_mastery) scale the
+// damage and heal fields directly — those are the ones that can prove or
+// disprove the fold. The other five read the post-fold tickDamage / heal the
+// channel loop hands them, so a parity break in their own math would still show
+// up as a tick-by-tick divergence between legs even though the damage/heal
+// folds stay at the identity for them. (Both legs fold the same abilityFields —
+// the legacy compatibility path via foldOneFieldLocked, the executor via its
+// action config fold — so the comparison stays exact.)
 //
 // Per-tick sample scope: instead of just the primary target/caster pair (the
 // parent test's scope), each sample aggregates across EVERY unit in the
@@ -548,8 +549,24 @@ func runSiphonerPerkGoldenCase(t *testing.T, legacyDef AbilityDef, tc siphonerPe
 		// with the lock held, and tc.afterScene/tc.setup ran above without
 		// releasing it) — do NOT re-lock; sync.Mutex is not reentrant and
 		// doing so deadlocks the test.
-		mods := sLegacy.abilityScalarModifiersForCasterLocked(casterL, "siphon_life")
-		wantFirstTickDamage = int(math.Round(float64(legacyDef.DamagePerTick) * mods.DamageMult))
+		// The per-tick damage scaler is now an abilityFields modifier on the
+			// deal_damage `amount` (soul_leech / beam_mastery), not a scalar
+			// aggregator field. Derive the expected multiplier the same way the
+			// executor's fold does: the product of every owned perk's multiply op
+			// targeting siphon_life/dmg/amount, off this leg's perk config.
+			dmgMult := 1.0
+			for _, pid := range casterL.PerkIDs {
+				pdef := perkDefByID(pid)
+				if pdef == nil {
+					continue
+				}
+				for _, fm := range pdef.AbilityFields {
+					if fm.Target == "siphon_life" && fm.Action == "dmg" && fm.Field == "amount" && (fm.Op == statOpMultiply || fm.Op == "") {
+						dmgMult *= fm.Value
+					}
+				}
+			}
+		wantFirstTickDamage = int(math.Round(float64(legacyDef.DamagePerTick) * dmgMult))
 		if wantFirstTickDamage <= 0 {
 			t.Fatalf("%s: fold-once setup produced a non-positive expected first-tick damage (%d)", tc.name, wantFirstTickDamage)
 		}
@@ -595,11 +612,11 @@ func runSiphonerPerkGoldenCase(t *testing.T, legacyDef AbilityDef, tc siphonerPe
 
 	if tc.checkFold {
 		if legacySamples[0].totalDamageDealt != wantFirstTickDamage {
-			t.Fatalf("%s: fold-once check: legacy leg's own tick-0 damage = %d, want %d (= round(DamagePerTick=%d * DamageMult), computed from this SAME leg before any tick ran)",
+			t.Fatalf("%s: fold-once check: legacy leg's own tick-0 damage = %d, want %d (= round(DamagePerTick=%d * abilityFields dmg/amount multiplier), computed from this SAME leg before any tick ran)",
 				tc.name, legacySamples[0].totalDamageDealt, wantFirstTickDamage, legacyDef.DamagePerTick)
 		}
 		if execSamples[0].totalDamageDealt != wantFirstTickDamage {
-			t.Errorf("%s: fold-once check: executor leg's tick-0 damage = %d, want %d (must match the legacy leg's own round(DamagePerTick*DamageMult) — a mismatch means the authored deal_damage path folded ctx.damageEffectivenessMultiplier zero or two times)",
+			t.Errorf("%s: fold-once check: executor leg's tick-0 damage = %d, want %d (must match the legacy leg's own round(DamagePerTick * dmg/amount fold) — a mismatch means the authored deal_damage path folded the abilityFields multiplier zero or two times)",
 				tc.name, execSamples[0].totalDamageDealt, wantFirstTickDamage)
 		}
 	}

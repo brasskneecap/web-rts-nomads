@@ -151,6 +151,14 @@ type RuntimeAbilityContext struct {
 	// general, additive field — no other caller reads it, so nothing else's
 	// behavior changes.
 	lastAppliedDamage int
+	// lastAppliedHeal is the heal a siphon_heal action produced this run (the
+	// per-tick Siphon Life heal, AFTER its healingMultiplier × healMult fold).
+	// Set by that action's Execute (ability_exec_siphon_heal.go) and read by
+	// the channel loop (tickUnitChannelLocked) so chain_siphon's secondary
+	// heal scales off the SAME number the primary heal distributor used,
+	// mirroring how lastAppliedDamage feeds the primary tick damage. Zero for
+	// every context that never runs a siphon_heal action.
+	lastAppliedHeal int
 	// opsUsed counts total executeActionLocked invocations across the whole
 	// program run (not just the current recursion stack). This bounds TOTAL
 	// WORK, which ctx.depth/maxTriggerDepth alone does not: a bounded-depth

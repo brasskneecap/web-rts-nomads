@@ -132,7 +132,7 @@ func TestIsWiredPerk_AbilityModifiersOnly_ReportsWired(t *testing.T) {
 	}
 	def := PerkDef{
 		ID:               syntheticUnwiredPerkID,
-		AbilityModifiers: []AbilityModifier{{Target: "some_ability", DamageMult: 1.1}},
+		AbilityModifiers: []AbilityModifier{{Target: "some_ability", CooldownMult: 1.1}},
 	}
 	if !isWiredPerk(def) {
 		t.Errorf("isWiredPerk(AbilityModifiers-only, no wiredPerkIDs entry) = false, want true")

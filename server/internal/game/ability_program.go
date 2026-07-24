@@ -75,6 +75,18 @@ const (
 	ActionFilterTargets ActionType = "filter_targets"
 	ActionDealDamage    ActionType = "deal_damage"
 	ActionRestoreHealth ActionType = "restore_health"
+	// ActionSiphonHeal is the per-tick heal step of a channeled Siphon Life:
+	// it heals the CASTER (never a target set) for the tick's applied damage
+	// scaled by healingMultiplier × healMult, routing through the Siphon
+	// distributor (distributeSiphonHealLocked: self-first → dark_renewal
+	// shield cascade → lowest-HP ally). It reads the tick's damage from
+	// ctx.lastAppliedDamage (set by the preceding deal_damage in the same
+	// on_beam_tick trigger) and records the heal it produced in
+	// ctx.lastAppliedHeal so the Go channel loop can feed chain_siphon. Its
+	// healMult field (base 1.0) is the field-modifier target that replaced
+	// the retired AbilityModifier.HealMult (soul_leech / beam_mastery).
+	// Compiled-only — see compileChannelBeamTickTrigger; not authored directly.
+	ActionSiphonHeal ActionType = "siphon_heal"
 	ActionApplyStatus   ActionType = "apply_status"
 	// ActionApplyStatusDuration is the container action for the "duration is
 	// its own action" model: it owns the LIFETIME of a status (spawns one

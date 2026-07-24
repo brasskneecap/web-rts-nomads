@@ -10,10 +10,15 @@ export interface PerkEffectShape {
 
 // AbilityModifier mirrors the Go AbilityModifier struct: a scalar multiplier
 // bundle a perk applies to a named ability (target = ability id).
+//
+// It carries only the ABILITY-LEVEL properties that live outside the action
+// program — mana cost, cast range, cooldown. Scaling an ability's damage or
+// healing is done with an AbilityFieldModifier on the owning action's field
+// (deal_damage `amount`, siphon_heal `healMult`, …), not here; the former
+// damageMult / healMult were retired when the Siphon Life channel's damage and
+// heal became authored actions.
 export interface AbilityModifier {
   target: string
-  damageMult?: number
-  healMult?: number
   manaCostMult?: number
   rangeMult?: number
   // cooldownMult scales the target ability's cooldown (folded server-side in
@@ -69,6 +74,24 @@ export interface AbilityRider {
   target: string
   trigger: string
   actions: AbilityActionDef[]
+}
+
+// PerkConfigOp mirrors the Go PerkConfigOp: one transform in a PerkModifier —
+// take the value at `sourceKey` in THIS perk's config and multiply/add it onto
+// `targetKey` in the target perk's effective config.
+export interface PerkConfigOp {
+  targetKey: string
+  op: 'mult' | 'add'
+  sourceKey: string
+}
+
+// PerkModifier mirrors the Go PerkModifier struct: a perk-modifies-PERK overlay
+// (sibling to AbilityModifier, which modifies an ABILITY). It names a target
+// perk and a list of config ops applied when the owner also owns the target.
+// Pilot: ascended_corruption enhancing whichever Silver Siphoner perk you own.
+export interface PerkModifier {
+  target: string
+  ops: PerkConfigOp[]
 }
 
 // PerkStatModifier mirrors the Go PerkDef.statModifiers entry: a typed,
@@ -132,6 +155,8 @@ export interface AuthoredPerkDef {
   /** Precise, action-addressed contributions — see AbilityFieldModifier. */
   abilityFields?: AbilityFieldModifier[]
   abilityRiders?: AbilityRider[]
+  /** Perk-modifies-PERK overlays — see PerkModifier. */
+  perkModifiers?: PerkModifier[]
   statModifiers?: PerkStatModifier[]
   auras?: PerkAura[]
   wired?: boolean
@@ -148,7 +173,7 @@ const MODELED_KEYS = [
   'id', 'displayName', 'description', 'tooltipTemplate', 'tooltipTemplateByTrap',
   'tooltipTemplateByOwnedPerk', 'icon', 'path', 'requiresPerk', 'requiresAbility',
   'config', 'configByRank', 'effect', 'grantsAbilities',
-  'abilityModifiers', 'abilityStats', 'abilityFields', 'abilityRiders', 'statModifiers', 'auras', 'wired', 'generatedDescription',
+  'abilityModifiers', 'abilityStats', 'abilityFields', 'abilityRiders', 'perkModifiers', 'statModifiers', 'auras', 'wired', 'generatedDescription',
 ] as const
 
 export interface PerkEditorForm extends AuthoredPerkDef {

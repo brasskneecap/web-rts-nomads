@@ -9,7 +9,7 @@ import "fmt"
 // abilities can author it ahead of the descriptor landing in a later task.
 var allActionTypes = []ActionType{
 	ActionSelectTargets, ActionStoreTargets, ActionFilterTargets, ActionDealDamage,
-	ActionRestoreHealth, ActionApplyStatus, ActionApplyStatusDuration, ActionChangeStat, ActionApplyMark, ActionApplyColorOverlay,
+	ActionRestoreHealth, ActionSiphonHeal, ActionApplyStatus, ActionApplyStatusDuration, ActionChangeStat, ActionApplyMark, ActionApplyColorOverlay,
 	ActionRemoveStatus, ActionCreateZone,
 	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionPlaceTrap, ActionConsumeZone, ActionSetZoneVisual, ActionMoveUnit, ActionApplyForce,
 	ActionModifyResource, ActionTriggerEvent, ActionPlayPresentation, ActionPlaySound,

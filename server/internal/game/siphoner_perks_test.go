@@ -82,28 +82,43 @@ func withSiphonerPerk(_ *GameState, siphoner *Unit, perkID string) {
 // soul_leech — damage / heal multipliers in the channel tick
 // ─────────────────────────────────────────────────────────────────────────────
 
+// soul_leech's damage/heal scaling is now expressed as abilityFields on the
+// Siphon Life channel's compiled on_beam_tick actions — a multiply on the
+// deal_damage "dmg" action's `amount`, and on the siphon_heal "heal" action's
+// `healMult` — rather than the retired AbilityModifier.DamageMult/HealMult.
+// Assert the perk folds those two fields by its config multipliers, using the
+// same foldOneFieldLocked seam the executor runs.
 func TestSoulLeech_DamageAndHealMultipliers(t *testing.T) {
 	s, siphoner, _ := newSiphonerBronzeState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Baseline: no perk → (1.0, 1.0).
-	mods := s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
-	if mods.DamageMult != 1.0 || mods.HealMult != 1.0 {
-		t.Fatalf("baseline multipliers expected (1.0,1.0), got (%.3f,%.3f)", mods.DamageMult, mods.HealMult)
+	def, ok := getAbilityDef("siphon_life")
+	if !ok {
+		t.Fatal("siphon_life ability def missing")
 	}
 
-	// With soul_leech: multipliers reflect the perk config.
+	// Baseline: no perk → the on_beam_tick fields fold to their authored bases.
+	if got := s.foldOneFieldLocked(siphoner, def, "dmg", "amount", 100); got != 100 {
+		t.Fatalf("baseline dmg/amount fold expected 100, got %.3f", got)
+	}
+	if got := s.foldOneFieldLocked(siphoner, def, "heal", "healMult", 1.0); got != 1.0 {
+		t.Fatalf("baseline heal/healMult fold expected 1.0, got %.3f", got)
+	}
+
+	// With soul_leech: the perk's abilityFields multiply both by its config.
 	withSiphonerPerk(s, siphoner, "soul_leech")
-	def := perkDefByID("soul_leech")
-	if def == nil {
+	pdef := perkDefByID("soul_leech")
+	if pdef == nil {
 		t.Fatal("soul_leech perk def missing")
 	}
-	wantD := def.Config["damageMultiplier"]
-	wantH := def.Config["healingMultiplier"]
-	mods = s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
-	if math.Abs(mods.DamageMult-wantD) > 1e-9 || math.Abs(mods.HealMult-wantH) > 1e-9 {
-		t.Errorf("soul_leech multipliers: got (%.3f,%.3f), want (%.3f,%.3f)", mods.DamageMult, mods.HealMult, wantD, wantH)
+	wantD := pdef.Config["damageMultiplier"]
+	wantH := pdef.Config["healingMultiplier"]
+	if got := s.foldOneFieldLocked(siphoner, def, "dmg", "amount", 100); math.Abs(got-100*wantD) > 1e-9 {
+		t.Errorf("soul_leech dmg/amount fold: got %.3f, want %.3f", got, 100*wantD)
+	}
+	if got := s.foldOneFieldLocked(siphoner, def, "heal", "healMult", 1.0); math.Abs(got-wantH) > 1e-9 {
+		t.Errorf("soul_leech heal/healMult fold: got %.3f, want %.3f", got, wantH)
 	}
 }
 

@@ -2,9 +2,15 @@ package game
 
 // AbilityModifierSet is the composed (multiplied) scalar modifiers a caster's
 // perks apply to ONE ability. All fields default to 1.0 (no-op).
+//
+// These are the ABILITY-LEVEL properties that live outside the action program
+// and so cannot be addressed by an abilityFields modifier: mana cost, cast
+// range, and cooldown. The former DamageMult / HealMult were retired here —
+// a perk scaling an ability's damage or healing now does so with an
+// abilityFields modifier on the owning action's field (e.g. deal_damage's
+// `amount`, siphon_heal's `healMult`), which folds through the generic
+// executor rather than needing a bespoke aggregator read site.
 type AbilityModifierSet struct {
-	DamageMult   float64
-	HealMult     float64
 	ManaCostMult float64
 	RangeMult    float64
 	CooldownMult float64
@@ -12,7 +18,7 @@ type AbilityModifierSet struct {
 
 func identityAbilityModifierSet() AbilityModifierSet {
 	return AbilityModifierSet{
-		DamageMult: 1, HealMult: 1, ManaCostMult: 1, RangeMult: 1, CooldownMult: 1,
+		ManaCostMult: 1, RangeMult: 1, CooldownMult: 1,
 	}
 }
 
@@ -37,12 +43,6 @@ func (s *GameState) abilityScalarModifiersForCasterLocked(caster *Unit, abilityI
 			m := def.AbilityModifiers[i]
 			if m.Target != abilityID {
 				continue
-			}
-			if m.DamageMult > 0 {
-				set.DamageMult *= m.DamageMult
-			}
-			if m.HealMult > 0 {
-				set.HealMult *= m.HealMult
 			}
 			if m.ManaCostMult > 0 {
 				set.ManaCostMult *= m.ManaCostMult

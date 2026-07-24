@@ -493,6 +493,11 @@ func humanizeFieldName(field string) string {
 	switch field {
 	case "amount":
 		return "damage"
+	case "healMult":
+		// siphon_heal's per-tick heal multiplier (Siphon Life). Reads as
+		// "healing" so soul_leech / beam_mastery describe "+100% healing"
+		// rather than the raw config key.
+		return "healing"
 	case "value":
 		return "strength"
 	case targetQueryRadiusField:
@@ -503,9 +508,9 @@ func humanizeFieldName(field string) string {
 
 // abilityModifierField pairs one AbilityModifier scalar with its prose
 // label, in the fixed rendering order describeAbilityModifierClause walks:
-// damage, healing, mana cost, range, then cooldown. This matches
-// AbilityModifier's own field order (perk_defs.go) so the generated clause
-// order never depends on anything but that struct's declaration.
+// mana cost, range, then cooldown. This matches AbilityModifier's own field
+// order (perk_defs.go) so the generated clause order never depends on anything
+// but that struct's declaration.
 type abilityModifierField struct {
 	mult  float64
 	label string
@@ -518,8 +523,6 @@ type abilityModifierField struct {
 // every field is unset (e.g. a Target with no scalars authored).
 func describeAbilityModifierClause(m AbilityModifier) string {
 	fields := []abilityModifierField{
-		{m.DamageMult, "damage"},
-		{m.HealMult, "healing"},
 		{m.ManaCostMult, "mana cost"},
 		{m.RangeMult, "range"},
 		{m.CooldownMult, "cooldown"},

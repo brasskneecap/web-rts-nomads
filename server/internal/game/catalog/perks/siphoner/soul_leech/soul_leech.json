@@ -8,8 +8,9 @@
     "damageMultiplier": 2,
     "healingMultiplier": 2
   },
-  "abilityModifiers": [
-    { "target": "siphon_life", "damageMult": 2, "healMult": 2 }
+  "abilityFields": [
+    { "target": "siphon_life", "action": "dmg", "field": "amount", "op": "multiply", "value": 2 },
+    { "target": "siphon_life", "action": "heal", "field": "healMult", "op": "multiply", "value": 2 }
   ],
   "wired": false
 }

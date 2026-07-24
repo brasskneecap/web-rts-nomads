@@ -63,18 +63,29 @@ func newSiphonerGoldState(t *testing.T) (s *GameState, siphoner, enemy *Unit) {
 // beam_mastery
 // ─────────────────────────────────────────────────────────────────────────────
 
+// beam_mastery's mana-cost and range scalers stay on AbilityModifier (they are
+// ability-level properties); its damage and heal scalers moved to abilityFields
+// on the Siphon Life channel's compiled dmg / heal actions. Assert both halves,
+// and that the damage field composes multiplicatively when stacked with
+// soul_leech's own field modifier — the property the retired scalar aggregator
+// used to provide.
 func TestBeamMastery_ChannelModifiersComposeMultiplicatively(t *testing.T) {
 	s, siphoner, _ := newSiphonerGoldState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Baseline: no perks → identity modifiers.
-	mods := s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
-	if mods.DamageMult != 1.0 || mods.HealMult != 1.0 || mods.ManaCostMult != 1.0 || mods.RangeMult != 1.0 {
-		t.Fatalf("baseline modifiers should all be 1.0, got %+v", mods)
+	def, ok := getAbilityDef("siphon_life")
+	if !ok {
+		t.Fatal("siphon_life ability def missing")
 	}
 
-	// With beam_mastery only.
+	// Baseline: no perks → identity ability-level modifiers.
+	if mods := s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life"); mods != identityAbilityModifierSet() {
+		t.Fatalf("baseline modifiers should be identity, got %+v", mods)
+	}
+
+	// With beam_mastery: mana + range are ability-level scalars; damage + heal
+	// are abilityFields on the dmg / heal actions.
 	siphoner.PerkIDs = append(siphoner.PerkIDs, "beam_mastery")
 	bm := perkDefByID("beam_mastery")
 	wantDmg := bm.Config["damageMultiplier"]
@@ -82,27 +93,26 @@ func TestBeamMastery_ChannelModifiersComposeMultiplicatively(t *testing.T) {
 	wantMana := bm.Config["manaCostMultiplier"]
 	wantRange := bm.Config["rangeMultiplier"]
 
-	mods = s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
-	if math.Abs(mods.DamageMult-wantDmg) > 1e-9 {
-		t.Errorf("beam_mastery damage mult: got %.3f, want %.3f", mods.DamageMult, wantDmg)
-	}
-	if math.Abs(mods.HealMult-wantHeal) > 1e-9 {
-		t.Errorf("beam_mastery heal mult: got %.3f, want %.3f", mods.HealMult, wantHeal)
-	}
+	mods := s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
 	if math.Abs(mods.ManaCostMult-wantMana) > 1e-9 {
 		t.Errorf("beam_mastery mana cost mult: got %.3f, want %.3f", mods.ManaCostMult, wantMana)
 	}
 	if math.Abs(mods.RangeMult-wantRange) > 1e-9 {
 		t.Errorf("beam_mastery range mult: got %.3f, want %.3f", mods.RangeMult, wantRange)
 	}
+	if got := s.foldOneFieldLocked(siphoner, def, "dmg", "amount", 100); math.Abs(got-100*wantDmg) > 1e-9 {
+		t.Errorf("beam_mastery dmg/amount fold: got %.3f, want %.3f", got, 100*wantDmg)
+	}
+	if got := s.foldOneFieldLocked(siphoner, def, "heal", "healMult", 1.0); math.Abs(got-wantHeal) > 1e-9 {
+		t.Errorf("beam_mastery heal/healMult fold: got %.3f, want %.3f", got, wantHeal)
+	}
 
-	// Stacked with soul_leech: damage and heal multipliers compose multiplicatively.
+	// Stacked with soul_leech: the damage field composes multiplicatively.
 	siphoner.PerkIDs = append(siphoner.PerkIDs, "soul_leech")
 	sl := perkDefByID("soul_leech")
-	mods = s.abilityScalarModifiersForCasterLocked(siphoner, "siphon_life")
 	wantStackedDmg := wantDmg * sl.Config["damageMultiplier"]
-	if math.Abs(mods.DamageMult-wantStackedDmg) > 1e-9 {
-		t.Errorf("beam_mastery × soul_leech damage mult: got %.3f, want %.3f", mods.DamageMult, wantStackedDmg)
+	if got := s.foldOneFieldLocked(siphoner, def, "dmg", "amount", 100); math.Abs(got-100*wantStackedDmg) > 1e-9 {
+		t.Errorf("beam_mastery × soul_leech dmg/amount fold: got %.3f, want %.3f", got, 100*wantStackedDmg)
 	}
 }
 

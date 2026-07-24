@@ -54,6 +54,15 @@
                         "amount": 6,
                         "type": "shadow"
                       }
+                    },
+                    {
+                      "id": "heal",
+                      "type": "siphon_heal",
+                      "config": {
+                        "healingMultiplier": 1,
+                        "healMult": 1,
+                        "allyHealRadius": 220
+                      }
                     }
                   ]
                 }

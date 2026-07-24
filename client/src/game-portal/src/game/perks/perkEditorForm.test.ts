@@ -27,6 +27,21 @@ describe('perkEditorForm', () => {
     expect(out.effect).toEqual({ name: 'burn', target: 'enemies' })
     expect((out as Record<string, unknown>).futureKnob).toBe(7)
   })
+  it('round-trips perkModifiers (perk-modifies-perk overlays)', () => {
+    const def = {
+      id: 'ascended_corruption',
+      perkModifiers: [
+        { target: 'chain_siphon', ops: [
+          { targetKey: 'chainRange', op: 'mult', sourceKey: 'chainRangeMultiplier' },
+          { targetKey: 'additionalTargetCount', op: 'add', sourceKey: 'chainAdditionalTargetCountBonus' },
+        ] },
+      ],
+    } as AuthoredPerkDef
+    const form = formFromDef(def)
+    expect(form.perkModifiers).toHaveLength(1)
+    const out = saveRequestFromForm(form)
+    expect(out.perkModifiers).toEqual(def.perkModifiers)
+  })
   it('does not surface unitType/rank as modeled form fields', () => {
     // unitType/rank no longer exist server-side; a real fetched def will
     // never carry them, so the realistic save request never emits them.
