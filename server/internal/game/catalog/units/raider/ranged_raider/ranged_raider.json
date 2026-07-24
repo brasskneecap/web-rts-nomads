@@ -22,6 +22,42 @@
     "originY": 5,
     "effectLength": 22
   },
+  "attackOrigin": {
+    "byFacing": {
+      "south": {
+        "x": 0,
+        "y": -13
+      },
+      "north": {
+        "x": -7,
+        "y": -33
+      },
+      "north-east": {
+        "x": 12,
+        "y": -18
+      },
+      "east": {
+        "x": 17,
+        "y": -17
+      },
+      "south-east": {
+        "x": 15,
+        "y": -14
+      },
+      "south-west": {
+        "x": -17,
+        "y": -21
+      },
+      "west": {
+        "x": -21,
+        "y": -18
+      },
+      "north-west": {
+        "x": -13,
+        "y": -21
+      }
+    }
+  },
   "bounds": {
     "halfWidth": 14,
     "top": -60,

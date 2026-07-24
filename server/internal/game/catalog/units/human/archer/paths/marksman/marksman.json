@@ -8,6 +8,38 @@
     "ringOffsetX": -1,
     "ringOffsetY": 4
   },
+  "attackOrigin": {
+    "byFacing": {
+      "north-east": {
+        "x": 17,
+        "y": -28
+      },
+      "east": {
+        "x": 21,
+        "y": -25
+      },
+      "south-east": {
+        "x": 20,
+        "y": -16
+      },
+      "south": {
+        "x": 14,
+        "y": -18
+      },
+      "south-west": {
+        "x": -19,
+        "y": -17
+      },
+      "west": {
+        "x": -25,
+        "y": -21
+      },
+      "north-west": {
+        "x": -21,
+        "y": -28
+      }
+    }
+  },
   "visionRange": 448,
   "abilities": [],
   "ranks": {

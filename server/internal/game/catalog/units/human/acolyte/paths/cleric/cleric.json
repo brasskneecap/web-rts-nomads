@@ -8,6 +8,42 @@
     "ringOffsetX": 3,
     "ringOffsetY": 3
   },
+  "attackOrigin": {
+    "byFacing": {
+      "south": {
+        "x": -20,
+        "y": -40
+      },
+      "north": {
+        "x": 19,
+        "y": -42
+      },
+      "north-east": {
+        "x": 14,
+        "y": -49
+      },
+      "east": {
+        "x": 19,
+        "y": -45
+      },
+      "south-east": {
+        "x": 16,
+        "y": -42
+      },
+      "south-west": {
+        "x": -16,
+        "y": -41
+      },
+      "west": {
+        "x": -27,
+        "y": -43
+      },
+      "north-west": {
+        "x": -16,
+        "y": -46
+      }
+    }
+  },
   "projectile": "holy_bolt",
   "damageType": "holy",
   "projectileScale": 1,
